@@ -32,9 +32,10 @@ if ($_POST) {
             $port = (int)($_POST['port'] ?? 0);
             $protocol = $_POST['protocol'] ?? 'imap';
             $ssl = isset($_POST['ssl']) ? 1 : 0;
+            $remarks = $_POST['remarks'] ?? '';
             
             if ($email && $username && $password && $server && $port) {
-                $stmt = $db->prepare('INSERT INTO mail_accounts (email, username, password, server, port, protocol, ssl) VALUES (?, ?, ?, ?, ?, ?, ?)');
+                $stmt = $db->prepare('INSERT INTO mail_accounts (email, username, password, server, port, protocol, ssl, remarks) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
                 $stmt->bindValue(1, $email);
                 $stmt->bindValue(2, $username);
                 $stmt->bindValue(3, $password);
@@ -42,6 +43,7 @@ if ($_POST) {
                 $stmt->bindValue(5, $port);
                 $stmt->bindValue(6, $protocol);
                 $stmt->bindValue(7, $ssl);
+                $stmt->bindValue(8, $remarks);
                 $stmt->execute();
                 $message = '邮箱账号添加成功';
             } else {
@@ -64,9 +66,10 @@ if ($_POST) {
             $port = (int)($_POST['port'] ?? 0);
             $protocol = $_POST['protocol'] ?? 'imap';
             $ssl = isset($_POST['ssl']) ? 1 : 0;
+            $remarks = $_POST['remarks'] ?? '';
             
             if ($id > 0 && $email && $username && $password && $server && $port) {
-                $stmt = $db->prepare('UPDATE mail_accounts SET email=?, username=?, password=?, server=?, port=?, protocol=?, ssl=?, updated_at=CURRENT_TIMESTAMP WHERE id=?');
+                $stmt = $db->prepare('UPDATE mail_accounts SET email=?, username=?, password=?, server=?, port=?, protocol=?, ssl=?, remarks=?, updated_at=CURRENT_TIMESTAMP WHERE id=?');
                 $stmt->bindValue(1, $email);
                 $stmt->bindValue(2, $username);
                 $stmt->bindValue(3, $password);
@@ -74,7 +77,8 @@ if ($_POST) {
                 $stmt->bindValue(5, $port);
                 $stmt->bindValue(6, $protocol);
                 $stmt->bindValue(7, $ssl);
-                $stmt->bindValue(8, $id);
+                $stmt->bindValue(8, $remarks);
+                $stmt->bindValue(9, $id);
                 $stmt->execute();
                 $message = '邮箱账号更新成功';
             } else {
@@ -92,6 +96,14 @@ if ($_POST) {
 $accounts = [];
 try {
     $db = new SQLite3('../db/mail.sqlite');
+    
+    // 添加备注字段（如果不存在）
+    try {
+        $db->exec('ALTER TABLE mail_accounts ADD COLUMN remarks TEXT DEFAULT ""');
+    } catch (Exception $e) {
+        // 字段可能已存在，忽略错误
+    }
+    
     $result = $db->query('SELECT * FROM mail_accounts ORDER BY created_at DESC');
     while ($row = $result->fetchArray()) {
         $accounts[] = $row;
@@ -446,6 +458,137 @@ try {
             margin-top: 10px;
         }
         
+        /* Modal Styles */
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 2000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0,0,0,0.5);
+            animation: fadeIn 0.3s ease;
+        }
+        
+        .modal.show {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .modal-content {
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.15);
+            max-width: 600px;
+            width: 90%;
+            max-height: 90vh;
+            overflow-y: auto;
+            animation: slideIn 0.3s ease;
+        }
+        
+        .modal-header {
+            padding: 20px 25px;
+            border-bottom: 1px solid #f1f5f9;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .modal-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: #1e293b;
+            margin: 0;
+        }
+        
+        .modal-close {
+            background: none;
+            border: none;
+            font-size: 24px;
+            cursor: pointer;
+            color: #64748b;
+            padding: 0;
+            width: 30px;
+            height: 30px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 50%;
+            transition: var(--transition);
+        }
+        
+        .modal-close:hover {
+            background: #f1f5f9;
+            color: #374151;
+        }
+        
+        .modal-body {
+            padding: 25px;
+        }
+        
+        .modal-footer {
+            padding: 20px 25px;
+            border-top: 1px solid #f1f5f9;
+            display: flex;
+            gap: 10px;
+            justify-content: flex-end;
+        }
+        
+        /* Loading and Test Connection Styles */
+        .btn-loading {
+            position: relative;
+            opacity: 0.7;
+            pointer-events: none;
+        }
+        
+        .btn-loading::after {
+            content: "";
+            position: absolute;
+            width: 16px;
+            height: 16px;
+            margin: auto;
+            border: 2px solid transparent;
+            border-top-color: #ffffff;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            top: 0;
+            left: 0;
+            bottom: 0;
+            right: 0;
+        }
+        
+        .btn-success {
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+        }
+        
+        .btn-success:hover {
+            box-shadow: 0 5px 15px rgba(16, 185, 129, 0.3);
+        }
+        
+        /* Animations */
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+        
+        @keyframes slideIn {
+            from { 
+                opacity: 0;
+                transform: translateY(-20px);
+            }
+            to { 
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
         /* Responsive */
         @media (max-width: 768px) {
             .sidebar {
@@ -532,52 +675,13 @@ try {
             
             <div class="card">
                 <div class="card-header">
-                    <h2 class="card-title">添加邮箱账号</h2>
+                    <h2 class="card-title">邮箱管理</h2>
                 </div>
                 <div class="card-body">
-                    <form method="POST">
-                        <input type="hidden" name="action" value="add">
-                        <div class="form-row">
-                            <div class="form-group">
-                                <label for="email">邮箱地址</label>
-                                <input type="email" id="email" name="email" required>
-                            </div>
-                            <div class="form-group">
-                                <label for="username">用户名</label>
-                                <input type="text" id="username" name="username" required>
-                            </div>
-                        </div>
-                        <div class="form-row">
-                            <div class="form-group">
-                                <label for="password">密码</label>
-                                <input type="password" id="password" name="password" required>
-                            </div>
-                            <div class="form-group">
-                                <label for="server">服务器地址</label>
-                                <input type="text" id="server" name="server" required>
-                            </div>
-                        </div>
-                        <div class="form-row">
-                            <div class="form-group">
-                                <label for="port">端口</label>
-                                <input type="number" id="port" name="port" value="993" required>
-                            </div>
-                            <div class="form-group">
-                                <label for="protocol">协议</label>
-                                <select id="protocol" name="protocol">
-                                    <option value="imap" selected>IMAP</option>
-                                    <option value="pop3">POP3</option>
-                                </select>
-                            </div>
-                            <div class="form-group">
-                                <div class="checkbox-group">
-                                    <input type="checkbox" id="ssl" name="ssl" checked>
-                                    <label for="ssl">启用SSL安全连接</label>
-                                </div>
-                            </div>
-                        </div>
-                        <button type="submit" class="btn">添加邮箱账号</button>
-                    </form>
+                    <button type="button" class="btn" onclick="openAddModal()">
+                        ➕ 添加邮箱
+                    </button>
+                    <p style="margin-top: 15px; color: #64748b;">点击上方按钮添加新的邮箱账号</p>
                 </div>
             </div>
             
@@ -598,6 +702,7 @@ try {
                                         <th>服务器</th>
                                         <th>端口/协议</th>
                                         <th>SSL</th>
+                                        <th>备注</th>
                                         <th>创建时间</th>
                                         <th>操作</th>
                                     </tr>
@@ -610,64 +715,13 @@ try {
                                             <td><?php echo htmlspecialchars($account['server']); ?></td>
                                             <td><?php echo $account['port'] . '/' . strtoupper($account['protocol']); ?></td>
                                             <td><?php echo $account['ssl'] ? '✅' : '❌'; ?></td>
+                                            <td><?php echo htmlspecialchars($account['remarks'] ?? ''); ?></td>
                                             <td><?php echo date('Y-m-d H:i', strtotime($account['created_at'])); ?></td>
                                             <td>
                                                 <div class="actions">
-                                                    <button type="button" class="btn btn-small" onclick="toggleEdit(<?php echo $account['id']; ?>)">编辑</button>
-                                                    <form method="POST" style="display: inline;">
-                                                        <input type="hidden" name="action" value="delete">
-                                                        <input type="hidden" name="id" value="<?php echo $account['id']; ?>">
-                                                        <button type="submit" class="btn btn-danger btn-small" onclick="return confirm('确定要删除这个邮箱账号吗？')">删除</button>
-                                                    </form>
-                                                </div>
-                                                <div id="edit-form-<?php echo $account['id']; ?>" class="edit-form">
-                                                    <form method="POST">
-                                                        <input type="hidden" name="action" value="update">
-                                                        <input type="hidden" name="id" value="<?php echo $account['id']; ?>">
-                                                        <div class="form-row">
-                                                            <div class="form-group">
-                                                                <label>邮箱地址</label>
-                                                                <input type="email" name="email" value="<?php echo htmlspecialchars($account['email']); ?>" required>
-                                                            </div>
-                                                            <div class="form-group">
-                                                                <label>用户名</label>
-                                                                <input type="text" name="username" value="<?php echo htmlspecialchars($account['username']); ?>" required>
-                                                            </div>
-                                                        </div>
-                                                        <div class="form-row">
-                                                            <div class="form-group">
-                                                                <label>密码</label>
-                                                                <input type="password" name="password" value="<?php echo htmlspecialchars($account['password']); ?>" required>
-                                                            </div>
-                                                            <div class="form-group">
-                                                                <label>服务器地址</label>
-                                                                <input type="text" name="server" value="<?php echo htmlspecialchars($account['server']); ?>" required>
-                                                            </div>
-                                                        </div>
-                                                        <div class="form-row">
-                                                            <div class="form-group">
-                                                                <label>端口</label>
-                                                                <input type="number" name="port" value="<?php echo $account['port']; ?>" required>
-                                                            </div>
-                                                            <div class="form-group">
-                                                                <label>协议</label>
-                                                                <select name="protocol">
-                                                                    <option value="imap" <?php echo $account['protocol'] === 'imap' ? 'selected' : ''; ?>>IMAP</option>
-                                                                    <option value="pop3" <?php echo $account['protocol'] === 'pop3' ? 'selected' : ''; ?>>POP3</option>
-                                                                </select>
-                                                            </div>
-                                                            <div class="form-group">
-                                                                <div class="checkbox-group">
-                                                                    <input type="checkbox" name="ssl" <?php echo $account['ssl'] ? 'checked' : ''; ?>>
-                                                                    <label>启用SSL安全连接</label>
-                                                                </div>
-                                                            </div>
-                                                        </div>
-                                                        <div class="actions">
-                                                            <button type="submit" class="btn btn-small">保存修改</button>
-                                                            <button type="button" class="btn btn-small" onclick="toggleEdit(<?php echo $account['id']; ?>)">取消</button>
-                                                        </div>
-                                                    </form>
+                                                    <button type="button" class="btn btn-small" onclick="openEditModal(<?php echo htmlspecialchars(json_encode($account)); ?>)">编辑</button>
+                                                    <button type="button" class="btn btn-small btn-success" onclick="testConnection(<?php echo $account['id']; ?>)" id="test-btn-<?php echo $account['id']; ?>">测试连接</button>
+                                                    <button type="button" class="btn btn-danger btn-small" onclick="deleteAccount(<?php echo $account['id']; ?>)">删除</button>
                                                 </div>
                                             </td>
                                         </tr>
@@ -681,14 +735,254 @@ try {
         </div>
     </div>
     
+    <!-- Add/Edit Mailbox Modal -->
+    <div id="mailboxModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 class="modal-title" id="modalTitle">添加邮箱</h3>
+                <button type="button" class="modal-close" onclick="closeModal()">&times;</button>
+            </div>
+            <form id="mailboxForm" method="POST">
+                <div class="modal-body">
+                    <input type="hidden" name="action" id="formAction" value="add">
+                    <input type="hidden" name="id" id="formId" value="">
+                    
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="modalEmail">邮箱地址 *</label>
+                            <input type="email" id="modalEmail" name="email" required placeholder="user@example.com">
+                        </div>
+                        <div class="form-group">
+                            <label for="modalUsername">用户名 *</label>
+                            <input type="text" id="modalUsername" name="username" required placeholder="通常与邮箱地址相同">
+                        </div>
+                    </div>
+                    
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="modalPassword">密码 *</label>
+                            <input type="password" id="modalPassword" name="password" required placeholder="邮箱密码或授权码">
+                        </div>
+                        <div class="form-group">
+                            <label for="modalServer">服务器地址 *</label>
+                            <input type="text" id="modalServer" name="server" required placeholder="imap.example.com">
+                        </div>
+                    </div>
+                    
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="modalPort">端口 *</label>
+                            <input type="number" id="modalPort" name="port" value="993" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="modalProtocol">协议</label>
+                            <select id="modalProtocol" name="protocol">
+                                <option value="imap" selected>IMAP</option>
+                                <option value="pop3">POP3</option>
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="modalRemarks">备注</label>
+                            <input type="text" id="modalRemarks" name="remarks" placeholder="可选备注信息">
+                        </div>
+                        <div class="form-group">
+                            <div class="checkbox-group">
+                                <input type="checkbox" id="modalSsl" name="ssl" checked>
+                                <label for="modalSsl">启用SSL安全连接</label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-success" onclick="testConnectionModal()" id="testBtn">测试连接</button>
+                    <button type="button" class="btn" onclick="closeModal()">取消</button>
+                    <button type="submit" class="btn" id="submitBtn">保存</button>
+                </div>
+            </form>
+        </div>
+    </div>
+    
     <script>
-        function toggleEdit(id) {
-            const form = document.getElementById('edit-form-' + id);
-            if (form.style.display === 'none' || form.style.display === '') {
-                form.style.display = 'block';
-            } else {
-                form.style.display = 'none';
+        // Modal control functions
+        function openAddModal() {
+            document.getElementById('modalTitle').textContent = '添加邮箱';
+            document.getElementById('formAction').value = 'add';
+            document.getElementById('formId').value = '';
+            document.getElementById('submitBtn').textContent = '添加邮箱';
+            
+            // Reset form
+            document.getElementById('mailboxForm').reset();
+            document.getElementById('modalPort').value = '993';
+            document.getElementById('modalSsl').checked = true;
+            
+            showModal();
+        }
+        
+        function openEditModal(account) {
+            document.getElementById('modalTitle').textContent = '编辑邮箱';
+            document.getElementById('formAction').value = 'update';
+            document.getElementById('formId').value = account.id;
+            document.getElementById('submitBtn').textContent = '保存修改';
+            
+            // Fill form with existing data
+            document.getElementById('modalEmail').value = account.email;
+            document.getElementById('modalUsername').value = account.username;
+            document.getElementById('modalPassword').value = account.password;
+            document.getElementById('modalServer').value = account.server;
+            document.getElementById('modalPort').value = account.port;
+            document.getElementById('modalProtocol').value = account.protocol;
+            document.getElementById('modalRemarks').value = account.remarks || '';
+            document.getElementById('modalSsl').checked = account.ssl == '1';
+            
+            showModal();
+        }
+        
+        function showModal() {
+            document.getElementById('mailboxModal').classList.add('show');
+            document.body.style.overflow = 'hidden';
+        }
+        
+        function closeModal() {
+            document.getElementById('mailboxModal').classList.remove('show');
+            document.body.style.overflow = '';
+        }
+        
+        // Close modal when clicking outside
+        document.getElementById('mailboxModal').addEventListener('click', function(e) {
+            if (e.target === this) {
+                closeModal();
             }
+        });
+        
+        // Test connection in modal
+        function testConnectionModal() {
+            const btn = document.getElementById('testBtn');
+            const originalText = btn.textContent;
+            
+            // Get form data
+            const data = {
+                server: document.getElementById('modalServer').value,
+                port: parseInt(document.getElementById('modalPort').value),
+                username: document.getElementById('modalUsername').value,
+                password: document.getElementById('modalPassword').value,
+                protocol: document.getElementById('modalProtocol').value,
+                ssl: document.getElementById('modalSsl').checked
+            };
+            
+            // Validate required fields
+            if (!data.server || !data.username || !data.password || !data.port) {
+                alert('请填写所有必需字段');
+                return;
+            }
+            
+            // Show loading state
+            btn.classList.add('btn-loading');
+            btn.textContent = '测试中...';
+            btn.disabled = true;
+            
+            fetch('api.php?action=test_connection', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(data)
+            })
+            .then(response => response.json())
+            .then(result => {
+                if (result.success) {
+                    alert('✅ ' + result.message);
+                } else {
+                    alert('❌ ' + result.message);
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('❌ 测试连接时发生错误');
+            })
+            .finally(() => {
+                btn.classList.remove('btn-loading');
+                btn.textContent = originalText;
+                btn.disabled = false;
+            });
+        }
+        
+        // Test connection for existing accounts
+        function testConnection(accountId) {
+            const btn = document.getElementById('test-btn-' + accountId);
+            const originalText = btn.textContent;
+            
+            // Get account data from table row
+            const row = btn.closest('tr');
+            const cells = row.querySelectorAll('td');
+            
+            const data = {
+                server: cells[2].textContent,
+                port: parseInt(cells[3].textContent.split('/')[0]),
+                username: cells[1].textContent,
+                password: '', // We'll need to get this from the server
+                protocol: cells[3].textContent.split('/')[1].toLowerCase(),
+                ssl: cells[4].textContent === '✅'
+            };
+            
+            // For existing accounts, we need to get the password from the database
+            // Let's use the account ID to fetch the data
+            testConnectionById(accountId, btn);
+        }
+        
+        function testConnectionById(accountId, btn) {
+            const originalText = btn.textContent;
+            
+            // Show loading state
+            btn.classList.add('btn-loading');
+            btn.textContent = '测试中...';
+            btn.disabled = true;
+            
+            fetch('api.php?action=test_connection', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                body: 'account_id=' + accountId
+            })
+            .then(response => response.json())
+            .then(result => {
+                if (result.success) {
+                    alert('✅ ' + result.message);
+                } else {
+                    alert('❌ ' + result.message);
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('❌ 测试连接时发生错误');
+            })
+            .finally(() => {
+                btn.classList.remove('btn-loading');
+                btn.textContent = originalText;
+                btn.disabled = false;
+            });
+        }
+        
+        // Delete account with confirmation
+        function deleteAccount(accountId) {
+            if (confirm('确认删除这个邮箱账号吗？此操作不可撤销。')) {
+                const form = document.createElement('form');
+                form.method = 'POST';
+                form.innerHTML = `
+                    <input type="hidden" name="action" value="delete">
+                    <input type="hidden" name="id" value="${accountId}">
+                `;
+                document.body.appendChild(form);
+                form.submit();
+            }
+        }
+        
+        // Legacy function for compatibility
+        function toggleEdit(id) {
+            // This function is no longer used but kept for compatibility
         }
     </script>
 </body>
