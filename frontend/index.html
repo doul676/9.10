@@ -266,28 +266,7 @@
             border: 1px solid #b3d7ff;
         }
         
-        .admin-link {
-            position: fixed;
-            top: 20px;
-            right: 20px;
-            background: rgba(255,255,255,0.15);
-            color: white;
-            padding: 12px 18px;
-            border-radius: 30px;
-            text-decoration: none;
-            backdrop-filter: blur(15px);
-            transition: all 0.3s ease;
-            font-size: 14px;
-            font-weight: 500;
-            border: 1px solid rgba(255,255,255,0.2);
-            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
-        }
-        
-        .admin-link:hover {
-            background: rgba(255,255,255,0.25);
-            transform: translateY(-3px);
-            box-shadow: 0 8px 25px rgba(0,0,0,0.15);
-        }
+
         
         @media (max-width: 768px) {
             .container {
@@ -310,18 +289,12 @@
                 grid-template-columns: 1fr;
             }
             
-            .admin-link {
-                position: static;
-                display: inline-block;
-                margin: 20px auto;
-                text-align: center;
-            }
+
         }
     </style>
 </head>
 <body>
-    <a href="../backend/login.php" class="admin-link">🔧 管理员后台</a>
-    
+
     <div class="container">
         <div class="header">
             <h1>📧 邮件查看系统</h1>
@@ -401,7 +374,7 @@
             mailDisplay.style.display = 'none';
             
             try {
-                const response = await fetch('../backend/api/get_mail.php', {
+                const response = await fetch('../admin/api/get_mail.php', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
