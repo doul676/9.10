@@ -127,21 +127,14 @@ function testExistingAccount($accountId) {
  */
 function performConnectionTest($server, $port, $username, $password, $protocol, $ssl) {
     try {
-        // 检查IMAP扩展
-        if (!extension_loaded('imap')) {
+        // 详细检查IMAP扩展状态
+        $imapInfo = checkImapExtension();
+        if (!$imapInfo['available']) {
             echo json_encode([
                 'success' => false,
-                'message' => '服务器未安装IMAP扩展，请联系管理员安装php-imap扩展',
-                'error_type' => 'extension_missing'
-            ]);
-            exit();
-        }
-        
-        if (!function_exists('imap_open')) {
-            echo json_encode([
-                'success' => false,
-                'message' => '服务器IMAP扩展不可用，请检查配置',
-                'error_type' => 'function_missing'
+                'message' => $imapInfo['message'],
+                'diagnostics' => $imapInfo['diagnostics'],
+                'error_type' => 'extension_issue'
             ]);
             exit();
         }
@@ -154,12 +147,21 @@ function performConnectionTest($server, $port, $username, $password, $protocol, 
             $fetcher->close();
             echo json_encode([
                 'success' => true,
-                'message' => '邮箱连接测试成功！服务器响应正常'
+                'message' => '✅ 邮箱连接测试成功！服务器响应正常',
+                'diagnostics' => [
+                    'imap_extension' => '✅ IMAP扩展已正确安装并可用',
+                    'connection_protocol' => strtoupper($protocol) . ($ssl ? ' with SSL' : ' without SSL'),
+                    'server_info' => $server . ':' . $port
+                ]
             ]);
         } else {
             echo json_encode([
                 'success' => false,
-                'message' => '邮箱连接失败，请检查配置信息',
+                'message' => '❌ 邮箱连接失败，请检查配置信息',
+                'diagnostics' => [
+                    'imap_extension' => '✅ IMAP扩展可用',
+                    'connection_issue' => '服务器连接失败，请检查服务器地址、端口和凭据'
+                ],
                 'error_type' => 'connection_failed'
             ]);
         }
@@ -168,22 +170,94 @@ function performConnectionTest($server, $port, $username, $password, $protocol, 
         // 根据错误类型提供更具体的提示
         $errorMessage = $e->getMessage();
         $errorType = 'unknown';
+        $diagnostics = ['imap_extension' => '✅ IMAP扩展可用'];
         
         if (strpos($errorMessage, 'SSL证书') !== false) {
             $errorType = 'ssl_error';
+            $diagnostics['ssl_issue'] = '❌ SSL证书验证失败';
+            $diagnostics['suggestion'] = '尝试关闭SSL选项或检查服务器SSL配置';
         } elseif (strpos($errorMessage, '连接被拒绝') !== false) {
             $errorType = 'connection_refused';
+            $diagnostics['connection_issue'] = '❌ 服务器拒绝连接';
+            $diagnostics['suggestion'] = '检查服务器地址和端口是否正确，防火墙是否允许连接';
         } elseif (strpos($errorMessage, '用户名或密码') !== false) {
             $errorType = 'auth_failed';
+            $diagnostics['auth_issue'] = '❌ 身份验证失败';
+            $diagnostics['suggestion'] = '检查邮箱地址和密码是否正确，某些邮箱需要应用专用密码';
         } elseif (strpos($errorMessage, '服务器地址') !== false) {
             $errorType = 'host_not_found';
+            $diagnostics['dns_issue'] = '❌ 无法解析服务器地址';
+            $diagnostics['suggestion'] = '检查服务器地址拼写是否正确，网络连接是否正常';
         }
         
         echo json_encode([
             'success' => false,
-            'message' => '连接测试失败：' . $errorMessage,
+            'message' => '❌ 连接测试失败：' . $errorMessage,
+            'diagnostics' => $diagnostics,
             'error_type' => $errorType
         ]);
     }
+}
+
+/**
+ * 检查IMAP扩展状态并提供诊断信息
+ */
+function checkImapExtension() {
+    $diagnostics = [];
+    
+    // 检查扩展是否已加载
+    if (!extension_loaded('imap')) {
+        return [
+            'available' => false,
+            'message' => '❌ 服务器未安装IMAP扩展',
+            'diagnostics' => [
+                'extension_status' => '❌ php-imap扩展未安装',
+                'solution' => '请联系管理员安装php-imap扩展',
+                'install_command' => 'apt-get install php-imap (Ubuntu/Debian) 或 yum install php-imap (CentOS/RHEL)',
+                'phpinfo_check' => '运行 php -m | grep imap 检查扩展是否已安装'
+            ]
+        ];
+    }
+    
+    $diagnostics['extension_status'] = '✅ php-imap扩展已安装';
+    
+    // 检查关键函数是否可用
+    $requiredFunctions = ['imap_open', 'imap_close', 'imap_errors', 'imap_last_error'];
+    $missingFunctions = [];
+    
+    foreach ($requiredFunctions as $function) {
+        if (!function_exists($function)) {
+            $missingFunctions[] = $function;
+        }
+    }
+    
+    if (!empty($missingFunctions)) {
+        $diagnostics['function_issue'] = '❌ 部分IMAP函数不可用: ' . implode(', ', $missingFunctions);
+        return [
+            'available' => false,
+            'message' => '❌ IMAP扩展功能不完整',
+            'diagnostics' => array_merge($diagnostics, [
+                'missing_functions' => $missingFunctions,
+                'solution' => '重新安装或重新配置php-imap扩展',
+                'check_phpinfo' => '运行 php -r "phpinfo();" | grep -i imap 查看详细信息'
+            ])
+        ];
+    }
+    
+    $diagnostics['functions_status'] = '✅ 所有必需的IMAP函数都可用';
+    
+    // 获取PHP和扩展版本信息
+    $diagnostics['php_version'] = 'PHP ' . phpversion();
+    
+    // 尝试获取IMAP扩展版本
+    if (function_exists('imap_get_quotaroot')) {
+        $diagnostics['imap_features'] = '✅ 扩展功能完整';
+    }
+    
+    return [
+        'available' => true,
+        'message' => '✅ IMAP扩展已正确安装并可用',
+        'diagnostics' => $diagnostics
+    ];
 }
 ?>

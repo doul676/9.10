@@ -35,7 +35,9 @@ if ($_POST) {
             $remarks = $_POST['remarks'] ?? '';
             
             if ($email && $password && $server && $port) {
-                $stmt = $db->prepare('INSERT INTO mail_accounts (email, username, password, server, port, protocol, ssl, remarks) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
+                // 使用北京时间作为创建时间
+                $beijingTime = new DateTime('now', new DateTimeZone('Asia/Shanghai'));
+                $stmt = $db->prepare('INSERT INTO mail_accounts (email, username, password, server, port, protocol, ssl, remarks, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
                 $stmt->bindValue(1, $email);
                 $stmt->bindValue(2, $username);
                 $stmt->bindValue(3, $password);
@@ -44,6 +46,8 @@ if ($_POST) {
                 $stmt->bindValue(6, $protocol);
                 $stmt->bindValue(7, $ssl);
                 $stmt->bindValue(8, $remarks);
+                $stmt->bindValue(9, $beijingTime->format('Y-m-d H:i:s'));
+                $stmt->bindValue(10, $beijingTime->format('Y-m-d H:i:s'));
                 $stmt->execute();
                 $message = '邮箱账号添加成功';
             } else {
@@ -69,7 +73,9 @@ if ($_POST) {
             $remarks = $_POST['remarks'] ?? '';
             
             if ($id > 0 && $email && $password && $server && $port) {
-                $stmt = $db->prepare('UPDATE mail_accounts SET email=?, username=?, password=?, server=?, port=?, protocol=?, ssl=?, remarks=?, updated_at=CURRENT_TIMESTAMP WHERE id=?');
+                // 使用北京时间作为更新时间
+                $beijingTime = new DateTime('now', new DateTimeZone('Asia/Shanghai'));
+                $stmt = $db->prepare('UPDATE mail_accounts SET email=?, username=?, password=?, server=?, port=?, protocol=?, ssl=?, remarks=?, updated_at=? WHERE id=?');
                 $stmt->bindValue(1, $email);
                 $stmt->bindValue(2, $username);
                 $stmt->bindValue(3, $password);
@@ -78,7 +84,8 @@ if ($_POST) {
                 $stmt->bindValue(6, $protocol);
                 $stmt->bindValue(7, $ssl);
                 $stmt->bindValue(8, $remarks);
-                $stmt->bindValue(9, $id);
+                $stmt->bindValue(9, $beijingTime->format('Y-m-d H:i:s'));
+                $stmt->bindValue(10, $id);
                 $stmt->execute();
                 $message = '邮箱账号更新成功';
             } else {
@@ -611,7 +618,7 @@ try {
             display: flex;
             flex-direction: column;
             gap: 10px;
-            max-width: 400px;
+            max-width: 500px; /* Increased width for diagnostic messages */
         }
         
         .toast {
@@ -620,11 +627,13 @@ try {
             color: white;
             font-weight: 500;
             box-shadow: 0 4px 15px rgba(0,0,0,0.2);
-            transform: translateX(400px);
+            transform: translateX(550px); /* Adjusted for wider container */
             opacity: 0;
             transition: all 0.3s ease;
             position: relative;
             overflow: hidden;
+            word-wrap: break-word;
+            white-space: pre-wrap; /* Preserve line breaks */
         }
         
         .toast.show {
@@ -786,10 +795,27 @@ try {
                                             <td><?php echo $account['ssl'] ? '✅ 是' : '❌ 否'; ?></td>
                                             <td><?php echo htmlspecialchars($account['remarks'] ?? ''); ?></td>
                                             <td><?php 
-                                                // 设置为北京时间显示
-                                                $created_time = new DateTime($account['created_at']);
-                                                $created_time->setTimezone(new DateTimeZone('Asia/Shanghai'));
-                                                echo $created_time->format('Y-m-d H:i'); 
+                                                // 显示北京时间
+                                                try {
+                                                    $timeString = $account['created_at'];
+                                                    
+                                                    // 智能判断时间格式：检查如果按北京时间解析，是否是未来时间
+                                                    $dt_as_beijing = new DateTime($timeString, new DateTimeZone('Asia/Shanghai'));
+                                                    $now = new DateTime('now', new DateTimeZone('Asia/Shanghai'));
+                                                    
+                                                    // 如果时间在未来超过1小时，很可能是UTC时间被误当作本地时间
+                                                    if ($dt_as_beijing->getTimestamp() > $now->getTimestamp() + 3600) {
+                                                        // 当作UTC时间处理，转换为北京时间
+                                                        $dt = new DateTime($timeString, new DateTimeZone('UTC'));
+                                                        $dt->setTimezone(new DateTimeZone('Asia/Shanghai'));
+                                                        echo $dt->format('Y-m-d H:i:s');
+                                                    } else {
+                                                        // 直接显示为北京时间
+                                                        echo $dt_as_beijing->format('Y-m-d H:i:s');
+                                                    }
+                                                } catch (Exception $e) {
+                                                    echo htmlspecialchars($account['created_at']);
+                                                }
                                             ?></td>
                                             <td>
                                                 <div class="actions">
@@ -882,7 +908,28 @@ try {
             
             const toast = document.createElement('div');
             toast.className = `toast ${type}`;
-            toast.textContent = message;
+            
+            // Handle multiline messages
+            if (message.includes('\n')) {
+                const lines = message.split('\n');
+                const content = document.createElement('div');
+                lines.forEach((line, index) => {
+                    const lineDiv = document.createElement('div');
+                    lineDiv.textContent = line;
+                    if (index === 0) {
+                        lineDiv.style.fontWeight = 'bold';
+                        lineDiv.style.marginBottom = '8px';
+                    } else if (line.trim().startsWith('•')) {
+                        lineDiv.style.marginLeft = '10px';
+                        lineDiv.style.fontSize = '13px';
+                        lineDiv.style.opacity = '0.9';
+                    }
+                    content.appendChild(lineDiv);
+                });
+                toast.appendChild(content);
+            } else {
+                toast.textContent = message;
+            }
             
             container.appendChild(toast);
             
@@ -1002,9 +1049,23 @@ try {
             .then(response => response.json())
             .then(result => {
                 if (result.success) {
-                    showToast('✅ ' + result.message, 'success');
+                    let message = result.message;
+                    if (result.diagnostics) {
+                        message += '\n\n诊断信息:';
+                        for (const [key, value] of Object.entries(result.diagnostics)) {
+                            message += '\n• ' + value;
+                        }
+                    }
+                    showToast(message, 'success', 5000);
                 } else {
-                    showToast('❌ ' + result.message, 'error');
+                    let message = result.message;
+                    if (result.diagnostics) {
+                        message += '\n\n诊断信息:';
+                        for (const [key, value] of Object.entries(result.diagnostics)) {
+                            message += '\n• ' + value;
+                        }
+                    }
+                    showToast(message, 'error', 8000);
                 }
             })
             .catch(error => {
@@ -1046,9 +1107,23 @@ try {
             .then(response => response.json())
             .then(result => {
                 if (result.success) {
-                    showToast('✅ ' + result.message, 'success');
+                    let message = result.message;
+                    if (result.diagnostics) {
+                        message += '\n\n诊断信息:';
+                        for (const [key, value] of Object.entries(result.diagnostics)) {
+                            message += '\n• ' + value;
+                        }
+                    }
+                    showToast(message, 'success', 5000);
                 } else {
-                    showToast('❌ ' + result.message, 'error');
+                    let message = result.message;
+                    if (result.diagnostics) {
+                        message += '\n\n诊断信息:';
+                        for (const [key, value] of Object.entries(result.diagnostics)) {
+                            message += '\n• ' + value;
+                        }
+                    }
+                    showToast(message, 'error', 8000);
                 }
             })
             .catch(error => {
