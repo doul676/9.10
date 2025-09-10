@@ -17,7 +17,7 @@
 邮件查看系统/
 ├── frontend/                 # 前端文件
 │   └── index.html            # 用户邮件查看页面
-├── backend/                  # 后端文件
+├── admin/                    # 后端文件
 │   ├── login.php            # 管理员登录页面
 │   ├── dashboard.php        # 管理员控制面板
 │   ├── init_admin.php       # 管理员初始化脚本
@@ -57,7 +57,7 @@
 
 ### 4. 初始化管理员账号
 
-访问 `http://你的域名/backend/init_admin.php` 进行初始化
+访问 `http://你的域名/admin/init_admin.php` 进行初始化
 
 初始化成功后会显示：
 ```
@@ -78,14 +78,14 @@
 ### 6. 测试访问
 
 - 前端页面：`http://你的域名/frontend/index.html`
-- 管理后台：`http://你的域名/backend/login.php`
+- 管理后台：`http://你的域名/admin/login.php`
 
 ## 使用说明
 
 ### 管理员操作
 
 1. **登录后台**
-   - 访问 `backend/login.php`
+   - 访问 `admin/login.php`
    - 使用账号 `admin` 密码 `admin` 登录
    - 登录后建议修改密码
 
