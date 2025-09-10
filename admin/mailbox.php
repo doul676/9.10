@@ -697,24 +697,28 @@ try {
                             <table class="table">
                                 <thead>
                                     <tr>
-                                        <th>邮箱地址</th>
-                                        <th>用户名</th>
-                                        <th>服务器</th>
-                                        <th>端口/协议</th>
-                                        <th>SSL</th>
+                                        <th>序号</th>
+                                        <th>邮箱账号</th>
+                                        <th>邮箱密码</th>
+                                        <th>服务器地址</th>
+                                        <th>协议/端口</th>
+                                        <th>是否启用SSL安全连接</th>
                                         <th>备注</th>
-                                        <th>创建时间</th>
+                                        <th>添加时间</th>
                                         <th>操作</th>
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    <?php foreach ($accounts as $account): ?>
+                                    <?php 
+                                    $index = 1;
+                                    foreach ($accounts as $account): ?>
                                         <tr>
+                                            <td><?php echo $index++; ?></td>
                                             <td><?php echo htmlspecialchars($account['email']); ?></td>
-                                            <td><?php echo htmlspecialchars($account['username']); ?></td>
+                                            <td><?php echo str_repeat('*', min(8, strlen($account['password']))); ?></td>
                                             <td><?php echo htmlspecialchars($account['server']); ?></td>
-                                            <td><?php echo $account['port'] . '/' . strtoupper($account['protocol']); ?></td>
-                                            <td><?php echo $account['ssl'] ? '✅' : '❌'; ?></td>
+                                            <td><?php echo strtoupper($account['protocol']) . '/' . $account['port']; ?></td>
+                                            <td><?php echo $account['ssl'] ? '✅ 是' : '❌ 否'; ?></td>
                                             <td><?php echo htmlspecialchars($account['remarks'] ?? ''); ?></td>
                                             <td><?php echo date('Y-m-d H:i', strtotime($account['created_at'])); ?></td>
                                             <td>
@@ -749,23 +753,26 @@ try {
                     
                     <div class="form-row">
                         <div class="form-group">
-                            <label for="modalEmail">邮箱地址 *</label>
+                            <label for="modalEmail">邮箱账号 *</label>
                             <input type="email" id="modalEmail" name="email" required placeholder="user@example.com">
                         </div>
                         <div class="form-group">
-                            <label for="modalUsername">用户名 *</label>
-                            <input type="text" id="modalUsername" name="username" required placeholder="通常与邮箱地址相同">
+                            <label for="modalPassword">邮箱密码 *</label>
+                            <input type="password" id="modalPassword" name="password" required placeholder="邮箱密码或授权码">
                         </div>
                     </div>
                     
                     <div class="form-row">
                         <div class="form-group">
-                            <label for="modalPassword">密码 *</label>
-                            <input type="password" id="modalPassword" name="password" required placeholder="邮箱密码或授权码">
-                        </div>
-                        <div class="form-group">
                             <label for="modalServer">服务器地址 *</label>
                             <input type="text" id="modalServer" name="server" required placeholder="imap.example.com">
+                        </div>
+                        <div class="form-group">
+                            <label for="modalProtocol">协议</label>
+                            <select id="modalProtocol" name="protocol" onchange="updatePortByProtocol()">
+                                <option value="imap" selected>IMAP</option>
+                                <option value="pop3">POP3</option>
+                            </select>
                         </div>
                     </div>
                     
@@ -775,11 +782,10 @@ try {
                             <input type="number" id="modalPort" name="port" value="993" required>
                         </div>
                         <div class="form-group">
-                            <label for="modalProtocol">协议</label>
-                            <select id="modalProtocol" name="protocol">
-                                <option value="imap" selected>IMAP</option>
-                                <option value="pop3">POP3</option>
-                            </select>
+                            <div class="checkbox-group">
+                                <input type="checkbox" id="modalSsl" name="ssl" checked onchange="updatePortBySsl()">
+                                <label for="modalSsl">是否启用SSL安全连接</label>
+                            </div>
                         </div>
                     </div>
                     
@@ -789,10 +795,8 @@ try {
                             <input type="text" id="modalRemarks" name="remarks" placeholder="可选备注信息">
                         </div>
                         <div class="form-group">
-                            <div class="checkbox-group">
-                                <input type="checkbox" id="modalSsl" name="ssl" checked>
-                                <label for="modalSsl">启用SSL安全连接</label>
-                            </div>
+                            <label for="modalUsername">用户名 *</label>
+                            <input type="text" id="modalUsername" name="username" required placeholder="通常与邮箱账号相同">
                         </div>
                     </div>
                 </div>
@@ -815,8 +819,11 @@ try {
             
             // Reset form
             document.getElementById('mailboxForm').reset();
-            document.getElementById('modalPort').value = '993';
+            document.getElementById('modalProtocol').value = 'imap';
             document.getElementById('modalSsl').checked = true;
+            
+            // Set default port based on protocol and SSL
+            updatePortByProtocol();
             
             showModal();
         }
@@ -977,6 +984,31 @@ try {
                 `;
                 document.body.appendChild(form);
                 form.submit();
+            }
+        }
+        
+        // Dynamic port switching based on protocol and SSL
+        function updatePortByProtocol() {
+            const protocol = document.getElementById('modalProtocol').value;
+            const ssl = document.getElementById('modalSsl').checked;
+            const portInput = document.getElementById('modalPort');
+            
+            if (protocol === 'imap') {
+                portInput.value = ssl ? '993' : '143';
+            } else if (protocol === 'pop3') {
+                portInput.value = ssl ? '995' : '110';
+            }
+        }
+        
+        function updatePortBySsl() {
+            const protocol = document.getElementById('modalProtocol').value;
+            const ssl = document.getElementById('modalSsl').checked;
+            const portInput = document.getElementById('modalPort');
+            
+            if (protocol === 'imap') {
+                portInput.value = ssl ? '993' : '143';
+            } else if (protocol === 'pop3') {
+                portInput.value = ssl ? '995' : '110';
             }
         }
         

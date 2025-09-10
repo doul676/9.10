@@ -29,6 +29,7 @@ $mailDb->exec('CREATE TABLE IF NOT EXISTS mail_accounts (
     port INTEGER NOT NULL,
     protocol TEXT NOT NULL CHECK(protocol IN ("imap", "pop3")),
     ssl BOOLEAN DEFAULT 0,
+    remarks TEXT DEFAULT "",
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 )');
