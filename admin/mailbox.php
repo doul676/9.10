@@ -107,22 +107,14 @@ if ($_POST) {
         } elseif ($action === 'add_server') {
             $serverName = $_POST['server_name'] ?? '';
             $serverAddress = $_POST['server_address'] ?? '';
-            $defaultPortImap = (int)($_POST['default_port_imap'] ?? 993);
-            $defaultPortPop3 = (int)($_POST['default_port_pop3'] ?? 995);
-            $sslEnabled = isset($_POST['ssl_enabled']) ? 1 : 0;
-            $remarks = $_POST['server_remarks'] ?? '';
             
             if ($serverName && $serverAddress) {
                 $beijingTime = new DateTime('now', new DateTimeZone('Asia/Shanghai'));
-                $stmt = $db->prepare('INSERT INTO server_addresses (server_name, server_address, default_port_imap, default_port_pop3, ssl_enabled, remarks, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
+                $stmt = $db->prepare('INSERT INTO server_addresses (server_name, server_address, created_at, updated_at) VALUES (?, ?, ?, ?)');
                 $stmt->bindValue(1, $serverName);
                 $stmt->bindValue(2, $serverAddress);
-                $stmt->bindValue(3, $defaultPortImap);
-                $stmt->bindValue(4, $defaultPortPop3);
-                $stmt->bindValue(5, $sslEnabled);
-                $stmt->bindValue(6, $remarks);
-                $stmt->bindValue(7, $beijingTime->format('Y-m-d H:i:s'));
-                $stmt->bindValue(8, $beijingTime->format('Y-m-d H:i:s'));
+                $stmt->bindValue(3, $beijingTime->format('Y-m-d H:i:s'));
+                $stmt->bindValue(4, $beijingTime->format('Y-m-d H:i:s'));
                 $stmt->execute();
                 $message = '服务器地址添加成功';
             } else {
@@ -132,22 +124,14 @@ if ($_POST) {
             $id = (int)($_POST['server_id'] ?? 0);
             $serverName = $_POST['server_name'] ?? '';
             $serverAddress = $_POST['server_address'] ?? '';
-            $defaultPortImap = (int)($_POST['default_port_imap'] ?? 993);
-            $defaultPortPop3 = (int)($_POST['default_port_pop3'] ?? 995);
-            $sslEnabled = isset($_POST['ssl_enabled']) ? 1 : 0;
-            $remarks = $_POST['server_remarks'] ?? '';
             
             if ($id > 0 && $serverName && $serverAddress) {
                 $beijingTime = new DateTime('now', new DateTimeZone('Asia/Shanghai'));
-                $stmt = $db->prepare('UPDATE server_addresses SET server_name=?, server_address=?, default_port_imap=?, default_port_pop3=?, ssl_enabled=?, remarks=?, updated_at=? WHERE id=?');
+                $stmt = $db->prepare('UPDATE server_addresses SET server_name=?, server_address=?, updated_at=? WHERE id=?');
                 $stmt->bindValue(1, $serverName);
                 $stmt->bindValue(2, $serverAddress);
-                $stmt->bindValue(3, $defaultPortImap);
-                $stmt->bindValue(4, $defaultPortPop3);
-                $stmt->bindValue(5, $sslEnabled);
-                $stmt->bindValue(6, $remarks);
-                $stmt->bindValue(7, $beijingTime->format('Y-m-d H:i:s'));
-                $stmt->bindValue(8, $id);
+                $stmt->bindValue(3, $beijingTime->format('Y-m-d H:i:s'));
+                $stmt->bindValue(4, $id);
                 $stmt->execute();
                 $message = '服务器地址更新成功';
             } else {
@@ -162,37 +146,45 @@ if ($_POST) {
                 $message = '服务器地址删除成功';
             }
         } elseif ($action === 'batch_add') {
-            $emails = $_POST['emails'] ?? '';
-            $password = $_POST['batch_password'] ?? '';
+            $emailsData = $_POST['emails'] ?? '';
             $server = $_POST['batch_server'] ?? '';
             $port = (int)($_POST['batch_port'] ?? 0);
             $protocol = $_POST['batch_protocol'] ?? 'imap';
             $ssl = isset($_POST['batch_ssl']) ? 1 : 0;
             $remarks = $_POST['batch_remarks'] ?? '';
             
-            if ($emails && $password && $server && $port) {
-                $emailList = array_filter(array_map('trim', explode("\n", $emails)));
+            if ($emailsData && $server && $port) {
+                $emailLines = array_filter(array_map('trim', explode("\n", $emailsData)));
                 $successCount = 0;
                 $failCount = 0;
                 $beijingTime = new DateTime('now', new DateTimeZone('Asia/Shanghai'));
                 
-                foreach ($emailList as $email) {
-                    if (filter_var($email, FILTER_VALIDATE_EMAIL)) {
-                        try {
-                            $stmt = $db->prepare('INSERT INTO mail_accounts (email, username, password, server, port, protocol, ssl, remarks, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
-                            $stmt->bindValue(1, $email);
-                            $stmt->bindValue(2, $email);
-                            $stmt->bindValue(3, $password);
-                            $stmt->bindValue(4, $server);
-                            $stmt->bindValue(5, $port);
-                            $stmt->bindValue(6, $protocol);
-                            $stmt->bindValue(7, $ssl);
-                            $stmt->bindValue(8, $remarks);
-                            $stmt->bindValue(9, $beijingTime->format('Y-m-d H:i:s'));
-                            $stmt->bindValue(10, $beijingTime->format('Y-m-d H:i:s'));
-                            $stmt->execute();
-                            $successCount++;
-                        } catch (Exception $e) {
+                foreach ($emailLines as $line) {
+                    // Parse email----password format
+                    if (strpos($line, '----') !== false) {
+                        list($email, $password) = explode('----', $line, 2);
+                        $email = trim($email);
+                        $password = trim($password);
+                        
+                        if (filter_var($email, FILTER_VALIDATE_EMAIL) && !empty($password)) {
+                            try {
+                                $stmt = $db->prepare('INSERT INTO mail_accounts (email, username, password, server, port, protocol, ssl, remarks, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+                                $stmt->bindValue(1, $email);
+                                $stmt->bindValue(2, $email);
+                                $stmt->bindValue(3, $password);
+                                $stmt->bindValue(4, $server);
+                                $stmt->bindValue(5, $port);
+                                $stmt->bindValue(6, $protocol);
+                                $stmt->bindValue(7, $ssl);
+                                $stmt->bindValue(8, $remarks);
+                                $stmt->bindValue(9, $beijingTime->format('Y-m-d H:i:s'));
+                                $stmt->bindValue(10, $beijingTime->format('Y-m-d H:i:s'));
+                                $stmt->execute();
+                                $successCount++;
+                            } catch (Exception $e) {
+                                $failCount++;
+                            }
+                        } else {
                             $failCount++;
                         }
                     } else {
@@ -239,10 +231,6 @@ try {
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             server_name TEXT NOT NULL,
             server_address TEXT NOT NULL,
-            default_port_imap INTEGER DEFAULT 993,
-            default_port_pop3 INTEGER DEFAULT 995,
-            ssl_enabled INTEGER DEFAULT 1,
-            remarks TEXT DEFAULT "",
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )');
@@ -1085,15 +1073,12 @@ try {
                     <input type="hidden" name="action" value="batch_add">
                     
                     <div class="form-group">
-                        <label for="batchEmails">邮箱地址列表 * (每行一个邮箱)</label>
-                        <textarea id="batchEmails" name="emails" required placeholder="user1@example.com&#10;user2@example.com&#10;user3@example.com" rows="8" style="width: 100%; padding: 12px 16px; border: 2px solid #e5e7eb; border-radius: 8px; font-size: 14px; resize: vertical;"></textarea>
+                        <label for="batchEmails">邮箱地址列表 * (格式：邮箱账号----邮箱密码，每行一个)</label>
+                        <textarea id="batchEmails" name="emails" required placeholder="user1@example.com----password1&#10;user2@example.com----password2&#10;user3@example.com----password3" rows="8" style="width: 100%; padding: 12px 16px; border: 2px solid #e5e7eb; border-radius: 8px; font-size: 14px; resize: vertical;"></textarea>
+                        <small style="color: #64748b; font-size: 12px; margin-top: 5px; display: block;">⚠️ 每行格式：邮箱账号----邮箱密码（四个短横线分隔）</small>
                     </div>
                     
                     <div class="form-row">
-                        <div class="form-group">
-                            <label for="batchPassword">统一密码 *</label>
-                            <input type="password" id="batchPassword" name="batch_password" required placeholder="邮箱密码或授权码">
-                        </div>
                         <div class="form-group">
                             <label for="batchServer">服务器地址 *</label>
                             <div style="display: flex; gap: 10px; align-items: flex-end;">
@@ -1178,30 +1163,6 @@ try {
                                 </div>
                             </div>
                             
-                            <div class="form-row">
-                                <div class="form-group">
-                                    <label for="defaultPortImap">IMAP默认端口</label>
-                                    <input type="number" id="defaultPortImap" name="default_port_imap" value="993">
-                                </div>
-                                <div class="form-group">
-                                    <label for="defaultPortPop3">POP3默认端口</label>
-                                    <input type="number" id="defaultPortPop3" name="default_port_pop3" value="995">
-                                </div>
-                            </div>
-                            
-                            <div class="form-row">
-                                <div class="form-group">
-                                    <div class="checkbox-group">
-                                        <input type="checkbox" id="sslEnabled" name="ssl_enabled" checked>
-                                        <label for="sslEnabled">默认启用SSL</label>
-                                    </div>
-                                </div>
-                                <div class="form-group">
-                                    <label for="serverRemarks">备注</label>
-                                    <input type="text" id="serverRemarks" name="server_remarks" placeholder="可选备注信息">
-                                </div>
-                            </div>
-                            
                             <div style="text-align: right;">
                                 <button type="button" class="btn" onclick="resetServerForm()">重置</button>
                                 <button type="submit" class="btn" id="serverSubmitBtn">添加服务器</button>
@@ -1223,24 +1184,20 @@ try {
                                 <table class="table">
                                     <thead>
                                         <tr>
+                                            <th>序号</th>
                                             <th>服务器名称</th>
                                             <th>服务器地址</th>
-                                            <th>IMAP端口</th>
-                                            <th>POP3端口</th>
-                                            <th>SSL</th>
-                                            <th>备注</th>
                                             <th>操作</th>
                                         </tr>
                                     </thead>
                                     <tbody id="serverTableBody">
-                                        <?php foreach ($serverAddresses as $serverAddr): ?>
+                                        <?php 
+                                        $serverIndex = 1;
+                                        foreach ($serverAddresses as $serverAddr): ?>
                                             <tr id="server-row-<?php echo $serverAddr['id']; ?>">
+                                                <td><?php echo $serverIndex++; ?></td>
                                                 <td><?php echo htmlspecialchars($serverAddr['server_name']); ?></td>
                                                 <td><?php echo htmlspecialchars($serverAddr['server_address']); ?></td>
-                                                <td><?php echo $serverAddr['default_port_imap']; ?></td>
-                                                <td><?php echo $serverAddr['default_port_pop3']; ?></td>
-                                                <td><?php echo $serverAddr['ssl_enabled'] ? '✅' : '❌'; ?></td>
-                                                <td><?php echo htmlspecialchars($serverAddr['remarks'] ?? ''); ?></td>
                                                 <td>
                                                     <div class="actions">
                                                         <button type="button" class="btn btn-small" onclick="editServer(<?php echo htmlspecialchars(json_encode($serverAddr)); ?>)">编辑</button>
@@ -1643,18 +1600,6 @@ try {
                 const serverInfo = JSON.parse(dropdown.value);
                 document.getElementById('batchServer').value = serverInfo.server_address;
                 
-                const protocol = document.getElementById('batchProtocol').value;
-                const ssl = document.getElementById('batchSsl').checked;
-                
-                if (protocol === 'imap') {
-                    document.getElementById('batchPort').value = ssl ? serverInfo.default_port_imap : '143';
-                } else {
-                    document.getElementById('batchPort').value = ssl ? serverInfo.default_port_pop3 : '110';
-                }
-                
-                document.getElementById('batchSsl').checked = serverInfo.ssl_enabled == 1;
-                updateBatchPortBySsl();
-                
                 // Reset dropdown
                 dropdown.value = '';
             }
@@ -1688,9 +1633,6 @@ try {
             document.getElementById('serverAction').value = 'add_server';
             document.getElementById('serverId').value = '';
             document.getElementById('serverSubmitBtn').textContent = '添加服务器';
-            document.getElementById('defaultPortImap').value = '993';
-            document.getElementById('defaultPortPop3').value = '995';
-            document.getElementById('sslEnabled').checked = true;
         }
         
         function editServer(serverData) {
@@ -1698,10 +1640,6 @@ try {
             document.getElementById('serverId').value = serverData.id;
             document.getElementById('serverName').value = serverData.server_name;
             document.getElementById('serverAddress').value = serverData.server_address;
-            document.getElementById('defaultPortImap').value = serverData.default_port_imap;
-            document.getElementById('defaultPortPop3').value = serverData.default_port_pop3;
-            document.getElementById('sslEnabled').checked = serverData.ssl_enabled == 1;
-            document.getElementById('serverRemarks').value = serverData.remarks || '';
             document.getElementById('serverSubmitBtn').textContent = '保存修改';
         }
         
@@ -1724,18 +1662,6 @@ try {
             if (dropdown.value) {
                 const serverInfo = JSON.parse(dropdown.value);
                 document.getElementById('modalServer').value = serverInfo.server_address;
-                
-                const protocol = document.getElementById('modalProtocol').value;
-                const ssl = document.getElementById('modalSsl').checked;
-                
-                if (protocol === 'imap') {
-                    document.getElementById('modalPort').value = ssl ? serverInfo.default_port_imap : '143';
-                } else {
-                    document.getElementById('modalPort').value = ssl ? serverInfo.default_port_pop3 : '110';
-                }
-                
-                document.getElementById('modalSsl').checked = serverInfo.ssl_enabled == 1;
-                updatePortBySsl();
                 
                 // Reset dropdown
                 dropdown.value = '';
