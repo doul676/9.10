@@ -235,10 +235,12 @@
             max-height: 400px;
             overflow-y: auto;
             white-space: pre-wrap;
-            font-family: 'Courier New', monospace;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             font-size: 14px;
             line-height: 1.6;
             border: 1px solid #e9ecef;
+            word-wrap: break-word;
+            word-break: break-word;
         }
         
         .message {
@@ -331,10 +333,7 @@
                         <span class="mail-meta-label">时间:</span>
                         <span id="mailDate"></span>
                     </div>
-                    <div class="mail-meta-item">
-                        <span class="mail-meta-label">大小:</span>
-                        <span id="mailSize"></span>
-                    </div>
+                    <!-- 邮件大小显示已移除，按要求不显示邮件大小 -->
                 </div>
             </div>
             
@@ -414,7 +413,7 @@
             document.getElementById('mailFrom').textContent = mail.from || '未知';
             document.getElementById('mailTo').textContent = mail.to || '未知';
             document.getElementById('mailDate').textContent = mail.date || '未知';
-            document.getElementById('mailSize').textContent = formatFileSize(mail.size || 0);
+            // 邮件大小不再显示，按要求隐藏
             document.getElementById('mailBody').textContent = mail.body || '(邮件内容为空)';
             
             document.getElementById('mailDisplay').style.display = 'block';

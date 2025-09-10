@@ -184,10 +184,17 @@ class MailFetcher {
             // 解码主题
             $subject = $this->decodeHeader($header->subject ?? '');
             
-            // 发件人信息
+            // 发件人信息 - 完整格式显示 "姓名 <email@domain.com>"
             $from = $header->from[0] ?? null;
             $fromEmail = $from ? $from->mailbox . '@' . $from->host : '未知';
-            $fromName = $from && isset($from->personal) ? $this->decodeHeader($from->personal) : $fromEmail;
+            $fromName = $from && isset($from->personal) ? $this->decodeHeader($from->personal) : '';
+            
+            // 构建完整的发件人显示格式
+            if ($fromName && $fromName !== $fromEmail) {
+                $fromDisplay = $fromName . ' <' . $fromEmail . '>';
+            } else {
+                $fromDisplay = $fromEmail;
+            }
             
             // 收件人信息
             $to = $header->to[0] ?? null;
@@ -202,8 +209,9 @@ class MailFetcher {
                 'success' => true,
                 'mail' => [
                     'subject' => $subject,
-                    'from' => $fromName,
+                    'from' => $fromDisplay,
                     'from_email' => $fromEmail,
+                    'from_name' => $fromName,
                     'to' => $toEmail,
                     'date' => $formattedDate,
                     'body' => $body,
@@ -232,20 +240,35 @@ class MailFetcher {
             return $this->decodeBody($body, $structure);
         }
         
-        // 多部分邮件
-        $body = '';
+        // 多部分邮件 - 优先查找纯文本，其次HTML
+        $textBody = '';
+        $htmlBody = '';
+        
         for ($i = 1; $i <= count($structure->parts); $i++) {
             $part = $structure->parts[$i - 1];
             
             // 查找文本部分
             if ($part->type == 0) { // 文本类型
                 $partBody = imap_fetchbody($this->connection, $mailNumber, $i);
-                $body .= $this->decodeBody($partBody, $part);
-                break; // 只取第一个文本部分
+                $decodedBody = $this->decodeBody($partBody, $part);
+                
+                // 检查是否为HTML内容
+                if (isset($part->subtype) && strtolower($part->subtype) === 'html') {
+                    $htmlBody = $decodedBody;
+                } else {
+                    $textBody = $decodedBody;
+                }
             }
         }
         
-        return $body ?: '无法读取邮件内容';
+        // 优先返回纯文本，如果没有则转换HTML为文本
+        if (!empty($textBody)) {
+            return $this->formatTextContent($textBody);
+        } elseif (!empty($htmlBody)) {
+            return $this->htmlToText($htmlBody);
+        }
+        
+        return '无法读取邮件内容';
     }
     
     /**
@@ -309,6 +332,46 @@ class MailFetcher {
         }
         
         return $decoded;
+    }
+    
+    /**
+     * 格式化纯文本内容 - 提升可读性
+     */
+    private function formatTextContent($text) {
+        // 清理内容
+        $text = trim($text);
+        
+        // 移除多余的空行（保留段落分隔）
+        $text = preg_replace('/\n{3,}/', "\n\n", $text);
+        
+        // 移除行首行尾空白但保留缩进
+        $lines = explode("\n", $text);
+        $formattedLines = [];
+        
+        foreach ($lines as $line) {
+            $formattedLines[] = rtrim($line);
+        }
+        
+        return implode("\n", $formattedLines);
+    }
+    
+    /**
+     * 将HTML内容转换为格式化的纯文本
+     */
+    private function htmlToText($html) {
+        // 基本HTML标签处理
+        $html = str_replace(['<br>', '<br/>', '<br />'], "\n", $html);
+        $html = str_replace(['</p>', '</div>'], "\n\n", $html);
+        $html = str_replace(['</h1>', '</h2>', '</h3>', '</h4>', '</h5>', '</h6>'], "\n\n", $html);
+        
+        // 移除所有HTML标签
+        $text = strip_tags($html);
+        
+        // 解码HTML实体
+        $text = html_entity_decode($text, ENT_QUOTES, 'UTF-8');
+        
+        // 格式化文本
+        return $this->formatTextContent($text);
     }
     
     /**
