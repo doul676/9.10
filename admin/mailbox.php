@@ -145,6 +145,19 @@ if ($_POST) {
                 $stmt->execute();
                 $message = '服务器地址删除成功';
             }
+        } elseif ($action === 'batch_delete_servers') {
+            $ids = $_POST['server_ids'] ?? [];
+            if (!empty($ids) && is_array($ids)) {
+                $placeholders = str_repeat('?,', count($ids) - 1) . '?';
+                $stmt = $db->prepare("DELETE FROM server_addresses WHERE id IN ($placeholders)");
+                foreach ($ids as $index => $id) {
+                    $stmt->bindValue($index + 1, (int)$id);
+                }
+                $stmt->execute();
+                $message = '成功删除 ' . count($ids) . ' 个服务器地址';
+            } else {
+                $error = '请选择要删除的服务器地址';
+            }
         } elseif ($action === 'batch_add') {
             $emailsData = $_POST['emails'] ?? '';
             $server = $_POST['batch_server'] ?? '';
@@ -1013,7 +1026,7 @@ try {
                                 </div>
                                 <div style="flex: 0 0 auto;">
                                     <select id="serverDropdown" onchange="fillServerInfo()" style="padding: 12px 16px; border: 2px solid #e5e7eb; border-radius: 8px;">
-                                        <option value="">快捷选择服务器</option>
+                                        <option value="">选择服务器</option>
                                         <?php foreach ($serverAddresses as $serverAddr): ?>
                                             <option value="<?php echo htmlspecialchars(json_encode($serverAddr)); ?>">
                                                 <?php echo htmlspecialchars($serverAddr['server_name']); ?>
@@ -1087,7 +1100,7 @@ try {
                                 </div>
                                 <div style="flex: 0 0 auto;">
                                     <select id="batchServerDropdown" onchange="fillBatchServerInfo()" style="padding: 12px 16px; border: 2px solid #e5e7eb; border-radius: 8px;">
-                                        <option value="">快捷选择服务器</option>
+                                        <option value="">选择服务器</option>
                                         <?php foreach ($serverAddresses as $serverAddr): ?>
                                             <option value="<?php echo htmlspecialchars(json_encode($serverAddr)); ?>">
                                                 <?php echo htmlspecialchars($serverAddr['server_name']); ?>
@@ -1148,7 +1161,7 @@ try {
                         <h4 style="margin: 0; font-size: 16px;">添加新服务器地址</h4>
                     </div>
                     <div class="card-body" style="padding: 20px;">
-                        <form id="serverForm" method="POST">
+                        <form id="serverForm" method="POST" onsubmit="return handleServerFormSubmit(event)">
                             <input type="hidden" name="action" id="serverAction" value="add_server">
                             <input type="hidden" name="server_id" id="serverId" value="">
                             
@@ -1180,10 +1193,19 @@ try {
                         <?php if (empty($serverAddresses)): ?>
                             <p>暂无服务器地址，请添加第一个服务器地址。</p>
                         <?php else: ?>
+                            <div style="margin-bottom: 15px; display: flex; gap: 10px; align-items: center;">
+                                <button type="button" class="btn btn-danger" onclick="batchDeleteServers()" id="batchDeleteServersBtn" style="display: none;">
+                                    🗑️ 批量删除选中
+                                </button>
+                                <span id="selectedServerCount" style="color: #64748b; font-size: 14px;"></span>
+                            </div>
                             <div class="table-container">
                                 <table class="table">
                                     <thead>
                                         <tr>
+                                            <th style="width: 40px;">
+                                                <input type="checkbox" id="selectAllServers" onchange="toggleSelectAllServers()">
+                                            </th>
                                             <th>序号</th>
                                             <th>服务器名称</th>
                                             <th>服务器地址</th>
@@ -1195,6 +1217,9 @@ try {
                                         $serverIndex = 1;
                                         foreach ($serverAddresses as $serverAddr): ?>
                                             <tr id="server-row-<?php echo $serverAddr['id']; ?>">
+                                                <td>
+                                                    <input type="checkbox" class="server-checkbox" value="<?php echo $serverAddr['id']; ?>" onchange="updateBatchDeleteServersButton()">
+                                                </td>
                                                 <td><?php echo $serverIndex++; ?></td>
                                                 <td><?php echo htmlspecialchars($serverAddr['server_name']); ?></td>
                                                 <td><?php echo htmlspecialchars($serverAddr['server_address']); ?></td>
@@ -1666,6 +1691,142 @@ try {
                 // Reset dropdown
                 dropdown.value = '';
             }
+        }
+        
+        // Batch delete servers functionality
+        function toggleSelectAllServers() {
+            const selectAll = document.getElementById('selectAllServers');
+            const checkboxes = document.querySelectorAll('.server-checkbox');
+            checkboxes.forEach(checkbox => {
+                checkbox.checked = selectAll.checked;
+            });
+            updateBatchDeleteServersButton();
+        }
+        
+        function updateBatchDeleteServersButton() {
+            const checkboxes = document.querySelectorAll('.server-checkbox:checked');
+            const batchDeleteBtn = document.getElementById('batchDeleteServersBtn');
+            const selectedCount = document.getElementById('selectedServerCount');
+            
+            if (checkboxes.length > 0) {
+                batchDeleteBtn.style.display = 'inline-block';
+                selectedCount.textContent = `已选择 ${checkboxes.length} 个服务器地址`;
+            } else {
+                batchDeleteBtn.style.display = 'none';
+                selectedCount.textContent = '';
+            }
+        }
+        
+        function batchDeleteServers() {
+            const checkboxes = document.querySelectorAll('.server-checkbox:checked');
+            const ids = Array.from(checkboxes).map(cb => cb.value);
+            
+            if (ids.length === 0) {
+                showToast('请选择要删除的服务器地址', 'error');
+                return;
+            }
+            
+            if (confirm(`确认删除选中的 ${ids.length} 个服务器地址吗？此操作不可撤销。`)) {
+                const form = document.createElement('form');
+                form.method = 'POST';
+                form.innerHTML = `
+                    <input type="hidden" name="action" value="batch_delete_servers">
+                    ${ids.map(id => `<input type="hidden" name="server_ids[]" value="${id}">`).join('')}
+                `;
+                document.body.appendChild(form);
+                form.submit();
+            }
+        }
+        
+        // Handle server form submission with AJAX to prevent modal from closing
+        function handleServerFormSubmit(event) {
+            event.preventDefault();
+            
+            const form = document.getElementById('serverForm');
+            const formData = new FormData(form);
+            const submitBtn = document.getElementById('serverSubmitBtn');
+            const originalText = submitBtn.textContent;
+            const action = document.getElementById('serverAction').value;
+            
+            // Show loading state
+            submitBtn.disabled = true;
+            submitBtn.textContent = '提交中...';
+            
+            fetch('api.php', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(result => {
+                if (result.success) {
+                    showToast(result.message, 'success');
+                    resetServerForm();
+                    // Refresh server list in dropdowns
+                    refreshServerDropdowns();
+                    // Refresh server table
+                    refreshServerTable();
+                } else {
+                    showToast(result.message, 'error');
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                showToast('提交失败，请重试', 'error');
+            })
+            .finally(() => {
+                submitBtn.disabled = false;
+                submitBtn.textContent = originalText;
+            });
+            
+            return false;
+        }
+        
+        // Refresh server dropdowns without closing modal
+        function refreshServerDropdowns() {
+            fetch('api.php?action=get_servers')
+            .then(response => response.json())
+            .then(result => {
+                if (result.success) {
+                    updateServerDropdowns(result.servers);
+                }
+            })
+            .catch(error => {
+                console.error('Error refreshing server dropdowns:', error);
+            });
+        }
+        
+        // Update server dropdown options
+        function updateServerDropdowns(servers) {
+            const dropdowns = [
+                document.getElementById('serverDropdown'),
+                document.getElementById('batchServerDropdown')
+            ];
+            
+            dropdowns.forEach(dropdown => {
+                if (dropdown) {
+                    // Clear existing options except the first one
+                    while (dropdown.options.length > 1) {
+                        dropdown.removeChild(dropdown.lastChild);
+                    }
+                    
+                    // Add new options
+                    servers.forEach(server => {
+                        const option = document.createElement('option');
+                        option.value = JSON.stringify(server);
+                        option.textContent = server.server_name;
+                        dropdown.appendChild(option);
+                    });
+                }
+            });
+        }
+        
+        // Refresh server table
+        function refreshServerTable() {
+            // For now, we'll reload the page to refresh the table
+            // In a more advanced implementation, we could refresh just the table content
+            setTimeout(() => {
+                window.location.reload();
+            }, 1500);
         }
     </script>
 </body>

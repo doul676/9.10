@@ -32,6 +32,18 @@ switch ($action) {
     case 'get_servers':
         getServerAddresses();
         break;
+    case 'add_server':
+        addServerAddress();
+        break;
+    case 'update_server':
+        updateServerAddress();
+        break;
+    case 'delete_server':
+        deleteServerAddress();
+        break;
+    case 'batch_delete_servers':
+        batchDeleteServerAddresses();
+        break;
     default:
         http_response_code(400);
         echo json_encode([
@@ -223,6 +235,188 @@ function getServerAddresses() {
         echo json_encode([
             'success' => false,
             'message' => '获取服务器地址失败：' . $e->getMessage()
+        ]);
+    }
+}
+
+/**
+ * 添加服务器地址
+ */
+function addServerAddress() {
+    if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+        http_response_code(405);
+        echo json_encode([
+            'success' => false,
+            'message' => '只允许POST请求'
+        ]);
+        exit();
+    }
+    
+    $serverName = $_POST['server_name'] ?? '';
+    $serverAddress = $_POST['server_address'] ?? '';
+    
+    if (empty($serverName) || empty($serverAddress)) {
+        echo json_encode([
+            'success' => false,
+            'message' => '请填写服务器名称和地址'
+        ]);
+        exit();
+    }
+    
+    try {
+        $db = new SQLite3('../db/mail.sqlite');
+        $beijingTime = new DateTime('now', new DateTimeZone('Asia/Shanghai'));
+        $stmt = $db->prepare('INSERT INTO server_addresses (server_name, server_address, created_at, updated_at) VALUES (?, ?, ?, ?)');
+        $stmt->bindValue(1, $serverName);
+        $stmt->bindValue(2, $serverAddress);
+        $stmt->bindValue(3, $beijingTime->format('Y-m-d H:i:s'));
+        $stmt->bindValue(4, $beijingTime->format('Y-m-d H:i:s'));
+        $stmt->execute();
+        $db->close();
+        
+        echo json_encode([
+            'success' => true,
+            'message' => '服务器地址添加成功'
+        ]);
+    } catch (Exception $e) {
+        echo json_encode([
+            'success' => false,
+            'message' => '添加失败：' . $e->getMessage()
+        ]);
+    }
+}
+
+/**
+ * 更新服务器地址
+ */
+function updateServerAddress() {
+    if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+        http_response_code(405);
+        echo json_encode([
+            'success' => false,
+            'message' => '只允许POST请求'
+        ]);
+        exit();
+    }
+    
+    $id = (int)($_POST['server_id'] ?? 0);
+    $serverName = $_POST['server_name'] ?? '';
+    $serverAddress = $_POST['server_address'] ?? '';
+    
+    if ($id <= 0 || empty($serverName) || empty($serverAddress)) {
+        echo json_encode([
+            'success' => false,
+            'message' => '请填写所有必需字段'
+        ]);
+        exit();
+    }
+    
+    try {
+        $db = new SQLite3('../db/mail.sqlite');
+        $beijingTime = new DateTime('now', new DateTimeZone('Asia/Shanghai'));
+        $stmt = $db->prepare('UPDATE server_addresses SET server_name=?, server_address=?, updated_at=? WHERE id=?');
+        $stmt->bindValue(1, $serverName);
+        $stmt->bindValue(2, $serverAddress);
+        $stmt->bindValue(3, $beijingTime->format('Y-m-d H:i:s'));
+        $stmt->bindValue(4, $id);
+        $stmt->execute();
+        $db->close();
+        
+        echo json_encode([
+            'success' => true,
+            'message' => '服务器地址更新成功'
+        ]);
+    } catch (Exception $e) {
+        echo json_encode([
+            'success' => false,
+            'message' => '更新失败：' . $e->getMessage()
+        ]);
+    }
+}
+
+/**
+ * 删除服务器地址
+ */
+function deleteServerAddress() {
+    if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+        http_response_code(405);
+        echo json_encode([
+            'success' => false,
+            'message' => '只允许POST请求'
+        ]);
+        exit();
+    }
+    
+    $id = (int)($_POST['server_id'] ?? 0);
+    
+    if ($id <= 0) {
+        echo json_encode([
+            'success' => false,
+            'message' => '无效的服务器ID'
+        ]);
+        exit();
+    }
+    
+    try {
+        $db = new SQLite3('../db/mail.sqlite');
+        $stmt = $db->prepare('DELETE FROM server_addresses WHERE id = ?');
+        $stmt->bindValue(1, $id);
+        $stmt->execute();
+        $db->close();
+        
+        echo json_encode([
+            'success' => true,
+            'message' => '服务器地址删除成功'
+        ]);
+    } catch (Exception $e) {
+        echo json_encode([
+            'success' => false,
+            'message' => '删除失败：' . $e->getMessage()
+        ]);
+    }
+}
+
+/**
+ * 批量删除服务器地址
+ */
+function batchDeleteServerAddresses() {
+    if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+        http_response_code(405);
+        echo json_encode([
+            'success' => false,
+            'message' => '只允许POST请求'
+        ]);
+        exit();
+    }
+    
+    $ids = $_POST['server_ids'] ?? [];
+    
+    if (empty($ids) || !is_array($ids)) {
+        echo json_encode([
+            'success' => false,
+            'message' => '请选择要删除的服务器地址'
+        ]);
+        exit();
+    }
+    
+    try {
+        $db = new SQLite3('../db/mail.sqlite');
+        $placeholders = str_repeat('?,', count($ids) - 1) . '?';
+        $stmt = $db->prepare("DELETE FROM server_addresses WHERE id IN ($placeholders)");
+        foreach ($ids as $index => $id) {
+            $stmt->bindValue($index + 1, (int)$id);
+        }
+        $stmt->execute();
+        $db->close();
+        
+        echo json_encode([
+            'success' => true,
+            'message' => '成功删除 ' . count($ids) . ' 个服务器地址'
+        ]);
+    } catch (Exception $e) {
+        echo json_encode([
+            'success' => false,
+            'message' => '批量删除失败：' . $e->getMessage()
         ]);
     }
 }
