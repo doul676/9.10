@@ -45,7 +45,7 @@ class MailFetcher {
      */
     private function connectIMAP() {
         if (!function_exists('imap_open')) {
-            throw new Exception('PHP IMAP 扩展未安装');
+            throw new Exception('PHP IMAP 扩展的 imap_open 函数不可用');
         }
         
         $flags = '/imap';
@@ -61,11 +61,31 @@ class MailFetcher {
             $mailbox = '{' . $this->server . ':' . $this->port . '/imap/ssl/novalidate-cert}INBOX';
         }
         
+        // 清除之前的IMAP错误
+        imap_errors();
+        
         $this->connection = @imap_open($mailbox, $this->username, $this->password);
         
         if (!$this->connection) {
-            $error = imap_last_error();
-            throw new Exception('IMAP连接失败: ' . ($error ?: '未知错误'));
+            $errors = imap_errors();
+            $lastError = imap_last_error();
+            
+            // 提供更具体的错误信息
+            if ($lastError) {
+                if (strpos($lastError, 'Certificate failure') !== false) {
+                    throw new Exception('SSL证书验证失败，请检查服务器SSL配置或尝试关闭SSL');
+                } elseif (strpos($lastError, 'Connection refused') !== false) {
+                    throw new Exception('连接被拒绝，请检查服务器地址和端口是否正确');
+                } elseif (strpos($lastError, 'Login failed') !== false || strpos($lastError, 'Authentication failed') !== false) {
+                    throw new Exception('邮箱用户名或密码错误，请检查登录凭据');
+                } elseif (strpos($lastError, 'host not found') !== false || strpos($lastError, 'Unknown host') !== false) {
+                    throw new Exception('服务器地址无法解析，请检查服务器地址是否正确');
+                } else {
+                    throw new Exception('IMAP连接失败: ' . $lastError);
+                }
+            } else {
+                throw new Exception('IMAP连接失败: 未知错误，请检查网络连接和服务器配置');
+            }
         }
         
         return true;
@@ -88,11 +108,31 @@ class MailFetcher {
             $mailbox = '{' . $this->server . ':' . $this->port . '/pop3/ssl/novalidate-cert}INBOX';
         }
         
+        // 清除之前的IMAP错误
+        imap_errors();
+        
         $this->connection = @imap_open($mailbox, $this->username, $this->password);
         
         if (!$this->connection) {
-            $error = imap_last_error();
-            throw new Exception('POP3连接失败: ' . ($error ?: '未知错误'));
+            $errors = imap_errors();
+            $lastError = imap_last_error();
+            
+            // 提供更具体的错误信息
+            if ($lastError) {
+                if (strpos($lastError, 'Certificate failure') !== false) {
+                    throw new Exception('SSL证书验证失败，请检查服务器SSL配置或尝试关闭SSL');
+                } elseif (strpos($lastError, 'Connection refused') !== false) {
+                    throw new Exception('连接被拒绝，请检查服务器地址和端口是否正确');
+                } elseif (strpos($lastError, 'Login failed') !== false || strpos($lastError, 'Authentication failed') !== false) {
+                    throw new Exception('邮箱用户名或密码错误，请检查登录凭据');
+                } elseif (strpos($lastError, 'host not found') !== false || strpos($lastError, 'Unknown host') !== false) {
+                    throw new Exception('服务器地址无法解析，请检查服务器地址是否正确');
+                } else {
+                    throw new Exception('POP3连接失败: ' . $lastError);
+                }
+            } else {
+                throw new Exception('POP3连接失败: 未知错误，请检查网络连接和服务器配置');
+            }
         }
         
         return true;

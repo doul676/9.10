@@ -602,6 +602,63 @@ try {
             100% { transform: rotate(360deg); }
         }
         
+        /* Toast Notifications */
+        .toast-container {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 3000;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            max-width: 400px;
+        }
+        
+        .toast {
+            padding: 15px 20px;
+            border-radius: 10px;
+            color: white;
+            font-weight: 500;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+            transform: translateX(400px);
+            opacity: 0;
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .toast.show {
+            transform: translateX(0);
+            opacity: 1;
+        }
+        
+        .toast.success {
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+        }
+        
+        .toast.error {
+            background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+        }
+        
+        .toast.info {
+            background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+        }
+        
+        .toast::after {
+            content: '';
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            height: 3px;
+            background: rgba(255,255,255,0.8);
+            animation: toastProgress 3s linear;
+        }
+        
+        @keyframes toastProgress {
+            from { width: 100%; }
+            to { width: 0%; }
+        }
+
         /* Responsive */
         @media (max-width: 768px) {
             .sidebar {
@@ -678,13 +735,8 @@ try {
         </div>
         
         <div class="content">
-            <?php if ($message): ?>
-                <div class="message success"><?php echo htmlspecialchars($message); ?></div>
-            <?php endif; ?>
-            
-            <?php if ($error): ?>
-                <div class="message error"><?php echo htmlspecialchars($error); ?></div>
-            <?php endif; ?>
+            <!-- Toast notification container -->
+            <div id="toast-container" class="toast-container"></div>
             
             <div class="card">
                 <div class="card-header">
@@ -824,6 +876,43 @@ try {
     </div>
     
     <script>
+        // Toast notification system
+        function showToast(message, type = 'info', duration = 3000) {
+            const container = document.getElementById('toast-container');
+            
+            const toast = document.createElement('div');
+            toast.className = `toast ${type}`;
+            toast.textContent = message;
+            
+            container.appendChild(toast);
+            
+            // Trigger animation
+            setTimeout(() => {
+                toast.classList.add('show');
+            }, 10);
+            
+            // Auto remove
+            setTimeout(() => {
+                toast.classList.remove('show');
+                setTimeout(() => {
+                    if (container.contains(toast)) {
+                        container.removeChild(toast);
+                    }
+                }, 300);
+            }, duration);
+        }
+        
+        // Show PHP messages as toasts on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            <?php if ($message): ?>
+                showToast('<?php echo addslashes(htmlspecialchars($message)); ?>', 'success');
+            <?php endif; ?>
+            
+            <?php if ($error): ?>
+                showToast('<?php echo addslashes(htmlspecialchars($error)); ?>', 'error');
+            <?php endif; ?>
+        });
+
         // Modal control functions
         function openAddModal() {
             document.getElementById('modalTitle').textContent = '添加邮箱';
@@ -894,7 +983,7 @@ try {
             
             // Validate required fields
             if (!data.server || !data.username || !data.password || !data.port) {
-                alert('请填写所有必需字段');
+                showToast('请填写所有必需字段', 'error');
                 return;
             }
             
@@ -913,14 +1002,14 @@ try {
             .then(response => response.json())
             .then(result => {
                 if (result.success) {
-                    alert('✅ ' + result.message);
+                    showToast('✅ ' + result.message, 'success');
                 } else {
-                    alert('❌ ' + result.message);
+                    showToast('❌ ' + result.message, 'error');
                 }
             })
             .catch(error => {
                 console.error('Error:', error);
-                alert('❌ 测试连接时发生错误');
+                showToast('❌ 测试连接时发生错误', 'error');
             })
             .finally(() => {
                 btn.classList.remove('btn-loading');
@@ -957,14 +1046,14 @@ try {
             .then(response => response.json())
             .then(result => {
                 if (result.success) {
-                    alert('✅ ' + result.message);
+                    showToast('✅ ' + result.message, 'success');
                 } else {
-                    alert('❌ ' + result.message);
+                    showToast('❌ ' + result.message, 'error');
                 }
             })
             .catch(error => {
                 console.error('Error:', error);
-                alert('❌ 测试连接时发生错误');
+                showToast('❌ 测试连接时发生错误', 'error');
             })
             .finally(() => {
                 btn.classList.remove('btn-loading');

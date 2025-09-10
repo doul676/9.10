@@ -131,7 +131,8 @@ function performConnectionTest($server, $port, $username, $password, $protocol, 
         if (!extension_loaded('imap')) {
             echo json_encode([
                 'success' => false,
-                'message' => '服务器未安装IMAP扩展，请联系管理员安装php-imap扩展'
+                'message' => '服务器未安装IMAP扩展，请联系管理员安装php-imap扩展',
+                'error_type' => 'extension_missing'
             ]);
             exit();
         }
@@ -139,7 +140,8 @@ function performConnectionTest($server, $port, $username, $password, $protocol, 
         if (!function_exists('imap_open')) {
             echo json_encode([
                 'success' => false,
-                'message' => '服务器IMAP扩展不可用，请检查配置'
+                'message' => '服务器IMAP扩展不可用，请检查配置',
+                'error_type' => 'function_missing'
             ]);
             exit();
         }
@@ -152,19 +154,35 @@ function performConnectionTest($server, $port, $username, $password, $protocol, 
             $fetcher->close();
             echo json_encode([
                 'success' => true,
-                'message' => '邮箱连接测试成功！'
+                'message' => '邮箱连接测试成功！服务器响应正常'
             ]);
         } else {
             echo json_encode([
                 'success' => false,
-                'message' => '邮箱连接失败，请检查配置信息'
+                'message' => '邮箱连接失败，请检查配置信息',
+                'error_type' => 'connection_failed'
             ]);
         }
         
     } catch (Exception $e) {
+        // 根据错误类型提供更具体的提示
+        $errorMessage = $e->getMessage();
+        $errorType = 'unknown';
+        
+        if (strpos($errorMessage, 'SSL证书') !== false) {
+            $errorType = 'ssl_error';
+        } elseif (strpos($errorMessage, '连接被拒绝') !== false) {
+            $errorType = 'connection_refused';
+        } elseif (strpos($errorMessage, '用户名或密码') !== false) {
+            $errorType = 'auth_failed';
+        } elseif (strpos($errorMessage, '服务器地址') !== false) {
+            $errorType = 'host_not_found';
+        }
+        
         echo json_encode([
             'success' => false,
-            'message' => '连接测试失败：' . $e->getMessage()
+            'message' => '连接测试失败：' . $errorMessage,
+            'error_type' => $errorType
         ]);
     }
 }
