@@ -29,6 +29,9 @@ switch ($action) {
     case 'test_connection':
         testConnection();
         break;
+    case 'get_servers':
+        getServerAddresses();
+        break;
     default:
         http_response_code(400);
         echo json_encode([
@@ -195,6 +198,31 @@ function performConnectionTest($server, $port, $username, $password, $protocol, 
             'message' => '❌ 连接测试失败：' . $errorMessage,
             'diagnostics' => $diagnostics,
             'error_type' => $errorType
+        ]);
+    }
+}
+
+/**
+ * 获取服务器地址列表
+ */
+function getServerAddresses() {
+    try {
+        $db = new SQLite3('../db/mail.sqlite');
+        $result = $db->query('SELECT * FROM server_addresses ORDER BY server_name ASC');
+        $servers = [];
+        while ($row = $result->fetchArray()) {
+            $servers[] = $row;
+        }
+        $db->close();
+        
+        echo json_encode([
+            'success' => true,
+            'servers' => $servers
+        ]);
+    } catch (Exception $e) {
+        echo json_encode([
+            'success' => false,
+            'message' => '获取服务器地址失败：' . $e->getMessage()
         ]);
     }
 }

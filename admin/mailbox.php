@@ -91,6 +91,119 @@ if ($_POST) {
             } else {
                 $error = '请填写所有必需字段';
             }
+        } elseif ($action === 'batch_delete') {
+            $ids = $_POST['ids'] ?? [];
+            if (!empty($ids) && is_array($ids)) {
+                $placeholders = str_repeat('?,', count($ids) - 1) . '?';
+                $stmt = $db->prepare("DELETE FROM mail_accounts WHERE id IN ($placeholders)");
+                foreach ($ids as $index => $id) {
+                    $stmt->bindValue($index + 1, (int)$id);
+                }
+                $stmt->execute();
+                $message = '成功删除 ' . count($ids) . ' 个邮箱账号';
+            } else {
+                $error = '请选择要删除的邮箱账号';
+            }
+        } elseif ($action === 'add_server') {
+            $serverName = $_POST['server_name'] ?? '';
+            $serverAddress = $_POST['server_address'] ?? '';
+            $defaultPortImap = (int)($_POST['default_port_imap'] ?? 993);
+            $defaultPortPop3 = (int)($_POST['default_port_pop3'] ?? 995);
+            $sslEnabled = isset($_POST['ssl_enabled']) ? 1 : 0;
+            $remarks = $_POST['server_remarks'] ?? '';
+            
+            if ($serverName && $serverAddress) {
+                $beijingTime = new DateTime('now', new DateTimeZone('Asia/Shanghai'));
+                $stmt = $db->prepare('INSERT INTO server_addresses (server_name, server_address, default_port_imap, default_port_pop3, ssl_enabled, remarks, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
+                $stmt->bindValue(1, $serverName);
+                $stmt->bindValue(2, $serverAddress);
+                $stmt->bindValue(3, $defaultPortImap);
+                $stmt->bindValue(4, $defaultPortPop3);
+                $stmt->bindValue(5, $sslEnabled);
+                $stmt->bindValue(6, $remarks);
+                $stmt->bindValue(7, $beijingTime->format('Y-m-d H:i:s'));
+                $stmt->bindValue(8, $beijingTime->format('Y-m-d H:i:s'));
+                $stmt->execute();
+                $message = '服务器地址添加成功';
+            } else {
+                $error = '请填写服务器名称和地址';
+            }
+        } elseif ($action === 'update_server') {
+            $id = (int)($_POST['server_id'] ?? 0);
+            $serverName = $_POST['server_name'] ?? '';
+            $serverAddress = $_POST['server_address'] ?? '';
+            $defaultPortImap = (int)($_POST['default_port_imap'] ?? 993);
+            $defaultPortPop3 = (int)($_POST['default_port_pop3'] ?? 995);
+            $sslEnabled = isset($_POST['ssl_enabled']) ? 1 : 0;
+            $remarks = $_POST['server_remarks'] ?? '';
+            
+            if ($id > 0 && $serverName && $serverAddress) {
+                $beijingTime = new DateTime('now', new DateTimeZone('Asia/Shanghai'));
+                $stmt = $db->prepare('UPDATE server_addresses SET server_name=?, server_address=?, default_port_imap=?, default_port_pop3=?, ssl_enabled=?, remarks=?, updated_at=? WHERE id=?');
+                $stmt->bindValue(1, $serverName);
+                $stmt->bindValue(2, $serverAddress);
+                $stmt->bindValue(3, $defaultPortImap);
+                $stmt->bindValue(4, $defaultPortPop3);
+                $stmt->bindValue(5, $sslEnabled);
+                $stmt->bindValue(6, $remarks);
+                $stmt->bindValue(7, $beijingTime->format('Y-m-d H:i:s'));
+                $stmt->bindValue(8, $id);
+                $stmt->execute();
+                $message = '服务器地址更新成功';
+            } else {
+                $error = '请填写所有必需字段';
+            }
+        } elseif ($action === 'delete_server') {
+            $id = (int)($_POST['server_id'] ?? 0);
+            if ($id > 0) {
+                $stmt = $db->prepare('DELETE FROM server_addresses WHERE id = ?');
+                $stmt->bindValue(1, $id);
+                $stmt->execute();
+                $message = '服务器地址删除成功';
+            }
+        } elseif ($action === 'batch_add') {
+            $emails = $_POST['emails'] ?? '';
+            $password = $_POST['batch_password'] ?? '';
+            $server = $_POST['batch_server'] ?? '';
+            $port = (int)($_POST['batch_port'] ?? 0);
+            $protocol = $_POST['batch_protocol'] ?? 'imap';
+            $ssl = isset($_POST['batch_ssl']) ? 1 : 0;
+            $remarks = $_POST['batch_remarks'] ?? '';
+            
+            if ($emails && $password && $server && $port) {
+                $emailList = array_filter(array_map('trim', explode("\n", $emails)));
+                $successCount = 0;
+                $failCount = 0;
+                $beijingTime = new DateTime('now', new DateTimeZone('Asia/Shanghai'));
+                
+                foreach ($emailList as $email) {
+                    if (filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                        try {
+                            $stmt = $db->prepare('INSERT INTO mail_accounts (email, username, password, server, port, protocol, ssl, remarks, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+                            $stmt->bindValue(1, $email);
+                            $stmt->bindValue(2, $email);
+                            $stmt->bindValue(3, $password);
+                            $stmt->bindValue(4, $server);
+                            $stmt->bindValue(5, $port);
+                            $stmt->bindValue(6, $protocol);
+                            $stmt->bindValue(7, $ssl);
+                            $stmt->bindValue(8, $remarks);
+                            $stmt->bindValue(9, $beijingTime->format('Y-m-d H:i:s'));
+                            $stmt->bindValue(10, $beijingTime->format('Y-m-d H:i:s'));
+                            $stmt->execute();
+                            $successCount++;
+                        } catch (Exception $e) {
+                            $failCount++;
+                        }
+                    } else {
+                        $failCount++;
+                    }
+                }
+                
+                $message = "批量添加完成：成功 {$successCount} 个，失败 {$failCount} 个";
+            } else {
+                $error = '请填写所有必需字段';
+            }
         }
         
         $db->close();
@@ -101,6 +214,7 @@ if ($_POST) {
 
 // 获取所有邮箱账号
 $accounts = [];
+$serverAddresses = [];
 try {
     $db = new SQLite3('../db/mail.sqlite');
     
@@ -119,6 +233,23 @@ try {
         if (!$hasRemarks) {
             $db->exec('ALTER TABLE mail_accounts ADD COLUMN remarks TEXT DEFAULT ""');
         }
+        
+        // 检查并创建server_addresses表
+        $db->exec('CREATE TABLE IF NOT EXISTS server_addresses (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            server_name TEXT NOT NULL,
+            server_address TEXT NOT NULL,
+            default_port_imap INTEGER DEFAULT 993,
+            default_port_pop3 INTEGER DEFAULT 995,
+            ssl_enabled INTEGER DEFAULT 1,
+            remarks TEXT DEFAULT "",
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )');
+        
+        $db->exec('CREATE INDEX IF NOT EXISTS idx_server_addresses_name ON server_addresses(server_name)');
+        $db->exec('CREATE INDEX IF NOT EXISTS idx_server_addresses_address ON server_addresses(server_address)');
+        
     } catch (Exception $e) {
         // 忽略字段已存在的错误
         error_log('Database schema check: ' . $e->getMessage());
@@ -128,6 +259,13 @@ try {
     while ($row = $result->fetchArray()) {
         $accounts[] = $row;
     }
+    
+    // 获取所有服务器地址
+    $result = $db->query('SELECT * FROM server_addresses ORDER BY server_name ASC');
+    while ($row = $result->fetchArray()) {
+        $serverAddresses[] = $row;
+    }
+    
     $db->close();
 } catch (Exception $e) {
     $error = '获取邮箱列表失败：' . $e->getMessage();
@@ -752,10 +890,18 @@ try {
                     <h2 class="card-title">邮箱管理</h2>
                 </div>
                 <div class="card-body">
-                    <button type="button" class="btn" onclick="openAddModal()">
-                        ➕ 添加邮箱
-                    </button>
-                    <p style="margin-top: 15px; color: #64748b;">点击上方按钮添加新的邮箱账号</p>
+                    <div class="button-group" style="display: flex; gap: 15px; flex-wrap: wrap;">
+                        <button type="button" class="btn" onclick="openAddModal()">
+                            ➕ 添加邮箱
+                        </button>
+                        <button type="button" class="btn" onclick="openBatchAddModal()">
+                            📋 批量添加邮箱
+                        </button>
+                        <button type="button" class="btn" onclick="openServerModal()">
+                            🌐 添加服务器地址
+                        </button>
+                    </div>
+                    <p style="margin-top: 15px; color: #64748b;">点击上方按钮添加新的邮箱账号或管理服务器地址</p>
                 </div>
             </div>
             
@@ -768,9 +914,18 @@ try {
                         <p>暂无邮箱账号，请添加第一个邮箱账号。</p>
                     <?php else: ?>
                         <div class="table-container">
+                            <div style="margin-bottom: 15px; display: flex; gap: 10px; align-items: center;">
+                                <button type="button" class="btn btn-danger" onclick="batchDelete()" id="batchDeleteBtn" style="display: none;">
+                                    🗑️ 批量删除选中
+                                </button>
+                                <span id="selectedCount" style="color: #64748b; font-size: 14px;"></span>
+                            </div>
                             <table class="table">
                                 <thead>
                                     <tr>
+                                        <th style="width: 40px;">
+                                            <input type="checkbox" id="selectAll" onchange="toggleSelectAll()">
+                                        </th>
                                         <th>序号</th>
                                         <th>邮箱账号</th>
                                         <th>邮箱密码</th>
@@ -787,6 +942,9 @@ try {
                                     $index = 1;
                                     foreach ($accounts as $account): ?>
                                         <tr>
+                                            <td>
+                                                <input type="checkbox" class="account-checkbox" value="<?php echo $account['id']; ?>" onchange="updateBatchDeleteButton()">
+                                            </td>
                                             <td><?php echo $index++; ?></td>
                                             <td><?php echo htmlspecialchars($account['email']); ?></td>
                                             <td><?php echo str_repeat('*', min(8, strlen($account['password']))); ?></td>
@@ -861,7 +1019,21 @@ try {
                     <div class="form-row">
                         <div class="form-group">
                             <label for="modalServer">服务器地址 *</label>
-                            <input type="text" id="modalServer" name="server" required placeholder="imap.example.com">
+                            <div style="display: flex; gap: 10px; align-items: flex-end;">
+                                <div style="flex: 1;">
+                                    <input type="text" id="modalServer" name="server" required placeholder="imap.example.com">
+                                </div>
+                                <div style="flex: 0 0 auto;">
+                                    <select id="serverDropdown" onchange="fillServerInfo()" style="padding: 12px 16px; border: 2px solid #e5e7eb; border-radius: 8px;">
+                                        <option value="">快捷选择服务器</option>
+                                        <?php foreach ($serverAddresses as $serverAddr): ?>
+                                            <option value="<?php echo htmlspecialchars(json_encode($serverAddr)); ?>">
+                                                <?php echo htmlspecialchars($serverAddr['server_name']); ?>
+                                            </option>
+                                        <?php endforeach; ?>
+                                    </select>
+                                </div>
+                            </div>
                         </div>
                         <div class="form-group">
                             <label for="modalProtocol">协议</label>
@@ -898,6 +1070,195 @@ try {
                     <button type="submit" class="btn" id="submitBtn">保存</button>
                 </div>
             </form>
+        </div>
+    </div>
+    
+    <!-- Batch Add Mailbox Modal -->
+    <div id="batchAddModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 class="modal-title">批量添加邮箱</h3>
+                <button type="button" class="modal-close" onclick="closeBatchAddModal()">&times;</button>
+            </div>
+            <form id="batchAddForm" method="POST">
+                <div class="modal-body">
+                    <input type="hidden" name="action" value="batch_add">
+                    
+                    <div class="form-group">
+                        <label for="batchEmails">邮箱地址列表 * (每行一个邮箱)</label>
+                        <textarea id="batchEmails" name="emails" required placeholder="user1@example.com&#10;user2@example.com&#10;user3@example.com" rows="8" style="width: 100%; padding: 12px 16px; border: 2px solid #e5e7eb; border-radius: 8px; font-size: 14px; resize: vertical;"></textarea>
+                    </div>
+                    
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="batchPassword">统一密码 *</label>
+                            <input type="password" id="batchPassword" name="batch_password" required placeholder="邮箱密码或授权码">
+                        </div>
+                        <div class="form-group">
+                            <label for="batchServer">服务器地址 *</label>
+                            <div style="display: flex; gap: 10px; align-items: flex-end;">
+                                <div style="flex: 1;">
+                                    <input type="text" id="batchServer" name="batch_server" required placeholder="imap.example.com">
+                                </div>
+                                <div style="flex: 0 0 auto;">
+                                    <select id="batchServerDropdown" onchange="fillBatchServerInfo()" style="padding: 12px 16px; border: 2px solid #e5e7eb; border-radius: 8px;">
+                                        <option value="">快捷选择服务器</option>
+                                        <?php foreach ($serverAddresses as $serverAddr): ?>
+                                            <option value="<?php echo htmlspecialchars(json_encode($serverAddr)); ?>">
+                                                <?php echo htmlspecialchars($serverAddr['server_name']); ?>
+                                            </option>
+                                        <?php endforeach; ?>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="batchPort">端口 *</label>
+                            <input type="number" id="batchPort" name="batch_port" value="993" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="batchProtocol">协议</label>
+                            <select id="batchProtocol" name="batch_protocol" onchange="updateBatchPortByProtocol()">
+                                <option value="imap" selected>IMAP</option>
+                                <option value="pop3">POP3</option>
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <div class="form-row">
+                        <div class="form-group">
+                            <div class="checkbox-group">
+                                <input type="checkbox" id="batchSsl" name="batch_ssl" checked onchange="updateBatchPortBySsl()">
+                                <label for="batchSsl">是否启用SSL安全连接</label>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label for="batchRemarks">统一备注</label>
+                            <input type="text" id="batchRemarks" name="batch_remarks" placeholder="可选备注信息">
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn" onclick="closeBatchAddModal()">取消</button>
+                    <button type="submit" class="btn">批量添加</button>
+                </div>
+            </form>
+        </div>
+    </div>
+    
+    <!-- Server Address Management Modal -->
+    <div id="serverModal" class="modal">
+        <div class="modal-content" style="max-width: 800px;">
+            <div class="modal-header">
+                <h3 class="modal-title">服务器地址管理</h3>
+                <button type="button" class="modal-close" onclick="closeServerModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <!-- Add Server Form -->
+                <div class="card" style="margin-bottom: 20px;">
+                    <div class="card-header">
+                        <h4 style="margin: 0; font-size: 16px;">添加新服务器地址</h4>
+                    </div>
+                    <div class="card-body" style="padding: 20px;">
+                        <form id="serverForm" method="POST">
+                            <input type="hidden" name="action" id="serverAction" value="add_server">
+                            <input type="hidden" name="server_id" id="serverId" value="">
+                            
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label for="serverName">服务器名称 *</label>
+                                    <input type="text" id="serverName" name="server_name" required placeholder="例如：Gmail IMAP">
+                                </div>
+                                <div class="form-group">
+                                    <label for="serverAddress">服务器地址 *</label>
+                                    <input type="text" id="serverAddress" name="server_address" required placeholder="例如：imap.gmail.com">
+                                </div>
+                            </div>
+                            
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label for="defaultPortImap">IMAP默认端口</label>
+                                    <input type="number" id="defaultPortImap" name="default_port_imap" value="993">
+                                </div>
+                                <div class="form-group">
+                                    <label for="defaultPortPop3">POP3默认端口</label>
+                                    <input type="number" id="defaultPortPop3" name="default_port_pop3" value="995">
+                                </div>
+                            </div>
+                            
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <div class="checkbox-group">
+                                        <input type="checkbox" id="sslEnabled" name="ssl_enabled" checked>
+                                        <label for="sslEnabled">默认启用SSL</label>
+                                    </div>
+                                </div>
+                                <div class="form-group">
+                                    <label for="serverRemarks">备注</label>
+                                    <input type="text" id="serverRemarks" name="server_remarks" placeholder="可选备注信息">
+                                </div>
+                            </div>
+                            
+                            <div style="text-align: right;">
+                                <button type="button" class="btn" onclick="resetServerForm()">重置</button>
+                                <button type="submit" class="btn" id="serverSubmitBtn">添加服务器</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+                
+                <!-- Server List -->
+                <div class="card">
+                    <div class="card-header">
+                        <h4 style="margin: 0; font-size: 16px;">已添加的服务器地址 (共 <?php echo count($serverAddresses); ?> 个)</h4>
+                    </div>
+                    <div class="card-body" style="padding: 20px;">
+                        <?php if (empty($serverAddresses)): ?>
+                            <p>暂无服务器地址，请添加第一个服务器地址。</p>
+                        <?php else: ?>
+                            <div class="table-container">
+                                <table class="table">
+                                    <thead>
+                                        <tr>
+                                            <th>服务器名称</th>
+                                            <th>服务器地址</th>
+                                            <th>IMAP端口</th>
+                                            <th>POP3端口</th>
+                                            <th>SSL</th>
+                                            <th>备注</th>
+                                            <th>操作</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="serverTableBody">
+                                        <?php foreach ($serverAddresses as $serverAddr): ?>
+                                            <tr id="server-row-<?php echo $serverAddr['id']; ?>">
+                                                <td><?php echo htmlspecialchars($serverAddr['server_name']); ?></td>
+                                                <td><?php echo htmlspecialchars($serverAddr['server_address']); ?></td>
+                                                <td><?php echo $serverAddr['default_port_imap']; ?></td>
+                                                <td><?php echo $serverAddr['default_port_pop3']; ?></td>
+                                                <td><?php echo $serverAddr['ssl_enabled'] ? '✅' : '❌'; ?></td>
+                                                <td><?php echo htmlspecialchars($serverAddr['remarks'] ?? ''); ?></td>
+                                                <td>
+                                                    <div class="actions">
+                                                        <button type="button" class="btn btn-small" onclick="editServer(<?php echo htmlspecialchars(json_encode($serverAddr)); ?>)">编辑</button>
+                                                        <button type="button" class="btn btn-danger btn-small" onclick="deleteServer(<?php echo $serverAddr['id']; ?>)">删除</button>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        <?php endforeach; ?>
+                                    </tbody>
+                                </table>
+                            </div>
+                        <?php endif; ?>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn" onclick="closeServerModal()">关闭</button>
+            </div>
         </div>
     </div>
     
@@ -1179,6 +1540,206 @@ try {
         // Legacy function for compatibility
         function toggleEdit(id) {
             // This function is no longer used but kept for compatibility
+        }
+        
+        // Batch delete functionality
+        function toggleSelectAll() {
+            const selectAll = document.getElementById('selectAll');
+            const checkboxes = document.querySelectorAll('.account-checkbox');
+            checkboxes.forEach(checkbox => {
+                checkbox.checked = selectAll.checked;
+            });
+            updateBatchDeleteButton();
+        }
+        
+        function updateBatchDeleteButton() {
+            const checkboxes = document.querySelectorAll('.account-checkbox:checked');
+            const batchDeleteBtn = document.getElementById('batchDeleteBtn');
+            const selectedCount = document.getElementById('selectedCount');
+            
+            if (checkboxes.length > 0) {
+                batchDeleteBtn.style.display = 'inline-block';
+                selectedCount.textContent = `已选择 ${checkboxes.length} 个邮箱账号`;
+            } else {
+                batchDeleteBtn.style.display = 'none';
+                selectedCount.textContent = '';
+            }
+        }
+        
+        function batchDelete() {
+            const checkboxes = document.querySelectorAll('.account-checkbox:checked');
+            const ids = Array.from(checkboxes).map(cb => cb.value);
+            
+            if (ids.length === 0) {
+                showToast('请选择要删除的邮箱账号', 'error');
+                return;
+            }
+            
+            if (confirm(`确认删除选中的 ${ids.length} 个邮箱账号吗？此操作不可撤销。`)) {
+                const form = document.createElement('form');
+                form.method = 'POST';
+                form.innerHTML = `
+                    <input type="hidden" name="action" value="batch_delete">
+                    ${ids.map(id => `<input type="hidden" name="ids[]" value="${id}">`).join('')}
+                `;
+                document.body.appendChild(form);
+                form.submit();
+            }
+        }
+        
+        // Batch add modal functions
+        function openBatchAddModal() {
+            document.getElementById('batchAddForm').reset();
+            document.getElementById('batchProtocol').value = 'imap';
+            document.getElementById('batchSsl').checked = true;
+            document.getElementById('batchPort').value = '993';
+            showBatchAddModal();
+        }
+        
+        function showBatchAddModal() {
+            document.getElementById('batchAddModal').classList.add('show');
+            document.body.style.overflow = 'hidden';
+        }
+        
+        function closeBatchAddModal() {
+            document.getElementById('batchAddModal').classList.remove('show');
+            document.body.style.overflow = '';
+        }
+        
+        // Close batch add modal when clicking outside
+        document.getElementById('batchAddModal').addEventListener('click', function(e) {
+            if (e.target === this) {
+                closeBatchAddModal();
+            }
+        });
+        
+        function updateBatchPortByProtocol() {
+            const protocol = document.getElementById('batchProtocol').value;
+            const ssl = document.getElementById('batchSsl').checked;
+            const portInput = document.getElementById('batchPort');
+            
+            if (protocol === 'imap') {
+                portInput.value = ssl ? '993' : '143';
+            } else if (protocol === 'pop3') {
+                portInput.value = ssl ? '995' : '110';
+            }
+        }
+        
+        function updateBatchPortBySsl() {
+            const protocol = document.getElementById('batchProtocol').value;
+            const ssl = document.getElementById('batchSsl').checked;
+            const portInput = document.getElementById('batchPort');
+            
+            if (protocol === 'imap') {
+                portInput.value = ssl ? '993' : '143';
+            } else if (protocol === 'pop3') {
+                portInput.value = ssl ? '995' : '110';
+            }
+        }
+        
+        function fillBatchServerInfo() {
+            const dropdown = document.getElementById('batchServerDropdown');
+            if (dropdown.value) {
+                const serverInfo = JSON.parse(dropdown.value);
+                document.getElementById('batchServer').value = serverInfo.server_address;
+                
+                const protocol = document.getElementById('batchProtocol').value;
+                const ssl = document.getElementById('batchSsl').checked;
+                
+                if (protocol === 'imap') {
+                    document.getElementById('batchPort').value = ssl ? serverInfo.default_port_imap : '143';
+                } else {
+                    document.getElementById('batchPort').value = ssl ? serverInfo.default_port_pop3 : '110';
+                }
+                
+                document.getElementById('batchSsl').checked = serverInfo.ssl_enabled == 1;
+                updateBatchPortBySsl();
+                
+                // Reset dropdown
+                dropdown.value = '';
+            }
+        }
+        
+        // Server management modal functions
+        function openServerModal() {
+            resetServerForm();
+            showServerModal();
+        }
+        
+        function showServerModal() {
+            document.getElementById('serverModal').classList.add('show');
+            document.body.style.overflow = 'hidden';
+        }
+        
+        function closeServerModal() {
+            document.getElementById('serverModal').classList.remove('show');
+            document.body.style.overflow = '';
+        }
+        
+        // Close server modal when clicking outside
+        document.getElementById('serverModal').addEventListener('click', function(e) {
+            if (e.target === this) {
+                closeServerModal();
+            }
+        });
+        
+        function resetServerForm() {
+            document.getElementById('serverForm').reset();
+            document.getElementById('serverAction').value = 'add_server';
+            document.getElementById('serverId').value = '';
+            document.getElementById('serverSubmitBtn').textContent = '添加服务器';
+            document.getElementById('defaultPortImap').value = '993';
+            document.getElementById('defaultPortPop3').value = '995';
+            document.getElementById('sslEnabled').checked = true;
+        }
+        
+        function editServer(serverData) {
+            document.getElementById('serverAction').value = 'update_server';
+            document.getElementById('serverId').value = serverData.id;
+            document.getElementById('serverName').value = serverData.server_name;
+            document.getElementById('serverAddress').value = serverData.server_address;
+            document.getElementById('defaultPortImap').value = serverData.default_port_imap;
+            document.getElementById('defaultPortPop3').value = serverData.default_port_pop3;
+            document.getElementById('sslEnabled').checked = serverData.ssl_enabled == 1;
+            document.getElementById('serverRemarks').value = serverData.remarks || '';
+            document.getElementById('serverSubmitBtn').textContent = '保存修改';
+        }
+        
+        function deleteServer(serverId) {
+            if (confirm('确认删除这个服务器地址吗？此操作不可撤销。')) {
+                const form = document.createElement('form');
+                form.method = 'POST';
+                form.innerHTML = `
+                    <input type="hidden" name="action" value="delete_server">
+                    <input type="hidden" name="server_id" value="${serverId}">
+                `;
+                document.body.appendChild(form);
+                form.submit();
+            }
+        }
+        
+        // Server dropdown functionality for main modal
+        function fillServerInfo() {
+            const dropdown = document.getElementById('serverDropdown');
+            if (dropdown.value) {
+                const serverInfo = JSON.parse(dropdown.value);
+                document.getElementById('modalServer').value = serverInfo.server_address;
+                
+                const protocol = document.getElementById('modalProtocol').value;
+                const ssl = document.getElementById('modalSsl').checked;
+                
+                if (protocol === 'imap') {
+                    document.getElementById('modalPort').value = ssl ? serverInfo.default_port_imap : '143';
+                } else {
+                    document.getElementById('modalPort').value = ssl ? serverInfo.default_port_pop3 : '110';
+                }
+                
+                document.getElementById('modalSsl').checked = serverInfo.ssl_enabled == 1;
+                updatePortBySsl();
+                
+                // Reset dropdown
+                dropdown.value = '';
+            }
         }
     </script>
 </body>
