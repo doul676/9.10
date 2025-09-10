@@ -77,15 +77,15 @@
 
 ### 6. 测试访问
 
-- 前端页面：`http://你的域名/frontend/index.html`
-- 管理后台：`http://你的域名/admin/login.php`
+- 前端页面：`http://你的域名/`
+- 管理后台：`http://你的域名/admin`
 
 ## 使用说明
 
 ### 管理员操作
 
 1. **登录后台**
-   - 访问 `admin/login.php`
+   - 访问 `http://你的域名/admin`
    - 使用账号 `admin` 密码 `admin` 登录
    - 登录后建议修改密码
 

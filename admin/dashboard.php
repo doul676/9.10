@@ -3,7 +3,7 @@ session_start();
 
 // 检查登录状态
 if (!isset($_SESSION['admin_logged_in']) || $_SESSION['admin_logged_in'] !== true) {
-    header('Location: login.php');
+    header('Location: ./');
     exit();
 }
 
@@ -97,7 +97,7 @@ try {
 // 处理退出登录
 if (isset($_GET['logout'])) {
     session_destroy();
-    header('Location: login.php');
+    header('Location: ./');
     exit();
 }
 ?>
