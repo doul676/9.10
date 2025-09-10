@@ -631,6 +631,65 @@ if (isset($_GET['logout'])) {
         .action-btn:hover {
             transform: translateY(-1px);
         }
+
+        /* Toast Notifications */
+        .toast-container {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 3000;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            max-width: 500px;
+        }
+        
+        .toast {
+            padding: 15px 20px;
+            border-radius: 10px;
+            color: white;
+            font-weight: 500;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+            transform: translateX(550px);
+            opacity: 0;
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+            word-wrap: break-word;
+            white-space: pre-wrap;
+        }
+        
+        .toast.show {
+            transform: translateX(0);
+            opacity: 1;
+        }
+        
+        .toast.success {
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+        }
+        
+        .toast.error {
+            background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+        }
+        
+        .toast.info {
+            background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+        }
+        
+        .toast::after {
+            content: '';
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            height: 3px;
+            background: rgba(255,255,255,0.8);
+            animation: toastProgress 3s linear;
+        }
+        
+        @keyframes toastProgress {
+            from { width: 100%; }
+            to { width: 0%; }
+        }
     </style>
 </head>
 <body>
@@ -677,6 +736,9 @@ if (isset($_GET['logout'])) {
         </div>
         
         <div class="content">
+            <!-- Toast notification container -->
+            <div id="toast-container" class="toast-container"></div>
+            
             <!-- 操作按钮 -->
             <div class="action-buttons">
                 <button onclick="showAddModal()" class="btn btn-primary">
@@ -796,10 +858,6 @@ if (isset($_GET['logout'])) {
                     <div class="form-group">
                         <label for="proxy_password">密码:</label>
                         <input type="password" id="proxy_password" name="proxy_password" placeholder="可选，需要认证时填写">
-                    </div>
-                    <div class="form-group">
-                        <label for="remarks">备注:</label>
-                        <textarea id="remarks" name="remarks" placeholder="可选，代理的备注信息"></textarea>
                     </div>
                     <div class="form-actions">
                         <button type="button" onclick="closeModal()" class="btn btn-secondary">取消</button>
@@ -973,7 +1031,6 @@ if (isset($_GET['logout'])) {
                             document.getElementById('proxy_port').value = proxy.proxy_port;
                             document.getElementById('proxy_username').value = proxy.proxy_username || '';
                             document.getElementById('proxy_password').value = proxy.proxy_password || '';
-                            document.getElementById('remarks').value = proxy.remarks || '';
                             showModal();
                         }
                     }
@@ -1231,27 +1288,53 @@ if (isset($_GET['logout'])) {
         }
 
         function showMessage(message, type) {
-            // 移除现有的消息
-            const existingMessage = document.querySelector('.message');
-            if (existingMessage) {
-                existingMessage.remove();
+            showToast(message, type);
+        }
+
+        function showToast(message, type = 'info', duration = 3000) {
+            const container = document.getElementById('toast-container');
+            
+            const toast = document.createElement('div');
+            toast.className = `toast ${type}`;
+            
+            // Handle multiline messages
+            if (message.includes('\n')) {
+                const lines = message.split('\n');
+                const content = document.createElement('div');
+                lines.forEach((line, index) => {
+                    const lineDiv = document.createElement('div');
+                    lineDiv.textContent = line;
+                    if (index === 0) {
+                        lineDiv.style.fontWeight = 'bold';
+                        lineDiv.style.marginBottom = '8px';
+                    } else if (line.trim().startsWith('•')) {
+                        lineDiv.style.marginLeft = '10px';
+                        lineDiv.style.fontSize = '13px';
+                        lineDiv.style.opacity = '0.9';
+                    }
+                    content.appendChild(lineDiv);
+                });
+                toast.appendChild(content);
+            } else {
+                toast.textContent = message;
             }
-
-            // 创建新的消息元素
-            const messageEl = document.createElement('div');
-            messageEl.className = `message ${type}`;
-            messageEl.textContent = message;
-
-            // 插入到内容区域的顶部
-            const content = document.querySelector('.content');
-            content.insertBefore(messageEl, content.firstChild);
-
-            // 3秒后自动移除
+            
+            container.appendChild(toast);
+            
+            // Trigger animation
             setTimeout(() => {
-                if (messageEl.parentNode) {
-                    messageEl.remove();
-                }
-            }, 3000);
+                toast.classList.add('show');
+            }, 10);
+            
+            // Auto remove
+            setTimeout(() => {
+                toast.classList.remove('show');
+                setTimeout(() => {
+                    if (container.contains(toast)) {
+                        container.removeChild(toast);
+                    }
+                }, 300);
+            }, duration);
         }
 
         function updateProxyCount(count) {

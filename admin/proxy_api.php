@@ -162,7 +162,7 @@ function addProxy() {
         $proxy_port = (int)($_POST['proxy_port'] ?? 0);
         $proxy_username = $_POST['proxy_username'] ?? '';
         $proxy_password = $_POST['proxy_password'] ?? '';
-        $remarks = $_POST['remarks'] ?? '';
+        $remarks = ''; // 移除备注字段，设为空字符串
         
         // 验证必需字段
         if (empty($proxy_host) || $proxy_port <= 0 || !in_array($proxy_type, ['http', 'socks5'])) {
@@ -237,7 +237,7 @@ function updateProxy() {
         $proxy_port = (int)($_POST['proxy_port'] ?? 0);
         $proxy_username = $_POST['proxy_username'] ?? '';
         $proxy_password = $_POST['proxy_password'] ?? '';
-        $remarks = $_POST['remarks'] ?? '';
+        $remarks = ''; // 移除备注字段，设为空字符串
         
         if ($id <= 0 || empty($proxy_host) || $proxy_port <= 0 || !in_array($proxy_type, ['http', 'socks5'])) {
             echo json_encode([
@@ -411,9 +411,10 @@ function testProxy() {
             return;
         }
         
-        $startTime = microtime(true);
         $testResult = testProxyConnection($proxy);
-        $responseTime = round((microtime(true) - $startTime) * 1000);
+        
+        // 使用测试函数返回的响应时间，如果没有则设为0
+        $responseTime = $testResult['response_time'] ?? 0;
         
         // 更新测试结果
         $beijingTime = new DateTime('now', new DateTimeZone('Asia/Shanghai'));
@@ -525,60 +526,100 @@ function createProxyTableIfNotExists($db) {
  */
 function testProxyConnection($proxy) {
     try {
-        $testUrl = 'http://httpbin.org/ip';
-        $timeout = 10;
+        // 使用多个备用测试URL以提高成功率
+        $testUrls = [
+            'http://httpbin.org/ip',
+            'http://ipinfo.io/json',
+            'http://ip-api.com/json',
+            'http://jsonip.com/'
+        ];
         
-        $ch = curl_init();
-        curl_setopt($ch, CURLOPT_URL, $testUrl);
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_TIMEOUT, $timeout);
-        curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
-        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-        curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
+        $timeout = 8; // 减少超时时间以获得更准确的延迟测试
+        $connectTimeout = 5; // 连接超时
         
-        // 设置代理
-        if ($proxy['proxy_type'] === 'http') {
-            curl_setopt($ch, CURLOPT_PROXYTYPE, CURLPROXY_HTTP);
-        } elseif ($proxy['proxy_type'] === 'socks5') {
-            curl_setopt($ch, CURLOPT_PROXYTYPE, CURLPROXY_SOCKS5);
-        }
-        
-        curl_setopt($ch, CURLOPT_PROXY, $proxy['proxy_host'] . ':' . $proxy['proxy_port']);
-        
-        if (!empty($proxy['proxy_username']) && !empty($proxy['proxy_password'])) {
-            curl_setopt($ch, CURLOPT_PROXYUSERPWD, $proxy['proxy_username'] . ':' . $proxy['proxy_password']);
-        }
-        
-        $response = curl_exec($ch);
-        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        $error = curl_error($ch);
-        curl_close($ch);
-        
-        if ($response === false || !empty($error)) {
+        foreach ($testUrls as $testUrl) {
+            $startTime = microtime(true);
+            
+            $ch = curl_init();
+            curl_setopt($ch, CURLOPT_URL, $testUrl);
+            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+            curl_setopt($ch, CURLOPT_TIMEOUT, $timeout);
+            curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, $connectTimeout);
+            curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
+            curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+            curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
+            curl_setopt($ch, CURLOPT_USERAGENT, 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36');
+            curl_setopt($ch, CURLOPT_HEADER, false);
+            curl_setopt($ch, CURLOPT_NOBODY, false);
+            
+            // 设置代理
+            if ($proxy['proxy_type'] === 'http') {
+                curl_setopt($ch, CURLOPT_PROXYTYPE, CURLPROXY_HTTP);
+            } elseif ($proxy['proxy_type'] === 'socks5') {
+                curl_setopt($ch, CURLOPT_PROXYTYPE, CURLPROXY_SOCKS5);
+            }
+            
+            curl_setopt($ch, CURLOPT_PROXY, $proxy['proxy_host'] . ':' . $proxy['proxy_port']);
+            
+            if (!empty($proxy['proxy_username']) && !empty($proxy['proxy_password'])) {
+                curl_setopt($ch, CURLOPT_PROXYUSERPWD, $proxy['proxy_username'] . ':' . $proxy['proxy_password']);
+            }
+            
+            $response = curl_exec($ch);
+            $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            $totalTime = curl_getinfo($ch, CURLINFO_TOTAL_TIME);
+            $error = curl_error($ch);
+            curl_close($ch);
+            
+            $actualTime = round((microtime(true) - $startTime) * 1000); // 实际测量的时间
+            
+            if ($response === false || !empty($error)) {
+                // 尝试下一个URL
+                continue;
+            }
+            
+            if ($httpCode !== 200) {
+                // 尝试下一个URL，但如果是最后一个URL则报告错误
+                if ($testUrl === end($testUrls)) {
+                    return [
+                        'success' => false,
+                        'message' => 'HTTP状态码错误: ' . $httpCode
+                    ];
+                }
+                continue;
+            }
+            
+            // 成功获取响应，解析IP地址
+            $ip = '';
+            if (strpos($testUrl, 'httpbin') !== false) {
+                $data = json_decode($response, true);
+                $ip = $data['origin'] ?? '';
+            } elseif (strpos($testUrl, 'ipinfo') !== false) {
+                $data = json_decode($response, true);
+                $ip = $data['ip'] ?? '';
+            } elseif (strpos($testUrl, 'ip-api') !== false) {
+                $data = json_decode($response, true);
+                $ip = $data['query'] ?? '';
+            } elseif (strpos($testUrl, 'jsonip') !== false) {
+                $data = json_decode($response, true);
+                $ip = $data['ip'] ?? '';
+            }
+            
+            if (empty($ip)) {
+                // 如果无法解析IP，但响应成功，仍认为代理可用
+                $ip = '已获取';
+            }
+            
             return [
-                'success' => false,
-                'message' => '连接失败: ' . ($error ?: '未知错误')
-            ];
-        }
-        
-        if ($httpCode !== 200) {
-            return [
-                'success' => false,
-                'message' => 'HTTP状态码错误: ' . $httpCode
-            ];
-        }
-        
-        $data = json_decode($response, true);
-        if (!$data || !isset($data['origin'])) {
-            return [
-                'success' => false,
-                'message' => '响应数据格式错误'
+                'success' => true,
+                'message' => '连接成功，代理IP: ' . $ip,
+                'response_time' => $actualTime
             ];
         }
         
         return [
-            'success' => true,
-            'message' => '连接成功，代理IP: ' . $data['origin']
+            'success' => false,
+            'message' => '所有测试URL均无法访问，代理可能不可用'
         ];
         
     } catch (Exception $e) {
