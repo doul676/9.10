@@ -343,47 +343,7 @@ if ($_POST) {
             box-shadow: 0 10px 25px rgba(96, 165, 250, 0.4);
         }
         
-        .init-notice {
-            margin-top: 30px;
-            padding: 20px;
-            background: linear-gradient(135deg, #f8fafc, #e2e8f0);
-            border-radius: 12px;
-            border-left: 4px solid #667eea;
-            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05);
-            animation: fadeIn 1s ease-out 0.5s both;
-        }
-        
-        @keyframes fadeIn {
-            from { opacity: 0; }
-            to { opacity: 1; }
-        }
-        
-        body.dark-mode .init-notice {
-            background: linear-gradient(135deg, #1e293b, #334155);
-            border-left-color: #60a5fa;
-            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
-        }
-        
-        .init-notice h3 {
-            color: #333;
-            margin-bottom: 10px;
-            font-size: 16px;
-            font-weight: 600;
-        }
-        
-        body.dark-mode .init-notice h3 {
-            color: #e2e8f0;
-        }
-        
-        .init-notice p {
-            color: #666;
-            font-size: 14px;
-            line-height: 1.6;
-        }
-        
-        body.dark-mode .init-notice p {
-            color: #cbd5e1;
-        }
+
     </style>
 </head>
 <body>
@@ -413,10 +373,7 @@ if ($_POST) {
             <button type="submit" class="login-btn">登录</button>
         </form>
         
-        <div class="init-notice">
-            <h3>首次使用提示</h3>
-            <p>默认账号：admin<br>默认密码：admin<br>如果无法登录，请先运行 init_admin.php 初始化管理员账号</p>
-        </div>
+
     </div>
     
     <script>
