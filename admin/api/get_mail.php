@@ -51,10 +51,32 @@ try {
     }
     
     // 检查IMAP扩展
+    if (!extension_loaded('imap')) {
+        $sapi = php_sapi_name();
+        echo json_encode([
+            'success' => false,
+            'message' => '服务器IMAP扩展未加载',
+            'diagnostics' => [
+                'extension_status' => '❌ php-imap扩展未在Web环境中加载',
+                'environment' => "当前运行环境: {$sapi}",
+                'suggestion' => '请检查Web服务器PHP配置，确保IMAP扩展已启用',
+                'solution' => '联系管理员在Web服务器环境中安装和启用php-imap扩展'
+            ]
+        ]);
+        $db->close();
+        exit();
+    }
+    
     if (!function_exists('imap_open')) {
         echo json_encode([
             'success' => false,
-            'message' => '服务器未安装IMAP扩展，请联系管理员'
+            'message' => '服务器IMAP功能不可用',
+            'diagnostics' => [
+                'extension_status' => '✅ php-imap扩展已加载',
+                'function_issue' => '❌ imap_open函数不可用',
+                'suggestion' => 'IMAP扩展可能安装不完整，请重新安装',
+                'solution' => '联系管理员重新配置php-imap扩展'
+            ]
         ]);
         $db->close();
         exit();

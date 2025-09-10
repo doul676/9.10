@@ -44,8 +44,13 @@ class MailFetcher {
      * IMAP连接
      */
     private function connectIMAP() {
+        // 更详细的IMAP扩展检查
+        if (!extension_loaded('imap')) {
+            throw new Exception('PHP IMAP 扩展未加载 (当前环境: ' . php_sapi_name() . ')，请检查Web服务器PHP配置');
+        }
+        
         if (!function_exists('imap_open')) {
-            throw new Exception('PHP IMAP 扩展的 imap_open 函数不可用');
+            throw new Exception('PHP IMAP 扩展的 imap_open 函数不可用，可能是扩展安装不完整');
         }
         
         $flags = '/imap';
@@ -95,6 +100,15 @@ class MailFetcher {
      * POP3连接
      */
     private function connectPOP3() {
+        // 更详细的IMAP扩展检查（POP3也使用IMAP扩展）
+        if (!extension_loaded('imap')) {
+            throw new Exception('PHP IMAP 扩展未加载 (当前环境: ' . php_sapi_name() . ')，请检查Web服务器PHP配置');
+        }
+        
+        if (!function_exists('imap_open')) {
+            throw new Exception('PHP IMAP 扩展的 imap_open 函数不可用，可能是扩展安装不完整');
+        }
+        
         $flags = '/pop3';
         if ($this->ssl) {
             $flags .= '/ssl';

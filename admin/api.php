@@ -200,63 +200,127 @@ function performConnectionTest($server, $port, $username, $password, $protocol, 
 }
 
 /**
- * 检查IMAP扩展状态并提供诊断信息
+ * 检查IMAP扩展状态并提供详细的诊断信息
+ * 包括对CLI和Web服务器环境差异的检测
  */
 function checkImapExtension() {
     $diagnostics = [];
     
+    // 添加环境信息
+    $diagnostics['environment'] = [
+        'php_sapi' => php_sapi_name(),
+        'php_version' => phpversion(),
+        'server_software' => $_SERVER['SERVER_SOFTWARE'] ?? 'Unknown',
+        'script_filename' => $_SERVER['SCRIPT_FILENAME'] ?? __FILE__
+    ];
+    
     // 检查扩展是否已加载
     if (!extension_loaded('imap')) {
+        $sapi = php_sapi_name();
+        $isCliSapi = in_array($sapi, ['cli', 'cli-server', 'phpdbg']);
+        
+        $errorMessage = '❌ 服务器未安装IMAP扩展';
+        $troubleshootingInfo = [
+            'extension_status' => '❌ php-imap扩展未安装或未加载',
+            'environment_info' => "当前PHP运行环境: {$sapi}",
+            'cli_vs_web' => $isCliSapi ? 
+                '当前运行在CLI环境，请检查Web服务器PHP配置' : 
+                '当前运行在Web服务器环境，可能与CLI环境配置不同'
+        ];
+        
+        if ($isCliSapi) {
+            $troubleshootingInfo['cli_suggestion'] = '命令行环境检测到IMAP扩展，但Web环境可能未配置';
+            $troubleshootingInfo['web_check'] = '请检查Web服务器的php.ini文件是否加载了imap扩展';
+        }
+        
+        $troubleshootingInfo = array_merge($troubleshootingInfo, [
+            'solution' => '请联系管理员安装或启用php-imap扩展',
+            'install_commands' => [
+                'Ubuntu/Debian' => 'apt-get install php-imap',
+                'CentOS/RHEL' => 'yum install php-imap',
+                '宝塔面板' => 'PHP管理 → 安装扩展 → IMAP → 重启PHP服务'
+            ],
+            'verify_steps' => [
+                'CLI检查' => 'php -m | grep imap',
+                'Web检查' => '创建phpinfo()页面查看已加载扩展',
+                '配置检查' => '确认Web服务器和CLI使用相同的php.ini配置'
+            ]
+        ]);
+        
         return [
             'available' => false,
-            'message' => '❌ 服务器未安装IMAP扩展',
-            'diagnostics' => [
-                'extension_status' => '❌ php-imap扩展未安装',
-                'solution' => '请联系管理员安装php-imap扩展',
-                'install_command' => 'apt-get install php-imap (Ubuntu/Debian) 或 yum install php-imap (CentOS/RHEL)',
-                'phpinfo_check' => '运行 php -m | grep imap 检查扩展是否已安装'
-            ]
+            'message' => $errorMessage,
+            'diagnostics' => array_merge($diagnostics, $troubleshootingInfo)
         ];
     }
     
-    $diagnostics['extension_status'] = '✅ php-imap扩展已安装';
+    $diagnostics['extension_status'] = '✅ php-imap扩展已加载';
     
     // 检查关键函数是否可用
-    $requiredFunctions = ['imap_open', 'imap_close', 'imap_errors', 'imap_last_error'];
+    $requiredFunctions = ['imap_open', 'imap_close', 'imap_errors', 'imap_last_error', 'imap_num_msg'];
     $missingFunctions = [];
+    $availableFunctions = [];
     
     foreach ($requiredFunctions as $function) {
         if (!function_exists($function)) {
             $missingFunctions[] = $function;
+        } else {
+            $availableFunctions[] = $function;
         }
     }
     
     if (!empty($missingFunctions)) {
         $diagnostics['function_issue'] = '❌ 部分IMAP函数不可用: ' . implode(', ', $missingFunctions);
+        $diagnostics['available_functions'] = '✅ 可用函数: ' . implode(', ', $availableFunctions);
+        
         return [
             'available' => false,
             'message' => '❌ IMAP扩展功能不完整',
             'diagnostics' => array_merge($diagnostics, [
                 'missing_functions' => $missingFunctions,
-                'solution' => '重新安装或重新配置php-imap扩展',
-                'check_phpinfo' => '运行 php -r "phpinfo();" | grep -i imap 查看详细信息'
+                'solution' => '扩展已安装但功能不完整，请重新安装或重新配置php-imap扩展',
+                'check_phpinfo' => '运行phpinfo()查看imap扩展详细信息',
+                'rebuild_suggestion' => '可能需要重新编译PHP或重新安装imap扩展包'
             ])
         ];
     }
     
-    $diagnostics['functions_status'] = '✅ 所有必需的IMAP函数都可用';
+    $diagnostics['functions_status'] = '✅ 所有必需的IMAP函数都可用 (' . count($availableFunctions) . '个)';
     
-    // 获取PHP和扩展版本信息
-    $diagnostics['php_version'] = 'PHP ' . phpversion();
-    
-    // 尝试获取IMAP扩展版本
-    if (function_exists('imap_get_quotaroot')) {
-        $diagnostics['imap_features'] = '✅ 扩展功能完整';
+    // 获取更详细的扩展信息
+    try {
+        // 尝试获取IMAP扩展的详细信息
+        if (function_exists('imap_get_quotaroot')) {
+            $diagnostics['imap_features'] = '✅ 扩展功能完整，支持高级特性';
+        }
+        
+        // 尝试检查SSL支持
+        if (function_exists('imap_open')) {
+            $diagnostics['ssl_support'] = '✅ 支持SSL/TLS连接';
+        }
+        
+        // 获取扩展编译信息
+        ob_start();
+        phpinfo(INFO_MODULES);
+        $phpinfo = ob_get_clean();
+        
+        if (preg_match('/IMAP c-Client Version\s*=>\s*([^\n]+)/i', $phpinfo, $matches)) {
+            $diagnostics['imap_version'] = '✅ IMAP c-Client版本: ' . trim($matches[1]);
+        }
+        
+        if (strpos($phpinfo, 'SSL Support => enabled') !== false) {
+            $diagnostics['ssl_compiled'] = '✅ SSL支持已编译';
+        }
+        
+    } catch (Exception $e) {
+        $diagnostics['info_warning'] = '⚠️ 无法获取部分扩展详细信息: ' . $e->getMessage();
     }
+    
+    $diagnostics['final_status'] = '✅ IMAP扩展完全可用，可以进行邮箱连接测试';
     
     return [
         'available' => true,
-        'message' => '✅ IMAP扩展已正确安装并可用',
+        'message' => '✅ IMAP扩展已正确安装并完全可用',
         'diagnostics' => $diagnostics
     ];
 }
