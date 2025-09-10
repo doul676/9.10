@@ -288,6 +288,9 @@ try {
             <a href="home.php" class="nav-item active">
                 <i>🏠</i> 首页
             </a>
+            <a href="mailbox.php" class="nav-item">
+                <i>📫</i> 邮箱管理
+            </a>
             <a href="daili.php" class="nav-item">
                 <i>🌐</i> 代理池
             </a>
@@ -296,9 +299,6 @@ try {
             </a>
             <a href="kamirizhi.php" class="nav-item">
                 <i>📝</i> 卡密日志
-            </a>
-            <a href="mailbox.php" class="nav-item">
-                <i>📫</i> 邮箱管理
             </a>
             <a href="shoujian.php" class="nav-item">
                 <i>📧</i> 收件日志
@@ -349,10 +349,10 @@ try {
                     <p>欢迎使用邮件查看系统管理控制台。您可以通过左侧菜单管理不同功能模块。</p>
                     <ul style="margin-top: 15px; padding-left: 20px;">
                         <li><strong>首页</strong>：查看系统概览和统计信息</li>
+                        <li><strong>邮箱管理</strong>：添加、编辑和删除邮箱账号配置</li>
                         <li><strong>代理池</strong>：管理代理服务器配置</li>
                         <li><strong>卡密管理</strong>：生成和管理访问卡密</li>
                         <li><strong>卡密日志</strong>：查看卡密使用记录</li>
-                        <li><strong>邮箱管理</strong>：添加、编辑和删除邮箱账号配置</li>
                         <li><strong>收件日志</strong>：查看邮件接收记录</li>
                         <li><strong>系统设置</strong>：配置系统参数和安全选项</li>
                     </ul>

@@ -488,6 +488,9 @@ try {
             <a href="home.php" class="nav-item">
                 <i>🏠</i> 首页
             </a>
+            <a href="mailbox.php" class="nav-item active">
+                <i>📫</i> 邮箱管理
+            </a>
             <a href="daili.php" class="nav-item">
                 <i>🌐</i> 代理池
             </a>
@@ -496,9 +499,6 @@ try {
             </a>
             <a href="kamirizhi.php" class="nav-item">
                 <i>📝</i> 卡密日志
-            </a>
-            <a href="mailbox.php" class="nav-item active">
-                <i>📫</i> 邮箱管理
             </a>
             <a href="shoujian.php" class="nav-item">
                 <i>📧</i> 收件日志
