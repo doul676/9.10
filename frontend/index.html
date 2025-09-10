@@ -14,8 +14,15 @@
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background-attachment: fixed;
             min-height: 100vh;
             padding: 20px;
+            animation: gradientShift 10s ease infinite;
+        }
+        
+        @keyframes gradientShift {
+            0%, 100% { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); }
+            50% { background: linear-gradient(135deg, #764ba2 0%, #667eea 100%); }
         }
         
         .container {
@@ -27,6 +34,18 @@
             text-align: center;
             color: white;
             margin-bottom: 30px;
+            animation: fadeInDown 1s ease-out;
+        }
+        
+        @keyframes fadeInDown {
+            from {
+                opacity: 0;
+                transform: translateY(-50px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
         }
         
         .header h1 {
@@ -42,48 +61,93 @@
         
         .mail-input-card {
             background: white;
-            border-radius: 15px;
-            padding: 30px;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            border-radius: 20px;
+            padding: 40px;
+            box-shadow: 0 15px 35px rgba(0,0,0,0.1), 0 5px 15px rgba(0,0,0,0.07);
             margin-bottom: 30px;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255,255,255,0.2);
+            animation: fadeInUp 1s ease-out 0.3s both;
+        }
+        
+        @keyframes fadeInUp {
+            from {
+                opacity: 0;
+                transform: translateY(50px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
         }
         
         .input-group {
             display: flex;
             gap: 15px;
             margin-bottom: 20px;
+            position: relative;
         }
         
         .input-group input {
             flex: 1;
-            padding: 15px;
+            padding: 18px 20px;
             border: 2px solid #e1e1e1;
-            border-radius: 10px;
+            border-radius: 12px;
             font-size: 16px;
             transition: all 0.3s ease;
+            background: rgba(255,255,255,0.9);
+            position: relative;
         }
         
         .input-group input:focus {
             outline: none;
             border-color: #667eea;
-            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+            box-shadow: 0 0 0 4px rgba(102, 126, 234, 0.1);
+            background: white;
+            transform: translateY(-2px);
+        }
+        
+        .input-group input:valid {
+            border-color: #28a745;
         }
         
         .get-mail-btn {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             color: white;
             border: none;
-            padding: 15px 30px;
-            border-radius: 10px;
+            padding: 18px 35px;
+            border-radius: 12px;
             font-size: 16px;
+            font-weight: 600;
             cursor: pointer;
             transition: all 0.3s ease;
             white-space: nowrap;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .get-mail-btn::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent);
+            transition: left 0.5s;
+        }
+        
+        .get-mail-btn:hover::before {
+            left: 100%;
         }
         
         .get-mail-btn:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+            transform: translateY(-3px);
+            box-shadow: 0 8px 25px rgba(102, 126, 234, 0.4);
+        }
+        
+        .get-mail-btn:active {
+            transform: translateY(-1px);
         }
         
         .get-mail-btn:disabled {
@@ -99,6 +163,7 @@
             color: #667eea;
             font-size: 16px;
             margin: 20px 0;
+            font-weight: 500;
         }
         
         .loading::after {
@@ -121,10 +186,12 @@
         
         .mail-display {
             background: white;
-            border-radius: 15px;
-            padding: 30px;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            border-radius: 20px;
+            padding: 40px;
+            box-shadow: 0 15px 35px rgba(0,0,0,0.1), 0 5px 15px rgba(0,0,0,0.07);
             display: none;
+            border: 1px solid rgba(255,255,255,0.2);
+            animation: fadeInUp 0.8s ease-out;
         }
         
         .mail-header {
@@ -203,19 +270,23 @@
             position: fixed;
             top: 20px;
             right: 20px;
-            background: rgba(255,255,255,0.2);
+            background: rgba(255,255,255,0.15);
             color: white;
-            padding: 10px 15px;
-            border-radius: 25px;
+            padding: 12px 18px;
+            border-radius: 30px;
             text-decoration: none;
-            backdrop-filter: blur(10px);
+            backdrop-filter: blur(15px);
             transition: all 0.3s ease;
             font-size: 14px;
+            font-weight: 500;
+            border: 1px solid rgba(255,255,255,0.2);
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
         }
         
         .admin-link:hover {
-            background: rgba(255,255,255,0.3);
-            transform: translateY(-2px);
+            background: rgba(255,255,255,0.25);
+            transform: translateY(-3px);
+            box-shadow: 0 8px 25px rgba(0,0,0,0.15);
         }
         
         @media (max-width: 768px) {
@@ -249,7 +320,7 @@
     </style>
 </head>
 <body>
-    <a href="backend/login.php" class="admin-link">🔧 管理员后台</a>
+    <a href="../backend/login.php" class="admin-link">🔧 管理员后台</a>
     
     <div class="container">
         <div class="header">
