@@ -1,0 +1,190 @@
+<?php
+session_start();
+
+// 如果已登录，重定向到控制面板
+if (isset($_SESSION['admin_logged_in']) && $_SESSION['admin_logged_in'] === true) {
+    header('Location: dashboard.php');
+    exit();
+}
+
+$error = '';
+
+if ($_POST) {
+    $username = $_POST['username'] ?? '';
+    $password = $_POST['password'] ?? '';
+    
+    if ($username && $password) {
+        try {
+            $db = new SQLite3('../db/admin.sqlite');
+            $stmt = $db->prepare('SELECT * FROM admins WHERE username = ?');
+            $stmt->bindValue(1, $username);
+            $result = $stmt->execute();
+            $admin = $result->fetchArray();
+            
+            if ($admin && password_verify($password, $admin['password'])) {
+                $_SESSION['admin_logged_in'] = true;
+                $_SESSION['admin_id'] = $admin['id'];
+                $_SESSION['admin_username'] = $admin['username'];
+                header('Location: dashboard.php');
+                exit();
+            } else {
+                $error = '用户名或密码错误';
+            }
+            
+            $db->close();
+        } catch (Exception $e) {
+            $error = '数据库连接失败：' . $e->getMessage();
+        }
+    } else {
+        $error = '请输入用户名和密码';
+    }
+}
+?>
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>管理员登录 - 邮件查看系统</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .login-container {
+            background: white;
+            padding: 40px;
+            border-radius: 10px;
+            box-shadow: 0 15px 35px rgba(0, 0, 0, 0.1);
+            width: 100%;
+            max-width: 400px;
+        }
+        
+        .login-header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        
+        .login-header h1 {
+            color: #333;
+            font-size: 28px;
+            margin-bottom: 10px;
+        }
+        
+        .login-header p {
+            color: #666;
+            font-size: 14px;
+        }
+        
+        .form-group {
+            margin-bottom: 20px;
+        }
+        
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+            color: #333;
+            font-weight: 500;
+        }
+        
+        .form-group input {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e1e1e1;
+            border-radius: 5px;
+            font-size: 16px;
+            transition: border-color 0.3s;
+        }
+        
+        .form-group input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        
+        .error {
+            background: #fee;
+            color: #c33;
+            padding: 10px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+            border: 1px solid #fcc;
+        }
+        
+        .login-btn {
+            width: 100%;
+            padding: 12px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 5px;
+            font-size: 16px;
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+        
+        .login-btn:hover {
+            transform: translateY(-2px);
+        }
+        
+        .init-notice {
+            margin-top: 20px;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 5px;
+            border-left: 4px solid #667eea;
+        }
+        
+        .init-notice h3 {
+            color: #333;
+            margin-bottom: 5px;
+        }
+        
+        .init-notice p {
+            color: #666;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <div class="login-container">
+        <div class="login-header">
+            <h1>管理员登录</h1>
+            <p>邮件查看系统后台管理</p>
+        </div>
+        
+        <?php if ($error): ?>
+            <div class="error"><?php echo htmlspecialchars($error); ?></div>
+        <?php endif; ?>
+        
+        <form method="POST">
+            <div class="form-group">
+                <label for="username">用户名</label>
+                <input type="text" id="username" name="username" required>
+            </div>
+            
+            <div class="form-group">
+                <label for="password">密码</label>
+                <input type="password" id="password" name="password" required>
+            </div>
+            
+            <button type="submit" class="login-btn">登录</button>
+        </form>
+        
+        <div class="init-notice">
+            <h3>首次使用提示</h3>
+            <p>默认账号：admin<br>默认密码：admin<br>如果无法登录，请先运行 init_admin.php 初始化管理员账号</p>
+        </div>
+    </div>
+</body>
+</html>
