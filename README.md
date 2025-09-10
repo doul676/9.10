@@ -1,1 +1,228 @@
+# 邮件查看系统
 
+一个专为宝塔面板设计的邮件查看项目，支持IMAP/POP3协议，便于查看验证码邮件等内容。
+
+## 项目特性
+
+- 🌐 **前端界面**：简洁的邮件查看界面，用户只需输入邮箱即可查看最新邮件
+- 🔧 **后台管理**：完整的管理员控制面板，支持邮箱账号的增删改查
+- 📧 **多协议支持**：支持IMAP和POP3协议，可选择SSL安全连接
+- 🗄️ **SQLite数据库**：轻量级数据库，无需复杂配置
+- 🛡️ **安全性**：管理员登录验证，密码加密存储
+- 📱 **响应式设计**：支持PC和移动端访问
+
+## 目录结构
+
+```
+邮件查看系统/
+├── frontend/                 # 前端文件
+│   └── index.html            # 用户邮件查看页面
+├── backend/                  # 后端文件
+│   ├── login.php            # 管理员登录页面
+│   ├── dashboard.php        # 管理员控制面板
+│   ├── init_admin.php       # 管理员初始化脚本
+│   ├── api/                 # API接口
+│   │   └── get_mail.php     # 邮件获取API
+│   └── utils/               # 工具类
+│       └── mail_fetcher.php # 邮件获取工具
+├── db/                      # 数据库文件（自动创建）
+│   ├── admin.sqlite         # 管理员数据库
+│   └── mail.sqlite          # 邮箱账号数据库
+└── README.md               # 项目说明文档
+```
+
+## 宝塔面板部署指南
+
+### 1. 环境要求
+
+- **PHP版本**：7.4 或以上
+- **PHP扩展**：必须开启 `IMAP` 扩展
+- **数据库**：SQLite（PHP内置支持）
+- **Web服务器**：Nginx 或 Apache
+
+### 2. 安装IMAP扩展
+
+在宝塔面板中安装IMAP扩展：
+
+1. 进入宝塔面板 → 软件商店 → PHP → 设置
+2. 找到"安装扩展"选项
+3. 安装 `IMAP` 扩展
+4. 重启PHP服务
+
+### 3. 上传项目文件
+
+1. 将所有项目文件上传到网站根目录
+2. 确保文件权限正确（推荐755）
+3. 确保 `db/` 目录有写入权限（推荐777）
+
+### 4. 初始化管理员账号
+
+访问 `http://你的域名/backend/init_admin.php` 进行初始化
+
+初始化成功后会显示：
+```
+管理员账号初始化成功！
+默认账号: admin
+默认密码: admin
+请访问 login.php 进行登录
+```
+
+### 5. 配置网站设置
+
+在宝塔面板中设置：
+
+1. **网站设置** → **默认文档**：添加 `index.html`
+2. **网站设置** → **伪静态**：如需要可设置
+3. **网站设置** → **SSL**：建议开启HTTPS
+
+### 6. 测试访问
+
+- 前端页面：`http://你的域名/frontend/index.html`
+- 管理后台：`http://你的域名/backend/login.php`
+
+## 使用说明
+
+### 管理员操作
+
+1. **登录后台**
+   - 访问 `backend/login.php`
+   - 使用账号 `admin` 密码 `admin` 登录
+   - 登录后建议修改密码
+
+2. **添加邮箱账号**
+   - 在控制面板中填写邮箱信息
+   - 支持IMAP和POP3协议
+   - 可选择是否启用SSL
+
+3. **常用邮箱配置参考**
+   
+   **QQ邮箱**（推荐）
+   - 服务器：imap.qq.com
+   - 端口：993
+   - 协议：IMAP
+   - SSL：开启
+   - 密码：授权码（非QQ密码）
+
+   **163邮箱**
+   - 服务器：imap.163.com
+   - 端口：993
+   - 协议：IMAP
+   - SSL：开启
+   - 密码：授权码
+
+   **Gmail**
+   - 服务器：imap.gmail.com
+   - 端口：993
+   - 协议：IMAP
+   - SSL：开启
+   - 密码：应用专用密码
+
+### 用户操作
+
+1. **查看邮件**
+   - 访问前端页面 `frontend/index.html`
+   - 输入已添加的邮箱地址
+   - 点击"获取邮件"查看最新邮件
+
+## 数据库说明
+
+### admin.sqlite（管理员数据库）
+
+```sql
+CREATE TABLE admins (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    username TEXT UNIQUE NOT NULL,
+    password TEXT NOT NULL,           -- 加密后的密码
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+```
+
+### mail.sqlite（邮箱数据库）
+
+```sql
+CREATE TABLE mail_accounts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    email TEXT NOT NULL,              -- 邮箱地址
+    username TEXT NOT NULL,           -- 登录用户名
+    password TEXT NOT NULL,           -- 邮箱密码/授权码
+    server TEXT NOT NULL,             -- 邮件服务器地址
+    port INTEGER NOT NULL,            -- 端口号
+    protocol TEXT NOT NULL,           -- imap 或 pop3
+    ssl BOOLEAN DEFAULT 0,            -- 是否启用SSL
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+```
+
+## 常见问题
+
+### 1. IMAP扩展未安装
+
+**错误信息**：`PHP IMAP 扩展未安装`
+
+**解决方法**：
+1. 宝塔面板 → PHP → 安装扩展 → IMAP
+2. 重启PHP服务
+
+### 2. 数据库文件权限问题
+
+**错误信息**：`数据库连接失败`
+
+**解决方法**：
+1. 设置 `db/` 目录权限为 777
+2. 确保 `db/` 目录存在且可写
+
+### 3. 邮箱连接失败
+
+**常见原因**：
+1. 未开启IMAP/POP3服务
+2. 密码错误（需要使用授权码）
+3. 服务器地址或端口错误
+4. SSL设置不正确
+
+**解决方法**：
+1. 登录邮箱开启IMAP/POP3服务
+2. 获取并使用授权码（不是登录密码）
+3. 检查服务器配置信息
+4. 根据邮箱服务商要求设置SSL
+
+### 4. 前端无法访问API
+
+**可能原因**：
+1. 跨域问题
+2. 文件路径不正确
+
+**解决方法**：
+1. 确保API文件路径正确
+2. 检查服务器配置
+
+## 安全建议
+
+1. **修改默认密码**：登录后立即修改管理员密码
+2. **使用HTTPS**：生产环境建议开启SSL证书
+3. **定期备份**：定期备份 `db/` 目录下的数据库文件
+4. **访问控制**：可通过宝塔面板设置IP白名单
+5. **邮箱授权码**：使用专门的授权码，不要使用邮箱登录密码
+
+## 更新说明
+
+### 版本 1.0.0
+- 支持IMAP/POP3协议
+- 完整的管理员后台
+- 响应式前端界面
+- SQLite数据库存储
+- SSL安全连接支持
+
+## 技术支持
+
+如遇到问题，请检查：
+
+1. PHP版本和扩展
+2. 文件权限设置
+3. 数据库文件状态
+4. 邮箱服务器配置
+5. 网络连接状况
+
+---
+
+**注意**：本项目专为宝塔面板环境设计，确保按照部署指南正确配置环境。

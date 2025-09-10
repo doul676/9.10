@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>邮件查看系统</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        
+        .header {
+            text-align: center;
+            color: white;
+            margin-bottom: 30px;
+        }
+        
+        .header h1 {
+            font-size: 32px;
+            margin-bottom: 10px;
+            text-shadow: 0 2px 4px rgba(0,0,0,0.3);
+        }
+        
+        .header p {
+            font-size: 16px;
+            opacity: 0.9;
+        }
+        
+        .mail-input-card {
+            background: white;
+            border-radius: 15px;
+            padding: 30px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            margin-bottom: 30px;
+        }
+        
+        .input-group {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        
+        .input-group input {
+            flex: 1;
+            padding: 15px;
+            border: 2px solid #e1e1e1;
+            border-radius: 10px;
+            font-size: 16px;
+            transition: all 0.3s ease;
+        }
+        
+        .input-group input:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+        
+        .get-mail-btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            border-radius: 10px;
+            font-size: 16px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            white-space: nowrap;
+        }
+        
+        .get-mail-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+        
+        .get-mail-btn:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+        
+        .loading {
+            display: none;
+            text-align: center;
+            color: #667eea;
+            font-size: 16px;
+            margin: 20px 0;
+        }
+        
+        .loading::after {
+            content: '';
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 2px solid #667eea;
+            border-radius: 50%;
+            border-top: 2px solid transparent;
+            animation: spin 1s linear infinite;
+            margin-left: 10px;
+            vertical-align: middle;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .mail-display {
+            background: white;
+            border-radius: 15px;
+            padding: 30px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            display: none;
+        }
+        
+        .mail-header {
+            border-bottom: 2px solid #f1f1f1;
+            padding-bottom: 20px;
+            margin-bottom: 20px;
+        }
+        
+        .mail-subject {
+            font-size: 24px;
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 15px;
+            line-height: 1.3;
+        }
+        
+        .mail-meta {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            color: #666;
+            font-size: 14px;
+        }
+        
+        .mail-meta-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .mail-meta-label {
+            font-weight: 600;
+            color: #667eea;
+            min-width: 60px;
+        }
+        
+        .mail-body {
+            background: #f8f9fa;
+            border-radius: 10px;
+            padding: 20px;
+            max-height: 400px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            line-height: 1.6;
+            border: 1px solid #e9ecef;
+        }
+        
+        .message {
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            font-weight: 500;
+        }
+        
+        .message.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        
+        .message.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        
+        .message.info {
+            background: #cce7ff;
+            color: #004085;
+            border: 1px solid #b3d7ff;
+        }
+        
+        .admin-link {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: rgba(255,255,255,0.2);
+            color: white;
+            padding: 10px 15px;
+            border-radius: 25px;
+            text-decoration: none;
+            backdrop-filter: blur(10px);
+            transition: all 0.3s ease;
+            font-size: 14px;
+        }
+        
+        .admin-link:hover {
+            background: rgba(255,255,255,0.3);
+            transform: translateY(-2px);
+        }
+        
+        @media (max-width: 768px) {
+            .container {
+                padding: 0 10px;
+            }
+            
+            .header h1 {
+                font-size: 24px;
+            }
+            
+            .input-group {
+                flex-direction: column;
+            }
+            
+            .mail-input-card, .mail-display {
+                padding: 20px;
+            }
+            
+            .mail-meta {
+                grid-template-columns: 1fr;
+            }
+            
+            .admin-link {
+                position: static;
+                display: inline-block;
+                margin: 20px auto;
+                text-align: center;
+            }
+        }
+    </style>
+</head>
+<body>
+    <a href="backend/login.php" class="admin-link">🔧 管理员后台</a>
+    
+    <div class="container">
+        <div class="header">
+            <h1>📧 邮件查看系统</h1>
+            <p>输入已添加的邮箱账号查看最新邮件</p>
+        </div>
+        
+        <div class="mail-input-card">
+            <div class="input-group">
+                <input type="email" id="emailInput" placeholder="请输入邮箱地址 (例: user@example.com)" required>
+                <button class="get-mail-btn" onclick="getMail()">获取邮件</button>
+            </div>
+            
+            <div class="loading" id="loading">正在获取邮件，请稍候...</div>
+            
+            <div id="message"></div>
+        </div>
+        
+        <div class="mail-display" id="mailDisplay">
+            <div class="mail-header">
+                <div class="mail-subject" id="mailSubject"></div>
+                <div class="mail-meta">
+                    <div class="mail-meta-item">
+                        <span class="mail-meta-label">发件人:</span>
+                        <span id="mailFrom"></span>
+                    </div>
+                    <div class="mail-meta-item">
+                        <span class="mail-meta-label">收件人:</span>
+                        <span id="mailTo"></span>
+                    </div>
+                    <div class="mail-meta-item">
+                        <span class="mail-meta-label">时间:</span>
+                        <span id="mailDate"></span>
+                    </div>
+                    <div class="mail-meta-item">
+                        <span class="mail-meta-label">大小:</span>
+                        <span id="mailSize"></span>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="mail-body" id="mailBody"></div>
+        </div>
+    </div>
+    
+    <script>
+        // 回车键触发获取邮件
+        document.getElementById('emailInput').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                getMail();
+            }
+        });
+        
+        async function getMail() {
+            const emailInput = document.getElementById('emailInput');
+            const loading = document.getElementById('loading');
+            const message = document.getElementById('message');
+            const mailDisplay = document.getElementById('mailDisplay');
+            const getMailBtn = document.querySelector('.get-mail-btn');
+            
+            const email = emailInput.value.trim();
+            
+            if (!email) {
+                showMessage('请输入邮箱地址', 'error');
+                return;
+            }
+            
+            if (!isValidEmail(email)) {
+                showMessage('请输入有效的邮箱地址', 'error');
+                return;
+            }
+            
+            // 显示加载状态
+            loading.style.display = 'block';
+            getMailBtn.disabled = true;
+            getMailBtn.textContent = '获取中...';
+            message.innerHTML = '';
+            mailDisplay.style.display = 'none';
+            
+            try {
+                const response = await fetch('backend/api/get_mail.php', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ email: email })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    if (data.mail) {
+                        displayMail(data.mail);
+                        showMessage('邮件获取成功', 'success');
+                    } else {
+                        showMessage('邮箱中暂无邮件', 'info');
+                    }
+                } else {
+                    showMessage(data.message || '获取邮件失败', 'error');
+                }
+                
+            } catch (error) {
+                console.error('请求失败:', error);
+                showMessage('网络请求失败，请检查网络连接', 'error');
+            } finally {
+                // 隐藏加载状态
+                loading.style.display = 'none';
+                getMailBtn.disabled = false;
+                getMailBtn.textContent = '获取邮件';
+            }
+        }
+        
+        function displayMail(mail) {
+            document.getElementById('mailSubject').textContent = mail.subject || '(无主题)';
+            document.getElementById('mailFrom').textContent = mail.from || '未知';
+            document.getElementById('mailTo').textContent = mail.to || '未知';
+            document.getElementById('mailDate').textContent = mail.date || '未知';
+            document.getElementById('mailSize').textContent = formatFileSize(mail.size || 0);
+            document.getElementById('mailBody').textContent = mail.body || '(邮件内容为空)';
+            
+            document.getElementById('mailDisplay').style.display = 'block';
+        }
+        
+        function showMessage(text, type) {
+            const message = document.getElementById('message');
+            message.innerHTML = `<div class="message ${type}">${text}</div>`;
+        }
+        
+        function isValidEmail(email) {
+            const re = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+            return re.test(email);
+        }
+        
+        function formatFileSize(bytes) {
+            if (bytes === 0) return '0 B';
+            const k = 1024;
+            const sizes = ['B', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+        }
+    </script>
+</body>
+</html>
