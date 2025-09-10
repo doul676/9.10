@@ -9,7 +9,7 @@ session_start();
 // 检查登录状态
 if (isset($_SESSION['admin_logged_in']) && $_SESSION['admin_logged_in'] === true) {
     // 已登录，重定向到控制面板
-    header('Location: dashboard.php');
+    header('Location: home.php');
     exit();
 } else {
     // 未登录，重定向到登录页面

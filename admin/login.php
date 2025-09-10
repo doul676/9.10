@@ -3,7 +3,7 @@ session_start();
 
 // 如果已登录，重定向到控制面板
 if (isset($_SESSION['admin_logged_in']) && $_SESSION['admin_logged_in'] === true) {
-    header('Location: ./');
+    header('Location: home.php');
     exit();
 }
 
@@ -25,7 +25,7 @@ if ($_POST) {
                 $_SESSION['admin_logged_in'] = true;
                 $_SESSION['admin_id'] = $admin['id'];
                 $_SESSION['admin_username'] = $admin['username'];
-                header('Location: ./');
+                header('Location: home.php');
                 exit();
             } else {
                 $error = '用户名或密码错误';

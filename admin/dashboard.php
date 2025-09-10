@@ -7,6 +7,10 @@ if (!isset($_SESSION['admin_logged_in']) || $_SESSION['admin_logged_in'] !== tru
     exit();
 }
 
+// 重定向到新的首页
+header('Location: home.php');
+exit();
+
 $message = '';
 $error = '';
 
