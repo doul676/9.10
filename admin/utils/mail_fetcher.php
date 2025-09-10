@@ -52,11 +52,14 @@ class MailFetcher {
         if ($this->ssl) {
             $flags .= '/ssl';
         }
-        if ($this->port !== 143 && $this->port !== 993) {
-            $flags .= ':' . $this->port;
-        }
         
-        $mailbox = '{' . $this->server . $flags . '}INBOX';
+        // 构建邮箱连接字符串
+        $mailbox = '{' . $this->server . ':' . $this->port . $flags . '}INBOX';
+        
+        // 尝试连接，禁用SSL验证以避免证书问题
+        if ($this->ssl) {
+            $mailbox = '{' . $this->server . ':' . $this->port . '/imap/ssl/novalidate-cert}INBOX';
+        }
         
         $this->connection = @imap_open($mailbox, $this->username, $this->password);
         
@@ -76,11 +79,14 @@ class MailFetcher {
         if ($this->ssl) {
             $flags .= '/ssl';
         }
-        if ($this->port !== 110 && $this->port !== 995) {
-            $flags .= ':' . $this->port;
-        }
         
-        $mailbox = '{' . $this->server . $flags . '}INBOX';
+        // 构建邮箱连接字符串
+        $mailbox = '{' . $this->server . ':' . $this->port . $flags . '}INBOX';
+        
+        // 尝试连接，禁用SSL验证以避免证书问题
+        if ($this->ssl) {
+            $mailbox = '{' . $this->server . ':' . $this->port . '/pop3/ssl/novalidate-cert}INBOX';
+        }
         
         $this->connection = @imap_open($mailbox, $this->username, $this->password);
         

@@ -26,7 +26,7 @@ if ($_POST) {
         
         if ($action === 'add') {
             $email = $_POST['email'] ?? '';
-            $username = $_POST['username'] ?? '';
+            $username = $email; // 使用邮箱作为用户名
             $password = $_POST['password'] ?? '';
             $server = $_POST['server'] ?? '';
             $port = (int)($_POST['port'] ?? 0);
@@ -34,7 +34,7 @@ if ($_POST) {
             $ssl = isset($_POST['ssl']) ? 1 : 0;
             $remarks = $_POST['remarks'] ?? '';
             
-            if ($email && $username && $password && $server && $port) {
+            if ($email && $password && $server && $port) {
                 $stmt = $db->prepare('INSERT INTO mail_accounts (email, username, password, server, port, protocol, ssl, remarks) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
                 $stmt->bindValue(1, $email);
                 $stmt->bindValue(2, $username);
@@ -60,7 +60,7 @@ if ($_POST) {
         } elseif ($action === 'update') {
             $id = (int)($_POST['id'] ?? 0);
             $email = $_POST['email'] ?? '';
-            $username = $_POST['username'] ?? '';
+            $username = $email; // 使用邮箱作为用户名
             $password = $_POST['password'] ?? '';
             $server = $_POST['server'] ?? '';
             $port = (int)($_POST['port'] ?? 0);
@@ -68,7 +68,7 @@ if ($_POST) {
             $ssl = isset($_POST['ssl']) ? 1 : 0;
             $remarks = $_POST['remarks'] ?? '';
             
-            if ($id > 0 && $email && $username && $password && $server && $port) {
+            if ($id > 0 && $email && $password && $server && $port) {
                 $stmt = $db->prepare('UPDATE mail_accounts SET email=?, username=?, password=?, server=?, port=?, protocol=?, ssl=?, remarks=?, updated_at=CURRENT_TIMESTAMP WHERE id=?');
                 $stmt->bindValue(1, $email);
                 $stmt->bindValue(2, $username);
@@ -97,11 +97,24 @@ $accounts = [];
 try {
     $db = new SQLite3('../db/mail.sqlite');
     
-    // 添加备注字段（如果不存在）
+    // 确保数据库表结构正确
     try {
-        $db->exec('ALTER TABLE mail_accounts ADD COLUMN remarks TEXT DEFAULT ""');
+        // 检查是否需要添加remarks字段
+        $result = $db->query("PRAGMA table_info(mail_accounts)");
+        $hasRemarks = false;
+        while ($row = $result->fetchArray()) {
+            if ($row['name'] === 'remarks') {
+                $hasRemarks = true;
+                break;
+            }
+        }
+        
+        if (!$hasRemarks) {
+            $db->exec('ALTER TABLE mail_accounts ADD COLUMN remarks TEXT DEFAULT ""');
+        }
     } catch (Exception $e) {
-        // 字段可能已存在，忽略错误
+        // 忽略字段已存在的错误
+        error_log('Database schema check: ' . $e->getMessage());
     }
     
     $result = $db->query('SELECT * FROM mail_accounts ORDER BY created_at DESC');
@@ -720,7 +733,12 @@ try {
                                             <td><?php echo strtoupper($account['protocol']) . '/' . $account['port']; ?></td>
                                             <td><?php echo $account['ssl'] ? '✅ 是' : '❌ 否'; ?></td>
                                             <td><?php echo htmlspecialchars($account['remarks'] ?? ''); ?></td>
-                                            <td><?php echo date('Y-m-d H:i', strtotime($account['created_at'])); ?></td>
+                                            <td><?php 
+                                                // 设置为北京时间显示
+                                                $created_time = new DateTime($account['created_at']);
+                                                $created_time->setTimezone(new DateTimeZone('Asia/Shanghai'));
+                                                echo $created_time->format('Y-m-d H:i'); 
+                                            ?></td>
                                             <td>
                                                 <div class="actions">
                                                     <button type="button" class="btn btn-small" onclick="openEditModal(<?php echo htmlspecialchars(json_encode($account)); ?>)">编辑</button>
@@ -794,10 +812,6 @@ try {
                             <label for="modalRemarks">备注</label>
                             <input type="text" id="modalRemarks" name="remarks" placeholder="可选备注信息">
                         </div>
-                        <div class="form-group">
-                            <label for="modalUsername">用户名 *</label>
-                            <input type="text" id="modalUsername" name="username" required placeholder="通常与邮箱账号相同">
-                        </div>
                     </div>
                 </div>
                 <div class="modal-footer">
@@ -836,7 +850,6 @@ try {
             
             // Fill form with existing data
             document.getElementById('modalEmail').value = account.email;
-            document.getElementById('modalUsername').value = account.username;
             document.getElementById('modalPassword').value = account.password;
             document.getElementById('modalServer').value = account.server;
             document.getElementById('modalPort').value = account.port;
@@ -873,7 +886,7 @@ try {
             const data = {
                 server: document.getElementById('modalServer').value,
                 port: parseInt(document.getElementById('modalPort').value),
-                username: document.getElementById('modalUsername').value,
+                username: document.getElementById('modalEmail').value, // 使用邮箱作为用户名
                 password: document.getElementById('modalPassword').value,
                 protocol: document.getElementById('modalProtocol').value,
                 ssl: document.getElementById('modalSsl').checked
@@ -920,19 +933,6 @@ try {
         function testConnection(accountId) {
             const btn = document.getElementById('test-btn-' + accountId);
             const originalText = btn.textContent;
-            
-            // Get account data from table row
-            const row = btn.closest('tr');
-            const cells = row.querySelectorAll('td');
-            
-            const data = {
-                server: cells[2].textContent,
-                port: parseInt(cells[3].textContent.split('/')[0]),
-                username: cells[1].textContent,
-                password: '', // We'll need to get this from the server
-                protocol: cells[3].textContent.split('/')[1].toLowerCase(),
-                ssl: cells[4].textContent === '✅'
-            };
             
             // For existing accounts, we need to get the password from the database
             // Let's use the account ID to fetch the data

@@ -128,10 +128,18 @@ function testExistingAccount($accountId) {
 function performConnectionTest($server, $port, $username, $password, $protocol, $ssl) {
     try {
         // 检查IMAP扩展
+        if (!extension_loaded('imap')) {
+            echo json_encode([
+                'success' => false,
+                'message' => '服务器未安装IMAP扩展，请联系管理员安装php-imap扩展'
+            ]);
+            exit();
+        }
+        
         if (!function_exists('imap_open')) {
             echo json_encode([
                 'success' => false,
-                'message' => '服务器未安装IMAP扩展'
+                'message' => '服务器IMAP扩展不可用，请检查配置'
             ]);
             exit();
         }
