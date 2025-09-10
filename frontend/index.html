@@ -422,6 +422,22 @@
         function showMessage(text, type) {
             const message = document.getElementById('message');
             message.innerHTML = `<div class="message ${type}">${text}</div>`;
+            
+            // Auto-dismiss success messages after 3 seconds
+            if (type === 'success') {
+                setTimeout(() => {
+                    const currentMessage = message.querySelector('.message.success');
+                    if (currentMessage && currentMessage.textContent.trim() === text) {
+                        currentMessage.style.transition = 'opacity 0.5s ease-out';
+                        currentMessage.style.opacity = '0';
+                        setTimeout(() => {
+                            if (message.querySelector('.message.success') === currentMessage) {
+                                message.innerHTML = '';
+                            }
+                        }, 500); // Wait for fade-out animation
+                    }
+                }, 3000); // Auto-dismiss after 3 seconds
+            }
         }
         
         function isValidEmail(email) {

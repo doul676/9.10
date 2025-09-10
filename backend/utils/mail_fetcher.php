@@ -237,7 +237,14 @@ class MailFetcher {
         if (!isset($structure->parts)) {
             // 简单邮件（无多部分）
             $body = imap_fetchbody($this->connection, $mailNumber, 1);
-            return $this->decodeBody($body, $structure);
+            $decodedBody = $this->decodeBody($body, $structure);
+            
+            // 检查是否为HTML内容
+            if (isset($structure->subtype) && strtolower($structure->subtype) === 'html') {
+                return $this->htmlToText($decodedBody);
+            } else {
+                return $this->formatTextContent($decodedBody);
+            }
         }
         
         // 多部分邮件 - 优先查找纯文本，其次HTML
@@ -247,16 +254,20 @@ class MailFetcher {
         for ($i = 1; $i <= count($structure->parts); $i++) {
             $part = $structure->parts[$i - 1];
             
-            // 查找文本部分
+            // 只处理文本类型的内容，跳过附件
             if ($part->type == 0) { // 文本类型
                 $partBody = imap_fetchbody($this->connection, $mailNumber, $i);
                 $decodedBody = $this->decodeBody($partBody, $part);
                 
                 // 检查是否为HTML内容
                 if (isset($part->subtype) && strtolower($part->subtype) === 'html') {
-                    $htmlBody = $decodedBody;
+                    if (empty($htmlBody)) { // 只取第一个HTML部分
+                        $htmlBody = $decodedBody;
+                    }
                 } else {
-                    $textBody = $decodedBody;
+                    if (empty($textBody)) { // 只取第一个文本部分
+                        $textBody = $decodedBody;
+                    }
                 }
             }
         }
@@ -341,7 +352,7 @@ class MailFetcher {
         // 清理内容
         $text = trim($text);
         
-        // 移除多余的空行（保留段落分隔）
+        // 移除多余的空行（保留段落分隔，最多两个连续换行）
         $text = preg_replace('/\n{3,}/', "\n\n", $text);
         
         // 移除行首行尾空白但保留缩进
@@ -349,28 +360,66 @@ class MailFetcher {
         $formattedLines = [];
         
         foreach ($lines as $line) {
+            // 移除行尾空白，保留行首缩进
             $formattedLines[] = rtrim($line);
         }
         
-        return implode("\n", $formattedLines);
+        $text = implode("\n", $formattedLines);
+        
+        // 移除开头和结尾的多余空行
+        $text = trim($text);
+        
+        // 清理特殊字符和乱码
+        $text = preg_replace('/[^\x{20}-\x{7E}\x{4E00}-\x{9FFF}\s]/u', '', $text);
+        
+        // 处理邮件引用符号（>开头的行）
+        $text = preg_replace('/^>\s*/m', '  > ', $text);
+        
+        return $text;
     }
     
     /**
      * 将HTML内容转换为格式化的纯文本
      */
     private function htmlToText($html) {
-        // 基本HTML标签处理
-        $html = str_replace(['<br>', '<br/>', '<br />'], "\n", $html);
-        $html = str_replace(['</p>', '</div>'], "\n\n", $html);
-        $html = str_replace(['</h1>', '</h2>', '</h3>', '</h4>', '</h5>', '</h6>'], "\n\n", $html);
+        // 清理和预处理HTML
+        $html = trim($html);
         
-        // 移除所有HTML标签
+        // 移除脚本和样式标签及其内容
+        $html = preg_replace('/<script[^>]*>.*?<\/script>/is', '', $html);
+        $html = preg_replace('/<style[^>]*>.*?<\/style>/is', '', $html);
+        $html = preg_replace('/<head[^>]*>.*?<\/head>/is', '', $html);
+        
+        // 移除HTML注释
+        $html = preg_replace('/<!--.*?-->/s', '', $html);
+        
+        // 处理标题标签 - 添加换行和分隔
+        $html = preg_replace('/<h[1-6][^>]*>/i', "\n\n", $html);
+        $html = preg_replace('/<\/h[1-6]>/i', "\n" . str_repeat('-', 20) . "\n", $html);
+        
+        // 处理段落和换行
+        $html = str_replace(['<br>', '<br/>', '<br />'], "\n", $html);
+        $html = str_replace(['</p>', '</div>', '</li>'], "\n\n", $html);
+        
+        // 处理列表
+        $html = str_replace('<li>', "• ", $html);
+        $html = preg_replace('/<\/?(ul|ol)[^>]*>/i', "\n", $html);
+        
+        // 处理表格
+        $html = str_replace(['<td>', '<th>'], "    ", $html);
+        $html = str_replace(['</td>', '</th>', '</tr>'], "\n", $html);
+        $html = preg_replace('/<\/?(table|tbody|thead)[^>]*>/i', "\n", $html);
+        
+        // 处理链接 - 保留链接文本
+        $html = preg_replace('/<a[^>]*href=["\']([^"\']*)["\'][^>]*>(.*?)<\/a>/i', '$2 [$1]', $html);
+        
+        // 移除所有剩余的HTML标签
         $text = strip_tags($html);
         
         // 解码HTML实体
         $text = html_entity_decode($text, ENT_QUOTES, 'UTF-8');
         
-        // 格式化文本
+        // 清理和格式化文本
         return $this->formatTextContent($text);
     }
     
