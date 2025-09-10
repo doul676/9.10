@@ -322,26 +322,118 @@ class MailFetcher {
     }
     
     /**
-     * 测试连接
+     * 测试连接并提供详细诊断信息
      */
     public function testConnection() {
         try {
+            // 首先检查IMAP扩展状态
+            if (!extension_loaded('imap')) {
+                $sapi = php_sapi_name();
+                return [
+                    'success' => false,
+                    'message' => '❌ IMAP扩展功能不完整 - 扩展未加载',
+                    'diagnostics' => [
+                        'extension_status' => '❌ php-imap扩展未在当前环境中加载',
+                        'environment' => "当前运行环境: {$sapi}",
+                        'suggestion' => '请检查Web服务器PHP配置，确保IMAP扩展已启用',
+                        'solution' => '联系管理员在Web服务器环境中安装和启用php-imap扩展'
+                    ],
+                    'error_type' => 'extension_not_loaded'
+                ];
+            }
+            
+            // 检查核心IMAP函数是否可用
+            $requiredFunctions = ['imap_open', 'imap_close', 'imap_errors', 'imap_last_error', 'imap_num_msg'];
+            $missingFunctions = [];
+            
+            foreach ($requiredFunctions as $function) {
+                if (!function_exists($function)) {
+                    $missingFunctions[] = $function;
+                }
+            }
+            
+            if (!empty($missingFunctions)) {
+                return [
+                    'success' => false,
+                    'message' => '❌ IMAP扩展功能不完整 - 核心函数缺失',
+                    'diagnostics' => [
+                        'extension_status' => '✅ php-imap扩展已加载',
+                        'function_issue' => '❌ 部分IMAP核心函数不可用: ' . implode(', ', $missingFunctions),
+                        'available_functions' => '✅ 可用函数: ' . implode(', ', array_diff($requiredFunctions, $missingFunctions)),
+                        'suggestion' => 'IMAP扩展已安装但功能不完整，请重新安装php-imap扩展',
+                        'solution' => '联系管理员重新配置或重新编译php-imap扩展'
+                    ],
+                    'error_type' => 'function_missing'
+                ];
+            }
+            
+            // 尝试实际连接测试
             if ($this->connect()) {
                 $this->close();
                 return [
                     'success' => true,
-                    'message' => '连接成功'
+                    'message' => '✅ 邮箱连接测试成功！',
+                    'diagnostics' => [
+                        'imap_extension' => '✅ IMAP扩展完全可用',
+                        'connection_test' => '✅ 服务器连接成功',
+                        'protocol_info' => strtoupper($this->protocol) . ($this->ssl ? ' with SSL/TLS' : ' without SSL'),
+                        'server_info' => $this->server . ':' . $this->port,
+                        'auth_status' => '✅ 身份验证成功'
+                    ]
                 ];
             } else {
                 return [
                     'success' => false,
-                    'message' => '连接失败'
+                    'message' => '❌ 邮箱连接测试失败',
+                    'diagnostics' => [
+                        'imap_extension' => '✅ IMAP扩展完全可用',
+                        'connection_issue' => '❌ 无法建立服务器连接',
+                        'suggestion' => '请检查服务器地址、端口和网络连接',
+                        'troubleshoot' => '验证邮箱服务器配置和防火墙设置'
+                    ],
+                    'error_type' => 'connection_failed'
                 ];
             }
+            
         } catch (Exception $e) {
+            $errorMessage = $e->getMessage();
+            $errorType = 'unknown';
+            $diagnostics = [
+                'imap_extension' => '✅ IMAP扩展完全可用',
+                'error_details' => $errorMessage
+            ];
+            
+            // 根据错误信息提供精确的诊断建议
+            if (strpos($errorMessage, 'IMAP 扩展未安装') !== false || strpos($errorMessage, 'imap扩展') !== false) {
+                $errorType = 'extension_issue';
+                $diagnostics['issue_type'] = '❌ IMAP扩展相关问题';
+                $diagnostics['suggestion'] = '重新安装或重新配置php-imap扩展';
+            } elseif (strpos($errorMessage, 'SSL证书') !== false) {
+                $errorType = 'ssl_error';
+                $diagnostics['issue_type'] = '❌ SSL证书验证失败';
+                $diagnostics['suggestion'] = '检查SSL证书配置或尝试关闭SSL连接';
+            } elseif (strpos($errorMessage, '连接被拒绝') !== false) {
+                $errorType = 'connection_refused';
+                $diagnostics['issue_type'] = '❌ 服务器拒绝连接';
+                $diagnostics['suggestion'] = '检查服务器地址、端口和防火墙设置';
+            } elseif (strpos($errorMessage, '用户名或密码') !== false || strpos($errorMessage, 'Authentication') !== false) {
+                $errorType = 'auth_failed';
+                $diagnostics['issue_type'] = '❌ 身份验证失败';
+                $diagnostics['suggestion'] = '检查邮箱地址和密码，某些邮箱需要应用专用密码';
+            } elseif (strpos($errorMessage, '服务器地址') !== false || strpos($errorMessage, 'host not found') !== false) {
+                $errorType = 'host_not_found';
+                $diagnostics['issue_type'] = '❌ 服务器地址解析失败';
+                $diagnostics['suggestion'] = '检查服务器地址拼写和网络连接';
+            } else {
+                $diagnostics['issue_type'] = '❌ 未知连接错误';
+                $diagnostics['suggestion'] = '查看详细错误信息进行排查';
+            }
+            
             return [
                 'success' => false,
-                'message' => '连接失败: ' . $e->getMessage()
+                'message' => '❌ 连接测试失败: ' . $errorMessage,
+                'diagnostics' => $diagnostics,
+                'error_type' => $errorType
             ];
         }
     }
