@@ -268,6 +268,25 @@
         
 
         
+        .admin-link {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: rgba(255,255,255,0.2);
+            color: white;
+            padding: 10px 15px;
+            border-radius: 25px;
+            text-decoration: none;
+            backdrop-filter: blur(10px);
+            transition: all 0.3s ease;
+            font-size: 14px;
+        }
+        
+        .admin-link:hover {
+            background: rgba(255,255,255,0.3);
+            transform: translateY(-2px);
+        }
+        
         @media (max-width: 768px) {
             .container {
                 padding: 0 10px;
@@ -289,12 +308,20 @@
                 grid-template-columns: 1fr;
             }
             
+            .admin-link {
+                position: static;
+                display: inline-block;
+                margin: 20px auto;
+                text-align: center;
+            }
+            
 
         }
     </style>
 </head>
 <body>
-
+    <a href="admin/" class="admin-link">🔧 管理员后台</a>
+    
     <div class="container">
         <div class="header">
             <h1>📧 邮件查看系统</h1>
