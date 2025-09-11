@@ -15,7 +15,13 @@ if ($_POST) {
     
     if ($username && $password) {
         try {
-            $db = new SQLite3('../db/admin.sqlite');
+            // 规范化数据库路径处理
+            $dbPath = realpath(__DIR__ . '/../db/admin.sqlite');
+            if (!$dbPath || !file_exists($dbPath)) {
+                throw new Exception('管理员数据库文件不存在，请先初始化系统');
+            }
+            
+            $db = new SQLite3($dbPath);
             $stmt = $db->prepare('SELECT * FROM admins WHERE username = ?');
             $stmt->bindValue(1, $username);
             $result = $stmt->execute();
