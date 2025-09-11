@@ -165,41 +165,30 @@ class EnhancedMailFetcher {
         
         $mailbox = '{' . $this->server . $flags . '}INBOX';
         
-        // 如果有代理，记录代理尝试（注意：PHP的imap_open不直接支持代理）
+        // 重要：PHP的imap_open不支持代理，需要明确告知用户
         if ($this->useProxy && $this->currentProxy) {
-            error_log('POP3协议暂不支持通过代理连接，将使用直连: ' . $this->currentProxy['proxy_type'] . '://' . 
+            error_log('注意：POP3协议使用PHP的imap_open函数，不支持代理连接。代理设置: ' . 
+                     $this->currentProxy['proxy_type'] . '://' . 
                      $this->currentProxy['proxy_host'] . ':' . $this->currentProxy['proxy_port']);
-            // 对于POP3，我们记录代理尝试但实际使用直连
+            
+            // 将代理标记为无效，因为POP3实际不能使用代理
+            $this->useProxy = false;
+            $this->currentProxy = null;
         }
         
-        // 尝试连接
+        // 尝试直接连接（POP3协议限制）
         $startTime = microtime(true);
         $this->client = @imap_open($mailbox, $this->username, $this->password);
         $responseTime = round((microtime(true) - $startTime) * 1000);
         
         if (!$this->client) {
             $error = imap_last_error();
-            
-            // 如果指定了代理但连接失败，记录代理失败统计
-            if ($this->useProxy && $this->currentProxy) {
-                $this->proxyManager->updateProxyStats($this->currentProxy['id'], false);
-                error_log('POP3连接失败 (尝试使用代理设置): ' . ($error ?: '未知错误'));
-            } else {
-                error_log('POP3直连失败: ' . ($error ?: '未知错误'));
-            }
-            
-            throw new Exception('POP3连接失败: ' . ($error ?: '未知错误'));
+            error_log('POP3直连失败: ' . ($error ?: '未知错误'));
+            throw new Exception('POP3连接失败: ' . ($error ?: '未知错误') . ' (注意：POP3协议不支持代理连接)');
         }
         
         // 连接成功
-        if ($this->useProxy && $this->currentProxy) {
-            // 虽然实际上是直连，但标记代理"成功"以保持统计一致性
-            $this->proxyManager->updateProxyStats($this->currentProxy['id'], true, $responseTime);
-            error_log('POP3连接成功 (直连，代理配置已记录)，响应时间: ' . $responseTime . 'ms');
-        } else {
-            error_log('POP3直连成功，响应时间: ' . $responseTime . 'ms');
-        }
-        
+        error_log('POP3直连成功，响应时间: ' . $responseTime . 'ms (POP3协议不支持代理)');
         return true;
     }
     
@@ -255,30 +244,71 @@ class EnhancedMailFetcher {
             $body = $this->getMailBodyPOP3($mailNumber);
             
             // 解码主题
-            $subject = $this->decodeHeader($header->subject ?? '');
+            $subject = isset($header->subject) ? $this->decodeHeader($header->subject) : '(无主题)';
             
-            // 发件人信息
-            $from = $header->from[0] ?? null;
-            $fromEmail = $from ? $from->mailbox . '@' . $from->host : '未知';
-            $fromName = $from && isset($from->personal) ? $this->decodeHeader($from->personal) : $fromEmail;
+            // 发件人信息 - 改进处理
+            $fromInfo = '未知发件人';
+            $fromEmail = '未知';
+            if (isset($header->from) && is_array($header->from) && count($header->from) > 0) {
+                $from = $header->from[0];
+                if (isset($from->mailbox) && isset($from->host)) {
+                    $fromEmail = $from->mailbox . '@' . $from->host;
+                    
+                    // 如果有显示名称，使用显示名称，否则使用邮箱地址
+                    if (isset($from->personal) && !empty($from->personal)) {
+                        $fromName = $this->decodeHeader($from->personal);
+                        $fromInfo = $fromName . ' <' . $fromEmail . '>';
+                    } else {
+                        $fromInfo = $fromEmail;
+                    }
+                }
+            }
             
-            // 收件人信息
-            $to = $header->to[0] ?? null;
-            $toEmail = $to ? $to->mailbox . '@' . $to->host : '未知';
+            // 收件人信息 - 改进处理
+            $toInfo = '未知收件人';
+            if (isset($header->to) && is_array($header->to) && count($header->to) > 0) {
+                $toList = [];
+                foreach ($header->to as $to) {
+                    if (isset($to->mailbox) && isset($to->host)) {
+                        $toEmail = $to->mailbox . '@' . $to->host;
+                        if (isset($to->personal) && !empty($to->personal)) {
+                            $toName = $this->decodeHeader($to->personal);
+                            $toList[] = $toName . ' <' . $toEmail . '>';
+                        } else {
+                            $toList[] = $toEmail;
+                        }
+                    }
+                }
+                if (!empty($toList)) {
+                    $toInfo = implode(', ', $toList);
+                }
+            }
             
-            // 邮件日期
-            $date = $header->date ?? '';
-            $timestamp = strtotime($date);
-            $formattedDate = $timestamp ? date('Y-m-d H:i:s', $timestamp) : $date;
+            // 邮件日期 - 改进处理
+            $dateInfo = '未知时间';
+            if (isset($header->date) && !empty($header->date)) {
+                $date = $header->date;
+                $timestamp = strtotime($date);
+                if ($timestamp !== false) {
+                    // 转换为北京时间显示
+                    $beijingTime = new DateTime();
+                    $beijingTime->setTimestamp($timestamp);
+                    $beijingTime->setTimezone(new DateTimeZone('Asia/Shanghai'));
+                    $dateInfo = $beijingTime->format('Y-m-d H:i:s');
+                } else {
+                    // 如果解析失败，显示原始日期字符串
+                    $dateInfo = $date;
+                }
+            }
             
             return [
                 'success' => true,
                 'mail' => [
                     'subject' => $subject,
-                    'from' => $fromName,
+                    'from' => $fromInfo,
                     'from_email' => $fromEmail,
-                    'to' => $toEmail,
-                    'date' => $formattedDate,
+                    'to' => $toInfo,
+                    'date' => $dateInfo,
                     'body' => $body,
                     'message_id' => $header->message_id ?? '',
                     'size' => $header->Size ?? 0
@@ -328,39 +358,99 @@ class EnhancedMailFetcher {
      * 解码POP3邮件正文
      */
     private function decodeBodyPOP3($body, $structure) {
-        // 根据编码类型解码
-        switch ($structure->encoding) {
-            case 1: // 8bit
-                $body = imap_8bit($body);
-                break;
-            case 2: // binary
-                // 二进制，通常不需要解码
-                break;
-            case 3: // base64
-                $body = base64_decode($body);
-                break;
-            case 4: // quoted-printable
-                $body = quoted_printable_decode($body);
-                break;
-            default: // 7bit或其他
-                // 不需要特殊处理
-                break;
+        if (empty($body)) {
+            return '(邮件内容为空)';
         }
         
-        // 字符集转换
-        if (isset($structure->parameters)) {
-            foreach ($structure->parameters as $param) {
-                if (strtolower($param->attribute) === 'charset') {
-                    $charset = $param->value;
-                    if (strtolower($charset) !== 'utf-8') {
-                        $body = mb_convert_encoding($body, 'UTF-8', $charset);
+        try {
+            // 根据编码类型解码
+            switch ($structure->encoding) {
+                case 1: // 8bit
+                    $body = imap_8bit($body);
+                    break;
+                case 2: // binary
+                    // 二进制，通常不需要解码
+                    break;
+                case 3: // base64
+                    $decoded = base64_decode($body);
+                    if ($decoded !== false) {
+                        $body = $decoded;
                     }
                     break;
+                case 4: // quoted-printable
+                    $body = quoted_printable_decode($body);
+                    break;
+                default: // 7bit或其他
+                    // 不需要特殊处理
+                    break;
+            }
+            
+            // 检测字符集并转换
+            $charset = 'UTF-8';
+            
+            // 从structure参数中获取字符集
+            if (isset($structure->parameters)) {
+                foreach ($structure->parameters as $param) {
+                    if (strtolower($param->attribute) === 'charset') {
+                        $charset = $param->value;
+                        break;
+                    }
                 }
             }
+            
+            // 如果没有在parameters中找到，检查dparameters
+            if ($charset === 'UTF-8' && isset($structure->dparameters)) {
+                foreach ($structure->dparameters as $param) {
+                    if (strtolower($param->attribute) === 'charset') {
+                        $charset = $param->value;
+                        break;
+                    }
+                }
+            }
+            
+            // 字符集转换
+            if (strtolower($charset) !== 'utf-8') {
+                try {
+                    $converted = mb_convert_encoding($body, 'UTF-8', $charset);
+                    if ($converted !== false && mb_check_encoding($converted, 'UTF-8')) {
+                        $body = $converted;
+                    } else {
+                        // 尝试其他常见编码
+                        $commonEncodings = ['GBK', 'GB2312', 'Big5', 'ISO-8859-1', 'Windows-1252'];
+                        foreach ($commonEncodings as $encoding) {
+                            try {
+                                $converted = mb_convert_encoding($body, 'UTF-8', $encoding);
+                                if ($converted !== false && mb_check_encoding($converted, 'UTF-8')) {
+                                    $body = $converted;
+                                    break;
+                                }
+                            } catch (Exception $e) {
+                                continue;
+                            }
+                        }
+                    }
+                } catch (Exception $e) {
+                    error_log('字符集转换失败: ' . $e->getMessage() . ', 原始字符集: ' . $charset);
+                }
+            }
+            
+            // 清理内容，移除过多的空行和HTML标签（如果需要）
+            $body = trim($body);
+            if (empty($body)) {
+                return '(邮件内容为空)';
+            }
+            
+            // 限制内容长度，避免显示过长内容
+            if (mb_strlen($body, 'UTF-8') > 10000) {
+                $body = mb_substr($body, 0, 10000, 'UTF-8') . "\n\n(内容过长，已截断...)";
+            }
+            
+            return $body;
+            
+        } catch (Exception $e) {
+            error_log('邮件正文解码失败: ' . $e->getMessage());
+            return '(邮件内容解析失败)';
         }
-        
-        return $body;
     }
     
     /**
@@ -368,22 +458,63 @@ class EnhancedMailFetcher {
      */
     private function decodeHeader($header) {
         if (empty($header)) {
-            return '';
+            return '(无主题)';
         }
         
-        $decoded = imap_mime_header_decode($header);
-        $result = '';
+        // 处理原始字符串
+        $header = trim($header);
+        if (empty($header)) {
+            return '(无主题)';
+        }
         
-        foreach ($decoded as $part) {
-            $charset = isset($part->charset) ? $part->charset : 'UTF-8';
-            if (strtolower($charset) !== 'utf-8' && strtolower($charset) !== 'default') {
-                $result .= mb_convert_encoding($part->text, 'UTF-8', $charset);
-            } else {
-                $result .= $part->text;
+        try {
+            $decoded = imap_mime_header_decode($header);
+            $result = '';
+            
+            foreach ($decoded as $part) {
+                $charset = isset($part->charset) ? $part->charset : 'UTF-8';
+                $text = $part->text;
+                
+                // 处理不同的字符集编码
+                if (strtolower($charset) !== 'utf-8' && strtolower($charset) !== 'default') {
+                    try {
+                        // 尝试转换字符编码
+                        $converted = mb_convert_encoding($text, 'UTF-8', $charset);
+                        if ($converted !== false) {
+                            $text = $converted;
+                        }
+                    } catch (Exception $e) {
+                        // 编码转换失败，尝试其他常见编码
+                        $commonEncodings = ['GBK', 'GB2312', 'Big5', 'ISO-8859-1', 'Windows-1252'];
+                        foreach ($commonEncodings as $encoding) {
+                            try {
+                                $converted = mb_convert_encoding($text, 'UTF-8', $encoding);
+                                if ($converted !== false && mb_check_encoding($converted, 'UTF-8')) {
+                                    $text = $converted;
+                                    break;
+                                }
+                            } catch (Exception $innerE) {
+                                continue;
+                            }
+                        }
+                    }
+                }
+                
+                $result .= $text;
             }
+            
+            // 清理和验证结果
+            $result = trim($result);
+            if (empty($result) || !mb_check_encoding($result, 'UTF-8')) {
+                return '(主题解析失败)';
+            }
+            
+            return $result;
+            
+        } catch (Exception $e) {
+            error_log('邮件头解码失败: ' . $e->getMessage() . ', 原始头: ' . $header);
+            return '(主题解析失败)';
         }
-        
-        return $result;
     }
     
     /**
@@ -588,18 +719,19 @@ class EnhancedMailFetcher {
                 'success' => true,
                 'message' => '✅ POP3邮箱连接测试成功！',
                 'diagnostics' => [
-                    'connection_method' => $this->useProxy ? 'POP3直连 (代理配置已记录)' : 'POP3直连',
+                    'connection_method' => $this->useProxy ? 'POP3直连 (代理配置无效)' : 'POP3直连',
                     'proxy_info' => $this->currentProxy ? [
                         'type' => $this->currentProxy['proxy_type'],
                         'host' => $this->currentProxy['proxy_host'],
                         'port' => $this->currentProxy['proxy_port'],
                         'name' => $this->currentProxy['proxy_name'] ?? 'Unknown',
-                        'note' => 'POP3协议暂不支持代理连接，使用直连'
+                        'limitation' => '⚠️ POP3协议不支持代理连接，实际使用直连'
                     ] : null,
                     'server_info' => $this->server . ':' . $this->port,
                     'protocol' => strtoupper($this->protocol) . ($this->ssl ? ' with SSL/TLS' : ' without SSL'),
                     'library' => 'PHP IMAP Extension',
-                    'response_time' => $responseTime . 'ms'
+                    'response_time' => $responseTime . 'ms',
+                    'note' => $this->useProxy ? 'POP3协议限制：无法使用代理，已采用直连' : '直连成功'
                 ]
             ];
             
@@ -619,6 +751,11 @@ class EnhancedMailFetcher {
      * 获取当前使用的代理信息
      */
     public function getCurrentProxy() {
+        // 对于POP3协议，即使配置了代理也无法实际使用，返回null
+        if ($this->protocol === 'pop3') {
+            return null;
+        }
+        
         return $this->currentProxy;
     }
     

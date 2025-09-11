@@ -217,9 +217,16 @@ if ($_POST) {
     }
 }
 
-// 获取所有邮箱账号
+// 分页参数
+$page = isset($_GET['page']) ? max(1, intval($_GET['page'])) : 1;
+$perPage = 20; // 每页显示20个邮箱账号
+$offset = ($page - 1) * $perPage;
+
+// 获取邮箱账号（带分页）
 $accounts = [];
 $serverAddresses = [];
+$totalAccounts = 0;
+$totalPages = 1;
 try {
     $db = new SQLite3('../db/mail.sqlite');
     
@@ -256,7 +263,18 @@ try {
         error_log('Database schema check: ' . $e->getMessage());
     }
     
-    $result = $db->query('SELECT * FROM mail_accounts ORDER BY created_at DESC');
+    // 获取总数
+    $countResult = $db->query('SELECT COUNT(*) as total FROM mail_accounts');
+    $countRow = $countResult->fetchArray();
+    $totalAccounts = $countRow['total'];
+    $totalPages = ceil($totalAccounts / $perPage);
+    
+    // 获取分页数据
+    $stmt = $db->prepare('SELECT * FROM mail_accounts ORDER BY created_at DESC LIMIT ? OFFSET ?');
+    $stmt->bindValue(1, $perPage, SQLITE3_INTEGER);
+    $stmt->bindValue(2, $offset, SQLITE3_INTEGER);
+    $result = $stmt->execute();
+    
     while ($row = $result->fetchArray()) {
         $accounts[] = $row;
     }
@@ -911,7 +929,7 @@ try {
             
             <div class="card">
                 <div class="card-header">
-                    <h2 class="card-title">已添加的邮箱账号 (共 <?php echo count($accounts); ?> 个)</h2>
+                    <h2 class="card-title">已添加的邮箱账号 (共 <?php echo $totalAccounts; ?> 个<?php if ($totalPages > 1) echo "，第 {$page}/{$totalPages} 页"; ?>)</h2>
                 </div>
                 <div class="card-body">
                     <?php if (empty($accounts)): ?>
@@ -943,7 +961,7 @@ try {
                                 </thead>
                                 <tbody>
                                     <?php 
-                                    $index = 1;
+                                    $index = $offset + 1; // 正确的分页序号
                                     foreach ($accounts as $account): ?>
                                         <tr>
                                             <td>
@@ -991,6 +1009,40 @@ try {
                                 </tbody>
                             </table>
                         </div>
+                        
+                        <!-- 分页控件 -->
+                        <?php if ($totalPages > 1): ?>
+                        <div style="margin-top: 20px; display: flex; justify-content: space-between; align-items: center;">
+                            <div style="color: #64748b; font-size: 14px;">
+                                显示第 <?php echo $offset + 1; ?>-<?php echo min($offset + $perPage, $totalAccounts); ?> 条，共 <?php echo $totalAccounts; ?> 条
+                            </div>
+                            <div style="display: flex; gap: 5px; align-items: center;">
+                                <?php if ($page > 1): ?>
+                                    <a href="?page=1" class="btn btn-small" style="padding: 8px 12px;">首页</a>
+                                    <a href="?page=<?php echo $page - 1; ?>" class="btn btn-small" style="padding: 8px 12px;">上一页</a>
+                                <?php endif; ?>
+                                
+                                <?php
+                                // 计算显示的页码范围
+                                $startPage = max(1, $page - 2);
+                                $endPage = min($totalPages, $page + 2);
+                                
+                                for ($i = $startPage; $i <= $endPage; $i++): 
+                                ?>
+                                    <a href="?page=<?php echo $i; ?>" 
+                                       class="btn btn-small <?php echo $i == $page ? 'btn-success' : ''; ?>" 
+                                       style="padding: 8px 12px; <?php echo $i == $page ? 'pointer-events: none;' : ''; ?>">
+                                        <?php echo $i; ?>
+                                    </a>
+                                <?php endfor; ?>
+                                
+                                <?php if ($page < $totalPages): ?>
+                                    <a href="?page=<?php echo $page + 1; ?>" class="btn btn-small" style="padding: 8px 12px;">下一页</a>
+                                    <a href="?page=<?php echo $totalPages; ?>" class="btn btn-small" style="padding: 8px 12px;">末页</a>
+                                <?php endif; ?>
+                            </div>
+                        </div>
+                        <?php endif; ?>
                     <?php endif; ?>
                 </div>
             </div>
