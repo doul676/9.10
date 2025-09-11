@@ -22,6 +22,7 @@ header('Access-Control-Allow-Methods: GET, POST');
 header('Access-Control-Allow-Headers: Content-Type');
 
 require_once 'utils/mail_fetcher.php';
+require_once '../backend/utils/imap_check.php';
 
 $action = $_GET['action'] ?? $_POST['action'] ?? '';
 
@@ -142,31 +143,69 @@ function performConnectionTest($server, $port, $username, $password, $protocol, 
             exit();
         }
         
+        // 检查代理池状态
+        require_once '../backend/utils/proxy_manager.php';
+        $proxyManager = new ProxyManager();
+        $availableProxy = $proxyManager->getAvailableProxy('', false); // 获取任何类型的可用代理
+        
         // 创建邮件获取器实例
         $fetcher = new MailFetcher($server, $port, $username, $password, $protocol, $ssl);
+        
+        // 记录开始时间
+        $startTime = microtime(true);
         
         // 尝试连接
         if ($fetcher->connect()) {
             $fetcher->close();
-            echo json_encode([
+            $responseTime = round((microtime(true) - $startTime) * 1000);
+            
+            $responseData = [
                 'success' => true,
                 'message' => '✅ 邮箱连接测试成功！服务器响应正常',
+                'response_time' => $responseTime,
                 'diagnostics' => [
                     'imap_extension' => '✅ IMAP扩展已正确安装并可用',
                     'connection_protocol' => strtoupper($protocol) . ($ssl ? ' with SSL' : ' without SSL'),
-                    'server_info' => $server . ':' . $port
+                    'server_info' => $server . ':' . $port,
+                    'response_time' => "响应时间: {$responseTime}ms"
                 ]
-            ]);
+            ];
+            
+            // 添加代理使用信息
+            $currentProxy = $fetcher->getCurrentProxy();
+            if ($currentProxy) {
+                $responseData['diagnostics']['proxy_info'] = "✅ 通过代理连接: {$currentProxy['proxy_type']} {$currentProxy['proxy_host']}:{$currentProxy['proxy_port']}";
+                $responseData['diagnostics']['proxy_name'] = $currentProxy['proxy_name'] ?? 'Unknown';
+            } else {
+                $responseData['diagnostics']['connection_type'] = $availableProxy ? 
+                    '⚠️ 有可用代理但使用直连' : 
+                    '📡 无可用代理，使用直连';
+            }
+            
+            echo json_encode($responseData);
         } else {
-            echo json_encode([
+            $responseTime = round((microtime(true) - $startTime) * 1000);
+            
+            $responseData = [
                 'success' => false,
                 'message' => '❌ 邮箱连接失败，请检查配置信息',
+                'response_time' => $responseTime,
                 'diagnostics' => [
                     'imap_extension' => '✅ IMAP扩展可用',
-                    'connection_issue' => '服务器连接失败，请检查服务器地址、端口和凭据'
+                    'connection_issue' => '服务器连接失败，请检查服务器地址、端口和凭据',
+                    'response_time' => "尝试时间: {$responseTime}ms"
                 ],
                 'error_type' => 'connection_failed'
-            ]);
+            ];
+            
+            // 添加代理信息
+            if ($availableProxy) {
+                $responseData['diagnostics']['proxy_status'] = '✅ 代理池有可用代理，已尝试通过代理连接';
+            } else {
+                $responseData['diagnostics']['proxy_status'] = '⚠️ 代理池无可用代理，已尝试直连';
+            }
+            
+            echo json_encode($responseData);
         }
         
     } catch (Exception $e) {
@@ -174,6 +213,21 @@ function performConnectionTest($server, $port, $username, $password, $protocol, 
         $errorMessage = $e->getMessage();
         $errorType = 'unknown';
         $diagnostics = ['imap_extension' => '✅ IMAP扩展可用'];
+        
+        // 检查代理使用情况
+        try {
+            require_once '../backend/utils/proxy_manager.php';
+            $proxyManager = new ProxyManager();
+            $availableProxy = $proxyManager->getAvailableProxy('', false);
+            
+            if ($availableProxy) {
+                $diagnostics['proxy_status'] = '✅ 代理池有可用代理';
+            } else {
+                $diagnostics['proxy_status'] = '⚠️ 代理池无可用代理';
+            }
+        } catch (Exception $proxyError) {
+            $diagnostics['proxy_status'] = '❌ 代理池检查失败: ' . $proxyError->getMessage();
+        }
         
         if (strpos($errorMessage, 'SSL证书') !== false) {
             $errorType = 'ssl_error';
@@ -191,6 +245,10 @@ function performConnectionTest($server, $port, $username, $password, $protocol, 
             $errorType = 'host_not_found';
             $diagnostics['dns_issue'] = '❌ 无法解析服务器地址';
             $diagnostics['suggestion'] = '检查服务器地址拼写是否正确，网络连接是否正常';
+        } elseif (strpos($errorMessage, '代理') !== false) {
+            $errorType = 'proxy_error';
+            $diagnostics['proxy_issue'] = '❌ 代理连接问题';
+            $diagnostics['suggestion'] = '检查代理服务器状态和配置';
         }
         
         echo json_encode([
@@ -225,182 +283,5 @@ function getServerAddresses() {
             'message' => '获取服务器地址失败：' . $e->getMessage()
         ]);
     }
-}
-
-/**
- * 检查IMAP扩展状态并提供详细的诊断信息
- * 包括对CLI和Web服务器环境差异的检测
- * 确保所有IMAP核心函数可用才认为扩展功能完整
- */
-function checkImapExtension() {
-    $diagnostics = [];
-    
-    // 添加环境信息
-    $sapi = php_sapi_name();
-    $diagnostics['environment'] = [
-        'php_sapi' => $sapi,
-        'php_version' => phpversion(),
-        'server_software' => $_SERVER['SERVER_SOFTWARE'] ?? 'Unknown',
-        'script_filename' => $_SERVER['SCRIPT_FILENAME'] ?? __FILE__
-    ];
-    
-    // 检查扩展是否已加载
-    if (!extension_loaded('imap')) {
-        $isCliSapi = in_array($sapi, ['cli', 'cli-server', 'phpdbg']);
-        
-        $errorMessage = '❌ IMAP扩展功能不完整 - 扩展未加载';
-        $troubleshootingInfo = [
-            'extension_status' => '❌ php-imap扩展未安装或未加载',
-            'environment_info' => "当前PHP运行环境: {$sapi}",
-            'cli_vs_web' => $isCliSapi ? 
-                '⚠️ 当前运行在CLI环境，请检查Web服务器PHP配置' : 
-                '⚠️ 当前运行在Web服务器环境，可能与CLI环境配置不同',
-            'common_cause' => '最常见原因是Web服务器和CLI使用不同的php.ini配置文件'
-        ];
-        
-        if ($isCliSapi) {
-            $troubleshootingInfo['cli_suggestion'] = '命令行环境可能配置了IMAP，但Web环境未配置';
-            $troubleshootingInfo['web_check'] = '请检查Web服务器的php.ini文件是否加载了imap扩展';
-        }
-        
-        $troubleshootingInfo = array_merge($troubleshootingInfo, [
-            'solution_priority' => [
-                '1. 宝塔面板用户' => 'PHP管理 → 安装扩展 → IMAP → 重启PHP服务',
-                '2. Ubuntu/Debian' => 'sudo apt-get install php-imap && sudo systemctl restart apache2/nginx',
-                '3. CentOS/RHEL' => 'sudo yum install php-imap && sudo systemctl restart httpd/nginx',
-                '4. 手动编译' => '重新编译PHP时加入 --with-imap 选项'
-            ],
-            'verify_steps' => [
-                'CLI检查' => 'php -m | grep imap',
-                'Web检查' => '访问phpinfo()页面搜索"imap"',
-                '配置检查' => 'php --ini 查看配置文件位置',
-                '服务重启' => '重启Web服务器确保配置生效'
-            ]
-        ]);
-        
-        return [
-            'available' => false,
-            'message' => $errorMessage,
-            'diagnostics' => array_merge($diagnostics, $troubleshootingInfo)
-        ];
-    }
-    
-    $diagnostics['extension_status'] = '✅ php-imap扩展已正确加载';
-    
-    // 检查所有必需的IMAP核心函数是否可用
-    $requiredFunctions = [
-        'imap_open' => '核心连接函数',
-        'imap_close' => '连接关闭函数', 
-        'imap_errors' => '错误获取函数',
-        'imap_last_error' => '最后错误函数',
-        'imap_num_msg' => '邮件计数函数',
-        'imap_headerinfo' => '邮件头信息函数',
-        'imap_fetchbody' => '邮件内容获取函数',
-        'imap_fetchstructure' => '邮件结构函数',
-        'imap_mime_header_decode' => '邮件头解码函数'
-    ];
-    
-    $missingFunctions = [];
-    $availableFunctions = [];
-    
-    foreach ($requiredFunctions as $function => $description) {
-        if (!function_exists($function)) {
-            $missingFunctions[$function] = $description;
-        } else {
-            $availableFunctions[$function] = $description;
-        }
-    }
-    
-    // 如果有任何核心函数缺失，认为扩展功能不完整
-    if (!empty($missingFunctions)) {
-        $missingList = [];
-        foreach ($missingFunctions as $func => $desc) {
-            $missingList[] = "{$func} ({$desc})";
-        }
-        
-        $availableList = [];
-        foreach ($availableFunctions as $func => $desc) {
-            $availableList[] = "{$func} ({$desc})";
-        }
-        
-        $diagnostics['function_issue'] = '❌ IMAP扩展功能不完整，部分核心函数不可用';
-        $diagnostics['missing_functions'] = '缺失函数: ' . implode(', ', array_keys($missingFunctions));
-        $diagnostics['available_functions'] = '可用函数: ' . implode(', ', array_keys($availableFunctions));
-        $diagnostics['missing_details'] = $missingList;
-        $diagnostics['available_details'] = $availableList;
-        
-        return [
-            'available' => false,
-            'message' => '❌ IMAP扩展功能不完整 - 核心函数缺失',
-            'diagnostics' => array_merge($diagnostics, [
-                'solution_priority' => [
-                    '1. 重新安装扩展' => '完全卸载后重新安装php-imap扩展',
-                    '2. 检查扩展版本' => '确保安装的是完整版本的imap扩展',
-                    '3. 重新编译PHP' => '使用完整的imap库重新编译PHP',
-                    '4. 检查依赖库' => '确保系统已安装libc-client-dev等依赖'
-                ],
-                'check_commands' => [
-                    '检查扩展详情' => 'php -r "phpinfo();" | grep -A 20 imap',
-                    '检查编译选项' => 'php -r "echo php_build();"',
-                    '检查系统库' => 'dpkg -l | grep imap 或 rpm -qa | grep imap'
-                ]
-            ])
-        ];
-    }
-    
-    $diagnostics['functions_status'] = '✅ 所有IMAP核心函数完全可用 (' . count($availableFunctions) . '个)';
-    $diagnostics['function_list'] = array_keys($availableFunctions);
-    
-    // 获取更详细的扩展信息用于高级诊断
-    try {
-        // 检查高级功能
-        $advancedFunctions = ['imap_get_quotaroot', 'imap_setflag_full', 'imap_search'];
-        $advancedAvailable = 0;
-        foreach ($advancedFunctions as $func) {
-            if (function_exists($func)) {
-                $advancedAvailable++;
-            }
-        }
-        
-        if ($advancedAvailable === count($advancedFunctions)) {
-            $diagnostics['imap_features'] = '✅ 扩展功能完整，支持所有高级特性';
-        } else {
-            $diagnostics['imap_features'] = "⚠️ 部分高级功能可用 ({$advancedAvailable}/" . count($advancedFunctions) . ")";
-        }
-        
-        // 获取扩展编译信息
-        ob_start();
-        phpinfo(INFO_MODULES);
-        $phpinfo = ob_get_clean();
-        
-        if (preg_match('/IMAP c-Client Version\s*=>\s*([^\n]+)/i', $phpinfo, $matches)) {
-            $diagnostics['imap_version'] = '✅ IMAP c-Client版本: ' . trim($matches[1]);
-        }
-        
-        if (strpos($phpinfo, 'SSL Support => enabled') !== false) {
-            $diagnostics['ssl_compiled'] = '✅ SSL/TLS支持已编译并启用';
-        } elseif (strpos($phpinfo, 'SSL Support') !== false) {
-            $diagnostics['ssl_compiled'] = '⚠️ SSL支持状态不明确';
-        } else {
-            $diagnostics['ssl_compiled'] = '❌ 未找到SSL支持信息';
-        }
-        
-        // 检查Kerberos支持
-        if (strpos($phpinfo, 'Kerberos Support') !== false) {
-            $diagnostics['kerberos_support'] = '✅ Kerberos认证支持可用';
-        }
-        
-    } catch (Exception $e) {
-        $diagnostics['info_warning'] = '⚠️ 无法获取扩展详细信息: ' . $e->getMessage();
-    }
-    
-    $diagnostics['final_status'] = '✅ IMAP扩展完全可用，所有核心功能正常';
-    $diagnostics['ready_for_connection'] = '✅ 已准备就绪，可以进行邮箱连接测试';
-    
-    return [
-        'available' => true,
-        'message' => '✅ IMAP扩展已正确安装并完全可用',
-        'diagnostics' => $diagnostics
-    ];
 }
 ?>

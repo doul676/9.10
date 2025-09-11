@@ -83,8 +83,8 @@
         
         .input-group {
             display: flex;
-            flex-direction: column;
             gap: 15px;
+            align-items: center;
             margin-bottom: 20px;
             position: relative;
         }
@@ -92,12 +92,6 @@
         .email-input-row {
             display: flex;
             gap: 15px;
-        }
-        
-        .input-group {
-            display: flex;
-            gap: 15px;
-            align-items: center;
         }
         
         .input-group input {
@@ -374,7 +368,6 @@
             const message = document.getElementById('message');
             const mailDisplay = document.getElementById('mailDisplay');
             const getMailBtn = document.querySelector('.get-mail-btn');
-            const useProxy = document.getElementById('useProxy').checked;
             
             const email = emailInput.value.trim();
             
@@ -402,8 +395,7 @@
                         'Content-Type': 'application/json',
                     },
                     body: JSON.stringify({ 
-                        email: email,
-                        useProxy: useProxy
+                        email: email
                     })
                 });
                 

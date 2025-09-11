@@ -222,39 +222,48 @@ class ProxyManager {
      * @param int $responseTime 响应时间（毫秒）
      */
     public function updateProxyStats($proxyId, $success, $responseTime = 0) {
-        $beijingTime = new DateTime('now', new DateTimeZone('Asia/Shanghai'));
-        $timestamp = $beijingTime->format('Y-m-d H:i:s');
-        
-        if ($success) {
-            $sql = "UPDATE proxy_pool SET 
-                    test_success_count = test_success_count + 1,
-                    is_verified = 1,
-                    response_time = ?,
-                    last_test_time = ?,
-                    updated_at = ?
-                    WHERE id = ?";
-        } else {
-            $sql = "UPDATE proxy_pool SET 
-                    test_fail_count = test_fail_count + 1,
-                    last_test_time = ?,
-                    updated_at = ?
-                    WHERE id = ?";
+        try {
+            $beijingTime = new DateTime('now', new DateTimeZone('Asia/Shanghai'));
+            $timestamp = $beijingTime->format('Y-m-d H:i:s');
+            
+            // 使用单独的数据库连接来避免锁定问题
+            $db = new SQLite3(__DIR__ . '/../../db/mail.sqlite');
+            
+            if ($success) {
+                $sql = "UPDATE proxy_pool SET 
+                        test_success_count = test_success_count + 1,
+                        is_verified = 1,
+                        response_time = ?,
+                        last_test_time = ?,
+                        updated_at = ?
+                        WHERE id = ?";
+            } else {
+                $sql = "UPDATE proxy_pool SET 
+                        test_fail_count = test_fail_count + 1,
+                        last_test_time = ?,
+                        updated_at = ?
+                        WHERE id = ?";
+            }
+            
+            $stmt = $db->prepare($sql);
+            
+            if ($success) {
+                $stmt->bindValue(1, $responseTime);
+                $stmt->bindValue(2, $timestamp);
+                $stmt->bindValue(3, $timestamp);
+                $stmt->bindValue(4, $proxyId);
+            } else {
+                $stmt->bindValue(1, $timestamp);
+                $stmt->bindValue(2, $timestamp);
+                $stmt->bindValue(3, $proxyId);
+            }
+            
+            $stmt->execute();
+            $db->close();
+            
+        } catch (Exception $e) {
+            error_log('代理统计更新失败: ' . $e->getMessage());
         }
-        
-        $stmt = $this->db->prepare($sql);
-        
-        if ($success) {
-            $stmt->bindValue(1, $responseTime);
-            $stmt->bindValue(2, $timestamp);
-            $stmt->bindValue(3, $timestamp);
-            $stmt->bindValue(4, $proxyId);
-        } else {
-            $stmt->bindValue(1, $timestamp);
-            $stmt->bindValue(2, $timestamp);
-            $stmt->bindValue(3, $proxyId);
-        }
-        
-        $stmt->execute();
     }
     
     /**

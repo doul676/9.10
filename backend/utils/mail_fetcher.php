@@ -41,9 +41,15 @@ class MailFetcher {
     private function shouldUseProxy() {
         try {
             $availableProxy = $this->proxyManager->getAvailableProxy('', false);
-            return $availableProxy !== null;
+            if ($availableProxy) {
+                // 进一步验证代理是否真正可用
+                $proxyTest = $this->proxyManager->testProxy($availableProxy);
+                return $proxyTest['success'];
+            }
+            return false;
         } catch (Exception $e) {
             // 如果获取代理时出错，使用直连
+            error_log('代理检查失败: ' . $e->getMessage());
             return false;
         }
     }
@@ -57,7 +63,9 @@ class MailFetcher {
             if ($this->useProxy) {
                 $this->proxy = $this->proxyManager->getAvailableProxy('', false); // 不限制已验证，因为邮件连接测试本身就是验证
                 if (!$this->proxy) {
-                    throw new Exception('没有可用的代理服务器');
+                    // 如果没有可用代理，改为直连
+                    $this->useProxy = false;
+                    error_log('没有可用的代理服务器，改为直连');
                 }
             }
             
@@ -70,10 +78,28 @@ class MailFetcher {
             }
         } catch (Exception $e) {
             error_log('邮件连接失败: ' . $e->getMessage());
-            // 如果使用代理连接失败，更新代理统计
+            
+            // 如果使用代理连接失败，尝试直连
             if ($this->useProxy && $this->proxy) {
                 $this->proxyManager->updateProxyStats($this->proxy['id'], false);
+                
+                // 尝试直连作为备选方案
+                $this->useProxy = false;
+                $this->proxy = null;
+                error_log('代理连接失败，尝试直连...');
+                
+                try {
+                    if ($this->protocol === 'imap') {
+                        return $this->connectIMAP();
+                    } elseif ($this->protocol === 'pop3') {
+                        return $this->connectPOP3();
+                    }
+                } catch (Exception $fallbackError) {
+                    error_log('直连也失败: ' . $fallbackError->getMessage());
+                    return false;
+                }
             }
+            
             return false;
         }
     }
