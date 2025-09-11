@@ -457,7 +457,7 @@
                 let response;
                 let apiEndpoint = '';
                 try {
-                    apiEndpoint = './admin/api/get_mail.php';
+                    apiEndpoint = '../admin/api/get_mail.php';
                     response = await fetch(apiEndpoint, {
                         method: 'POST',
                         headers: {
@@ -474,7 +474,7 @@
                     }
                 } catch (adminError) {
                     console.log('Admin API not available, trying backend API...', adminError.message);
-                    apiEndpoint = './backend/api/get_mail.php';
+                    apiEndpoint = '../backend/api/get_mail.php';
                     response = await fetch(apiEndpoint, {
                         method: 'POST',
                         headers: {
