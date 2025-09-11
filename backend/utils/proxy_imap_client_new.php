@@ -329,33 +329,57 @@ class ProxyImapClient {
         // Get the latest message (highest ID)
         $latestId = max($messageIds);
         
-        // Fetch message headers and body
+        // Fetch message envelope first, then body separately for better parsing
         $tag = 'A004';
-        $command = "$tag FETCH $latestId (ENVELOPE BODY[TEXT])\r\n";
+        $command = "$tag FETCH $latestId (ENVELOPE)\r\n";
         fwrite($this->socket, $command);
         
         $envelope = null;
-        $body = '';
-        $inBody = false;
+        $fullResponse = '';
         
         while (($line = $this->readLine()) !== false) {
-            if (preg_match('/^\*\s+\d+\s+FETCH\s+\((.+)\)$/', $line, $matches)) {
-                // Parse FETCH response
-                $fetchData = $matches[1];
-                if (preg_match('/ENVELOPE\s+\((.+?)\)\s+BODY\[TEXT\]\s+"(.+)"/', $fetchData, $envMatches)) {
-                    $envelope = $this->parseEnvelope($envMatches[1]);
-                    $body = $this->decodeBody($envMatches[2]);
-                }
-            } elseif (preg_match("/^$tag (OK|NO|BAD)/", $line)) {
+            $fullResponse .= $line;
+            if (preg_match("/^$tag (OK|NO|BAD)/", $line)) {
                 if (!preg_match("/^$tag OK/", $line)) {
-                    throw new Exception('FETCH command failed: ' . $line);
+                    throw new Exception('ENVELOPE FETCH command failed: ' . $line);
                 }
                 break;
             }
         }
         
+        // Parse the full ENVELOPE response
+        if (preg_match('/\*\s+\d+\s+FETCH\s+\(ENVELOPE\s+\(([^}]+)\)\s*\)/s', $fullResponse, $matches)) {
+            $envelope = $this->parseEnvelope($matches[1]);
+        }
+        
         if (!$envelope) {
-            throw new Exception('Failed to parse email envelope');
+            throw new Exception('Failed to parse email envelope from response: ' . substr($fullResponse, 0, 500));
+        }
+        
+        // Now fetch the body separately
+        $tag = 'A005';
+        $command = "$tag FETCH $latestId (BODY[TEXT])\r\n";
+        fwrite($this->socket, $command);
+        
+        $body = '';
+        $bodyLines = [];
+        $inBodyData = false;
+        
+        while (($line = $this->readLine()) !== false) {
+            if (preg_match('/BODY\[TEXT\]\s+\{(\d+)\}/', $line, $matches)) {
+                // Literal string follows
+                $bodySize = intval($matches[1]);
+                $body = fread($this->socket, $bodySize);
+                fgets($this->socket); // Read the trailing CRLF
+            } elseif (preg_match('/BODY\[TEXT\]\s+"([^"]*)"/', $line, $matches)) {
+                // Quoted string
+                $body = $this->decodeBody($matches[1]);
+            } elseif (preg_match("/^$tag (OK|NO|BAD)/", $line)) {
+                if (!preg_match("/^$tag OK/", $line)) {
+                    throw new Exception('BODY FETCH command failed: ' . $line);
+                }
+                break;
+            }
         }
         
         return [
@@ -367,7 +391,7 @@ class ProxyImapClient {
                 'from_name' => $envelope['from_name'] ?? '',
                 'to' => $envelope['to'] ?? 'Unknown',
                 'date' => $envelope['date'] ?? '',
-                'body' => $body,
+                'body' => $body ?: 'No body content',
                 'message_id' => $envelope['message_id'] ?? '',
                 'size' => strlen($body)
             ]
@@ -378,26 +402,256 @@ class ProxyImapClient {
      * Parse IMAP ENVELOPE response
      */
     private function parseEnvelope($envelopeStr) {
-        // This is a simplified envelope parser
-        // In production, you'd want a more robust parser
-        return [
-            'subject' => 'Test Subject',
-            'from' => 'test@example.com',
-            'from_email' => 'test@example.com',
-            'from_name' => 'Test Sender',
-            'to' => 'recipient@example.com',
-            'date' => date('Y-m-d H:i:s'),
-            'message_id' => '<test@example.com>'
-        ];
+        // IMAP ENVELOPE format: (date subject from sender reply-to to cc bcc in-reply-to message-id)
+        // Each field can be NIL or a structured list
+        
+        try {
+            // Clean up the envelope string
+            $envelopeStr = trim($envelopeStr);
+            
+            // Split the envelope into fields - this is a simplified parser
+            // For production use, you'd want a more robust parser that handles nested parentheses
+            $fields = $this->parseImapList($envelopeStr);
+            
+            if (count($fields) < 10) {
+                // Not enough fields, return defaults
+                return [
+                    'subject' => 'Unknown Subject',
+                    'from' => 'Unknown',
+                    'from_email' => 'unknown@unknown.com',
+                    'from_name' => 'Unknown',
+                    'to' => 'unknown@unknown.com',
+                    'date' => date('Y-m-d H:i:s'),
+                    'message_id' => '<unknown@unknown.com>'
+                ];
+            }
+            
+            // Parse date (field 0)
+            $date = $this->cleanImapValue($fields[0]);
+            $formattedDate = $this->parseImapDate($date);
+            
+            // Parse subject (field 1)
+            $subject = $this->cleanImapValue($fields[1]);
+            $subject = $this->decodeHeaderValue($subject);
+            
+            // Parse from (field 2)
+            $fromData = $this->parseAddressList($fields[2]);
+            $fromEmail = $fromData['email'] ?? 'unknown@unknown.com';
+            $fromName = $fromData['name'] ?? '';
+            
+            // Parse to (field 5)
+            $toData = $this->parseAddressList($fields[5]);
+            $toEmail = $toData['email'] ?? 'unknown@unknown.com';
+            
+            // Parse message-id (field 9)
+            $messageId = $this->cleanImapValue($fields[9]);
+            
+            return [
+                'subject' => $subject ?: 'No Subject',
+                'from' => $fromName ?: $fromEmail,
+                'from_email' => $fromEmail,
+                'from_name' => $fromName,
+                'to' => $toEmail,
+                'date' => $formattedDate,
+                'message_id' => $messageId
+            ];
+            
+        } catch (Exception $e) {
+            error_log('Envelope parsing error: ' . $e->getMessage());
+            // Return defaults if parsing fails
+            return [
+                'subject' => 'Parse Error',
+                'from' => 'unknown@unknown.com',
+                'from_email' => 'unknown@unknown.com',
+                'from_name' => '',
+                'to' => 'unknown@unknown.com',
+                'date' => date('Y-m-d H:i:s'),
+                'message_id' => '<parse.error@unknown.com>'
+            ];
+        }
+    }
+    
+    /**
+     * Parse IMAP list format (simplified)
+     */
+    private function parseImapList($str) {
+        $str = trim($str);
+        if (empty($str) || $str === 'NIL') {
+            return [];
+        }
+        
+        // Remove outer parentheses
+        if ($str[0] === '(' && $str[strlen($str)-1] === ')') {
+            $str = substr($str, 1, -1);
+        }
+        
+        $fields = [];
+        $current = '';
+        $depth = 0;
+        $inQuotes = false;
+        $escapeNext = false;
+        
+        for ($i = 0; $i < strlen($str); $i++) {
+            $char = $str[$i];
+            
+            if ($escapeNext) {
+                $current .= $char;
+                $escapeNext = false;
+                continue;
+            }
+            
+            if ($char === '\\') {
+                $escapeNext = true;
+                $current .= $char;
+                continue;
+            }
+            
+            if ($char === '"' && !$escapeNext) {
+                $inQuotes = !$inQuotes;
+                $current .= $char;
+                continue;
+            }
+            
+            if (!$inQuotes) {
+                if ($char === '(') {
+                    $depth++;
+                } elseif ($char === ')') {
+                    $depth--;
+                } elseif ($char === ' ' && $depth === 0) {
+                    $fields[] = trim($current);
+                    $current = '';
+                    continue;
+                }
+            }
+            
+            $current .= $char;
+        }
+        
+        if ($current !== '') {
+            $fields[] = trim($current);
+        }
+        
+        return $fields;
+    }
+    
+    /**
+     * Parse IMAP address list
+     */
+    private function parseAddressList($addressStr) {
+        $addressStr = trim($addressStr);
+        
+        if ($addressStr === 'NIL' || empty($addressStr)) {
+            return ['email' => 'unknown@unknown.com', 'name' => ''];
+        }
+        
+        // Remove outer parentheses if present
+        if ($addressStr[0] === '(' && $addressStr[strlen($addressStr)-1] === ')') {
+            $addressStr = substr($addressStr, 1, -1);
+        }
+        
+        // Address format: ((name NIL mailbox host))
+        if (preg_match('/\(\s*([^)]*)\s*\)/', $addressStr, $matches)) {
+            $parts = $this->parseImapList($matches[1]);
+            if (count($parts) >= 4) {
+                $name = $this->cleanImapValue($parts[0]);
+                $mailbox = $this->cleanImapValue($parts[2]);
+                $host = $this->cleanImapValue($parts[3]);
+                
+                $email = $mailbox && $host ? "$mailbox@$host" : 'unknown@unknown.com';
+                $name = $this->decodeHeaderValue($name);
+                
+                return ['email' => $email, 'name' => $name];
+            }
+        }
+        
+        return ['email' => 'unknown@unknown.com', 'name' => ''];
+    }
+    
+    /**
+     * Clean IMAP value (remove quotes, handle NIL)
+     */
+    private function cleanImapValue($value) {
+        $value = trim($value);
+        
+        if ($value === 'NIL' || $value === 'nil') {
+            return '';
+        }
+        
+        // Remove quotes
+        if (strlen($value) >= 2 && $value[0] === '"' && $value[strlen($value)-1] === '"') {
+            $value = substr($value, 1, -1);
+            // Unescape quotes
+            $value = str_replace('\\"', '"', $value);
+            $value = str_replace('\\\\', '\\', $value);
+        }
+        
+        return $value;
+    }
+    
+    /**
+     * Parse IMAP date
+     */
+    private function parseImapDate($dateStr) {
+        if (empty($dateStr)) {
+            return date('Y-m-d H:i:s');
+        }
+        
+        $timestamp = strtotime($dateStr);
+        if ($timestamp === false) {
+            return date('Y-m-d H:i:s');
+        }
+        
+        return date('Y-m-d H:i:s', $timestamp);
+    }
+    
+    /**
+     * Decode header value (handle MIME encoding)
+     */
+    private function decodeHeaderValue($value) {
+        if (empty($value)) {
+            return '';
+        }
+        
+        // Handle MIME encoded headers like =?UTF-8?B?...?=
+        if (function_exists('mb_decode_mimeheader')) {
+            return mb_decode_mimeheader($value);
+        } elseif (function_exists('iconv_mime_decode')) {
+            return iconv_mime_decode($value, 0, 'UTF-8');
+        }
+        
+        return $value;
     }
     
     /**
      * Decode email body
      */
     private function decodeBody($body) {
-        // Remove quotes and decode
+        if (empty($body)) {
+            return '';
+        }
+        
+        // Remove quotes if present
         $body = trim($body, '"');
-        $body = str_replace('\r\n', "\n", $body);
+        
+        // Replace IMAP line endings
+        $body = str_replace(['\r\n', '\n\r', '\n', '\r'], ["\n", "\n", "\n", "\n"], $body);
+        
+        // Decode base64 if needed (simple check)
+        if (preg_match('/^[A-Za-z0-9+\/]+=*$/', trim($body)) && strlen($body) > 50) {
+            $decoded = base64_decode($body, true);
+            if ($decoded !== false && mb_check_encoding($decoded, 'UTF-8')) {
+                return $decoded;
+            }
+        }
+        
+        // Decode quoted-printable if needed
+        if (strpos($body, '=') !== false && preg_match('/=\w{2}/', $body)) {
+            $decoded = quoted_printable_decode($body);
+            if ($decoded !== false) {
+                return $decoded;
+            }
+        }
+        
         return $body;
     }
     
