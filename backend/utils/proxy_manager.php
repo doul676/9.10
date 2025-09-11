@@ -226,8 +226,12 @@ class ProxyManager {
             $beijingTime = new DateTime('now', new DateTimeZone('Asia/Shanghai'));
             $timestamp = $beijingTime->format('Y-m-d H:i:s');
             
-            // 使用单独的数据库连接来避免锁定问题
-            $db = new SQLite3(__DIR__ . '/../../db/mail.sqlite');
+            // 使用单独的数据库连接来避免锁定问题，并设置更短的超时时间
+            $dbPath = __DIR__ . '/../../db/mail.sqlite';
+            $db = new SQLite3($dbPath);
+            
+            // 设置较短的忙等待超时（1秒）
+            $db->busyTimeout(1000);
             
             if ($success) {
                 $sql = "UPDATE proxy_pool SET 
@@ -258,11 +262,26 @@ class ProxyManager {
                 $stmt->bindValue(3, $proxyId);
             }
             
-            $stmt->execute();
+            // 重试机制
+            $retries = 3;
+            while ($retries > 0) {
+                try {
+                    $stmt->execute();
+                    break;
+                } catch (Exception $retryException) {
+                    $retries--;
+                    if ($retries === 0) {
+                        throw $retryException;
+                    }
+                    usleep(100000); // 等待100ms后重试
+                }
+            }
+            
             $db->close();
             
         } catch (Exception $e) {
             error_log('代理统计更新失败: ' . $e->getMessage());
+            // 不抛出异常，避免影响主要功能
         }
     }
     

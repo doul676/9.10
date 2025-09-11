@@ -63,19 +63,25 @@ try {
         exit();
     }
     
-    // 使用完整的IMAP扩展检查函数
-    require_once '../../backend/utils/imap_check.php';
-    $imapInfo = checkImapExtension();
+    // 检查是否需要使用IMAP扩展检查
+    // 当使用自定义代理IMAP客户端时，不需要PHP IMAP扩展
+    $useCustomImapClient = true; // 强制使用自定义代理IMAP客户端
     
-    if (!$imapInfo['available']) {
-        echo json_encode([
-            'success' => false,
-            'message' => $imapInfo['message'],
-            'diagnostics' => $imapInfo['diagnostics'],
-            'error_type' => 'extension_issue'
-        ]);
-        $db->close();
-        exit();
+    if (!$useCustomImapClient) {
+        // 使用完整的IMAP扩展检查函数
+        require_once '../../backend/utils/imap_check.php';
+        $imapInfo = checkImapExtension();
+        
+        if (!$imapInfo['available']) {
+            echo json_encode([
+                'success' => false,
+                'message' => $imapInfo['message'],
+                'diagnostics' => $imapInfo['diagnostics'],
+                'error_type' => 'extension_issue'
+            ]);
+            $db->close();
+            exit();
+        }
     }
     
     // 检查代理池状态
