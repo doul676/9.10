@@ -48,8 +48,18 @@ if (empty($email)) {
 }
 
 try {
-    // 连接数据库查找邮箱配置
-    $db = new SQLite3(__DIR__ . '/../../db/mail.sqlite');
+    // 连接数据库查找邮箱配置 - 规范化路径处理
+    $dbPath = realpath(__DIR__ . '/../../db/mail.sqlite');
+    if (!$dbPath || !file_exists($dbPath)) {
+        // 备用路径方案
+        $dbPath = realpath(dirname(dirname(__DIR__)) . '/db/mail.sqlite');
+    }
+    
+    if (!$dbPath || !file_exists($dbPath)) {
+        throw new Exception('数据库文件不存在，请检查数据库配置');
+    }
+    
+    $db = new SQLite3($dbPath);
     $stmt = $db->prepare('SELECT * FROM mail_accounts WHERE email = ?');
     $stmt->bindValue(1, $email);
     $result = $stmt->execute();

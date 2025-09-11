@@ -8,7 +8,18 @@ class ProxyManager {
     private $db;
     
     public function __construct() {
-        $this->db = new SQLite3(__DIR__ . '/../../db/mail.sqlite');
+        // 规范化数据库路径处理
+        $dbPath = realpath(__DIR__ . '/../../db/mail.sqlite');
+        if (!$dbPath || !file_exists($dbPath)) {
+            // 备用路径方案
+            $dbPath = realpath(dirname(dirname(__DIR__)) . '/db/mail.sqlite');
+        }
+        
+        if (!$dbPath || !file_exists($dbPath)) {
+            throw new Exception('数据库文件不存在，请检查数据库配置');
+        }
+        
+        $this->db = new SQLite3($dbPath);
         $this->ensureProxyTableExists();
     }
     
