@@ -685,5 +685,4 @@ class MailFetcher {
         ];
     }
 }
-}
 ?>

@@ -498,14 +498,36 @@
                         displayMail(data.mail);
                         let successMsg = '✅ 邮件获取成功';
                         
-                        // 添加代理使用信息
-                        if (data.proxy && data.proxy.used) {
-                            successMsg += `\n• 通过代理连接: ${data.proxy.type.toUpperCase()} ${data.proxy.host}:${data.proxy.port}`;
-                            if (data.proxy.name && data.proxy.name !== 'Unknown') {
-                                successMsg += `\n• 代理名称: ${data.proxy.name}`;
+                        // 添加连接信息
+                        if (data.connection_info) {
+                            if (data.connection_info.proxy_detected) {
+                                successMsg += `\n• 代理检测: ${data.connection_info.proxy_type.toUpperCase()} ${data.connection_info.proxy_host}:${data.connection_info.proxy_port}`;
+                                if (data.connection_info.proxy_name && data.connection_info.proxy_name !== 'Unknown') {
+                                    successMsg += `\n• 代理名称: ${data.connection_info.proxy_name}`;
+                                }
+                                successMsg += `\n• 连接方式: ${data.connection_info.connection_method} (IMAP扩展限制)`;
+                                if (data.connection_info.proxy_note) {
+                                    successMsg += `\n• 说明: ${data.connection_info.proxy_note}`;
+                                }
+                            } else {
+                                successMsg += `\n• 连接方式: ${data.connection_info.connection_method}`;
+                                if (data.connection_info.note) {
+                                    successMsg += ` (${data.connection_info.note})`;
+                                }
                             }
-                        } else {
-                            successMsg += '\n• 使用直连';
+                        } else if (data.proxy) {
+                            // 向后兼容旧的proxy格式
+                            if (data.proxy.used) {
+                                successMsg += `\n• 通过代理连接: ${data.proxy.type.toUpperCase()} ${data.proxy.host}:${data.proxy.port}`;
+                                if (data.proxy.name && data.proxy.name !== 'Unknown') {
+                                    successMsg += `\n• 代理名称: ${data.proxy.name}`;
+                                }
+                            } else {
+                                successMsg += '\n• 使用直连';
+                                if (data.proxy.message) {
+                                    successMsg += ` (${data.proxy.message})`;
+                                }
+                            }
                         }
                         
                         if (data.response_time) {
@@ -516,11 +538,21 @@
                     } else {
                         let infoMsg = 'ℹ️ 邮箱中暂无邮件';
                         
-                        // 添加代理使用信息
-                        if (data.proxy && data.proxy.used) {
-                            infoMsg += `\n• 通过代理连接: ${data.proxy.type.toUpperCase()} ${data.proxy.host}:${data.proxy.port}`;
-                        } else {
-                            infoMsg += '\n• 使用直连';
+                        // 添加连接信息
+                        if (data.connection_info) {
+                            if (data.connection_info.proxy_detected) {
+                                infoMsg += `\n• 代理检测: ${data.connection_info.proxy_type.toUpperCase()} ${data.connection_info.proxy_host}:${data.connection_info.proxy_port}`;
+                                infoMsg += `\n• 连接方式: ${data.connection_info.connection_method} (IMAP扩展限制)`;
+                            } else {
+                                infoMsg += `\n• 连接方式: ${data.connection_info.connection_method}`;
+                            }
+                        } else if (data.proxy) {
+                            // 向后兼容旧的proxy格式
+                            if (data.proxy.used) {
+                                infoMsg += `\n• 通过代理连接: ${data.proxy.type.toUpperCase()} ${data.proxy.host}:${data.proxy.port}`;
+                            } else {
+                                infoMsg += '\n• 使用直连';
+                            }
                         }
                         
                         if (data.response_time) {
@@ -544,6 +576,27 @@
                             default:
                                 errorMsg += `\n• 问题类型: ${data.error_type}`;
                         }
+                    }
+                    
+                    // 添加连接信息到错误消息
+                    if (data.connection_info) {
+                        errorMsg += '\n\n连接信息:';
+                        if (data.connection_info.proxy_detected) {
+                            errorMsg += `\n• 检测到代理: ${data.connection_info.proxy_type.toUpperCase()} ${data.connection_info.proxy_host}:${data.connection_info.proxy_port}`;
+                            if (data.connection_info.proxy_limitation) {
+                                errorMsg += `\n• 限制说明: ${data.connection_info.proxy_limitation}`;
+                            }
+                            if (data.connection_info.recommendation) {
+                                errorMsg += `\n• 建议: ${data.connection_info.recommendation}`;
+                            }
+                        } else {
+                            errorMsg += `\n• 连接方式: ${data.connection_info.connection_method}`;
+                        }
+                    }
+                    
+                    // 添加代理相关提示
+                    if (data.proxy_note) {
+                        errorMsg += `\n\n💡 ${data.proxy_note}`;
                     }
                     
                     if (data.diagnostics) {
