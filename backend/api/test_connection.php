@@ -78,8 +78,7 @@ try {
 } catch (Exception $e) {
     echo json_encode([
         'success' => false,
-        'message' => '服务器错误: ' . $e->getMessage(),
-        'proxy' => ['used' => $useProxy]
+        'message' => '服务器错误: ' . $e->getMessage()
     ]);
 }
 ?>

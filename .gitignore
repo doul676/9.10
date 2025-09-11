@@ -20,3 +20,8 @@ Thumbs.db
 # 缓存文件
 cache/
 tmp/
+
+# Composer
+/vendor/
+/composer.lock
+/.env

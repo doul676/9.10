@@ -5,6 +5,7 @@
  */
 
 require_once __DIR__ . '/proxy_manager.php';
+require_once __DIR__ . '/proxy_imap_client.php';
 
 class MailFetcher {
     private $server;
@@ -17,6 +18,7 @@ class MailFetcher {
     private $useProxy;
     private $proxy;
     private $proxyManager;
+    private $proxyClient;
     
     public function __construct($server, $port, $username, $password, $protocol = 'imap', $ssl = true) {
         $this->server = $server;
@@ -26,6 +28,7 @@ class MailFetcher {
         $this->protocol = strtolower($protocol);
         $this->ssl = $ssl;
         $this->proxy = null;
+        $this->proxyClient = null;
         
         // 初始化代理管理器，用于自动判断是否使用代理
         $this->proxyManager = new ProxyManager();
@@ -65,12 +68,18 @@ class MailFetcher {
                 }
             }
             
-            if ($this->protocol === 'imap') {
-                return $this->connectIMAP();
-            } elseif ($this->protocol === 'pop3') {
-                return $this->connectPOP3();
+            // 如果只支持IMAP协议通过代理，POP3暂时使用直连
+            if ($this->useProxy && $this->protocol === 'imap') {
+                return $this->connectWithProxyClient();
             } else {
-                throw new Exception('不支持的协议: ' . $this->protocol);
+                // 对于POP3或没有代理的情况，使用原生IMAP扩展
+                if ($this->protocol === 'imap') {
+                    return $this->connectIMAP();
+                } elseif ($this->protocol === 'pop3') {
+                    return $this->connectPOP3();
+                } else {
+                    throw new Exception('不支持的协议: ' . $this->protocol);
+                }
             }
         } catch (Exception $e) {
             error_log('邮件连接失败: ' . $e->getMessage());
@@ -82,6 +91,7 @@ class MailFetcher {
                 // 尝试直连作为备选方案
                 $this->useProxy = false;
                 $this->proxy = null;
+                $this->proxyClient = null;
                 error_log('代理连接失败，尝试直连...');
                 
                 try {
@@ -101,6 +111,31 @@ class MailFetcher {
     }
     
     /**
+     * 使用代理客户端连接
+     */
+    private function connectWithProxyClient() {
+        $this->proxyClient = new ProxyImapClient(
+            $this->server,
+            $this->port,
+            $this->username,
+            $this->password,
+            $this->ssl,
+            $this->proxy
+        );
+        
+        $startTime = microtime(true);
+        
+        if ($this->proxyClient->connect()) {
+            $responseTime = round((microtime(true) - $startTime) * 1000);
+            $this->proxyManager->updateProxyStats($this->proxy['id'], true, $responseTime);
+            return true;
+        } else {
+            $this->proxyManager->updateProxyStats($this->proxy['id'], false);
+            throw new Exception('代理IMAP连接失败: ' . $this->proxyClient->getLastError());
+        }
+    }
+    
+    /**
      * IMAP连接
      */
     private function connectIMAP() {
@@ -113,9 +148,10 @@ class MailFetcher {
             throw new Exception('PHP IMAP 扩展的 imap_open 函数不可用，可能是扩展安装不完整');
         }
         
-        // 如果使用代理，尝试通过代理连接
+        // 如果使用代理，说明应该用代理客户端，这里不应该到达
         if ($this->useProxy && $this->proxy) {
-            return $this->connectWithProxy();
+            error_log('IMAP代理连接应该在connectWithProxyClient中处理，不应该到达这里');
+            throw new Exception('代理连接逻辑错误');
         }
         
         $flags = '/imap';
@@ -174,9 +210,10 @@ class MailFetcher {
             throw new Exception('PHP IMAP 扩展的 imap_open 函数不可用，可能是扩展安装不完整');
         }
         
-        // 如果使用代理，尝试通过代理连接
+        // POP3暂时不支持代理（因为我们的代理客户端只实现了IMAP）
         if ($this->useProxy && $this->proxy) {
-            return $this->connectWithProxy();
+            error_log('POP3暂时不支持代理连接，将使用直连');
+            // 继续使用直连，不抛出异常
         }
         
         $flags = '/pop3';
@@ -226,6 +263,12 @@ class MailFetcher {
      * 获取最新邮件
      */
     public function getLatestMail() {
+        // 如果使用代理客户端
+        if ($this->proxyClient) {
+            return $this->getLatestMailFromProxyClient();
+        }
+        
+        // 使用原生IMAP扩展
         if (!$this->connection) {
             throw new Exception('未连接到邮件服务器');
         }
@@ -288,6 +331,34 @@ class MailFetcher {
                     'message_id' => $header->message_id ?? '',
                     'size' => $header->Size ?? 0
                 ]
+            ];
+            
+        } catch (Exception $e) {
+            return [
+                'success' => false,
+                'message' => '获取邮件失败: ' . $e->getMessage()
+            ];
+        }
+    }
+    
+    /**
+     * 从代理客户端获取最新邮件
+     */
+    private function getLatestMailFromProxyClient() {
+        try {
+            $message = $this->proxyClient->getLatestMessage();
+            
+            if (!$message) {
+                return [
+                    'success' => true,
+                    'message' => '邮箱中没有邮件',
+                    'mail' => null
+                ];
+            }
+            
+            return [
+                'success' => true,
+                'mail' => $message
             ];
             
         } catch (Exception $e) {
@@ -497,6 +568,13 @@ class MailFetcher {
      * 关闭连接
      */
     public function close() {
+        // 关闭代理客户端连接
+        if ($this->proxyClient) {
+            $this->proxyClient->close();
+            $this->proxyClient = null;
+        }
+        
+        // 关闭原生IMAP连接
         if ($this->connection) {
             imap_close($this->connection);
             $this->connection = null;
@@ -508,7 +586,12 @@ class MailFetcher {
      */
     public function testConnection() {
         try {
-            // 首先检查IMAP扩展状态
+            // 如果使用代理且协议是IMAP，使用代理客户端测试
+            if ($this->useProxy && $this->protocol === 'imap' && $this->proxy) {
+                return $this->testConnectionWithProxy();
+            }
+            
+            // 对于POP3或直连IMAP，先检查扩展状态
             if (!extension_loaded('imap')) {
                 $sapi = php_sapi_name();
                 return [
@@ -621,100 +704,75 @@ class MailFetcher {
     }
     
     /**
-     * 通过代理连接邮件服务器
-     * 注意：PHP IMAP扩展本身不支持代理，这里我们直接尝试连接
-     * 并在失败时标记代理为不可用，然后尝试直连
+     * 使用代理客户端测试连接
      */
-    private function connectWithProxy() {
-        // 不进行代理测试，直接尝试邮件连接
-        // 如果连接失败，会在上层catch中处理代理失败并尝试直连
-        
-        $startTime = microtime(true);
-        
+    private function testConnectionWithProxy() {
         try {
-            $flags = '/' . $this->protocol;
-            if ($this->ssl) {
-                $flags .= '/ssl/novalidate-cert';
-            }
-            
-            $mailbox = '{' . $this->server . ':' . $this->port . $flags . '}INBOX';
-            
-            // 清除之前的IMAP错误
-            imap_errors();
-            
-            $this->connection = @imap_open($mailbox, $this->username, $this->password);
-            
-            if (!$this->connection) {
-                $lastError = imap_last_error();
-                $this->proxyManager->updateProxyStats($this->proxy['id'], false);
-                throw new Exception('邮件服务器连接失败: ' . ($lastError ?: '未知错误'));
-            }
-            
-            $responseTime = round((microtime(true) - $startTime) * 1000);
-            $this->proxyManager->updateProxyStats($this->proxy['id'], true, $responseTime);
-            
-            return true;
-            
-        } catch (Exception $e) {
-            $this->proxyManager->updateProxyStats($this->proxy['id'], false);
-            throw $e;
-        }
-    }
-    
-    /**
-     * 测试通过代理连接到邮件服务器的网络可达性
-     */
-    private function testMailServerThroughProxy() {
-        try {
-            $ch = curl_init();
-            
-            // 构建测试URL - 尝试连接到邮件服务器的端口
-            $testUrl = 'http://' . $this->server . ':' . $this->port;
-            
-            curl_setopt($ch, CURLOPT_URL, $testUrl);
-            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-            curl_setopt($ch, CURLOPT_TIMEOUT, 10);
-            curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 5);
-            curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-            curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
-            curl_setopt($ch, CURLOPT_HEADER, true);
-            curl_setopt($ch, CURLOPT_NOBODY, true);
-            
-            // 设置代理
-            if ($this->proxy['proxy_type'] === 'http') {
-                curl_setopt($ch, CURLOPT_PROXYTYPE, CURLPROXY_HTTP);
-            } elseif ($this->proxy['proxy_type'] === 'socks5') {
-                curl_setopt($ch, CURLOPT_PROXYTYPE, CURLPROXY_SOCKS5);
-            }
-            
-            curl_setopt($ch, CURLOPT_PROXY, $this->proxy['proxy_host'] . ':' . $this->proxy['proxy_port']);
-            
-            if (!empty($this->proxy['proxy_username']) && !empty($this->proxy['proxy_password'])) {
-                curl_setopt($ch, CURLOPT_PROXYUSERPWD, $this->proxy['proxy_username'] . ':' . $this->proxy['proxy_password']);
-            }
-            
-            $response = curl_exec($ch);
-            $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-            $error = curl_error($ch);
-            curl_close($ch);
-            
-            // 对于邮件服务器，我们不期望HTTP响应，只要能建立连接即可
-            if ($response !== false && empty($error)) {
-                return [
-                    'success' => true,
-                    'message' => '代理网络连通性测试通过'
-                ];
-            } else {
+            // 获取可用代理
+            $proxy = $this->proxyManager->getAvailableProxy('', false);
+            if (!$proxy) {
                 return [
                     'success' => false,
-                    'message' => '代理网络连通性测试失败: ' . $error
+                    'message' => '❌ 无可用代理服务器',
+                    'diagnostics' => [
+                        'proxy_status' => '❌ 代理池中没有可用的代理服务器',
+                        'suggestion' => '请在代理池中添加可用的HTTP或SOCKS5代理'
+                    ],
+                    'error_type' => 'no_proxy'
+                ];
+            }
+            
+            // 创建代理客户端进行测试
+            $proxyClient = new ProxyImapClient(
+                $this->server,
+                $this->port,
+                $this->username,
+                $this->password,
+                $this->ssl,
+                $proxy
+            );
+            
+            $testResult = $proxyClient->testConnection();
+            
+            if ($testResult['success']) {
+                $this->proxyManager->updateProxyStats($proxy['id'], true);
+                return [
+                    'success' => true,
+                    'message' => '✅ 代理连接测试成功！',
+                    'diagnostics' => [
+                        'connection_method' => '✅ 通过代理连接成功',
+                        'proxy_info' => $proxy['proxy_type'] . '://' . $proxy['proxy_host'] . ':' . $proxy['proxy_port'],
+                        'proxy_name' => $proxy['proxy_name'] ?: '未命名代理',
+                        'protocol_info' => strtoupper($this->protocol) . ($this->ssl ? ' with SSL/TLS' : ' without SSL'),
+                        'server_info' => $this->server . ':' . $this->port
+                    ]
+                ];
+            } else {
+                $this->proxyManager->updateProxyStats($proxy['id'], false);
+                return [
+                    'success' => false,
+                    'message' => '❌ 代理连接测试失败: ' . $testResult['message'],
+                    'diagnostics' => [
+                        'connection_method' => '❌ 代理连接失败',
+                        'proxy_info' => $proxy['proxy_type'] . '://' . $proxy['proxy_host'] . ':' . $proxy['proxy_port'],
+                        'proxy_name' => $proxy['proxy_name'] ?: '未命名代理',
+                        'error_details' => $testResult['message'],
+                        'suggestion' => '请检查代理服务器配置或网络连接'
+                    ],
+                    'error_type' => 'proxy_connection_failed'
                 ];
             }
             
         } catch (Exception $e) {
             return [
                 'success' => false,
-                'message' => '代理网络测试异常: ' . $e->getMessage()
+                'message' => '❌ 代理连接测试异常: ' . $e->getMessage(),
+                'diagnostics' => [
+                    'connection_method' => '❌ 代理连接异常',
+                    'error_details' => $e->getMessage(),
+                    'suggestion' => '检查代理客户端实现或服务器配置'
+                ],
+                'error_type' => 'proxy_test_exception'
             ];
         }
     }
