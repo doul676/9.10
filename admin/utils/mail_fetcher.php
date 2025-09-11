@@ -57,7 +57,9 @@ class MailFetcher {
             if ($this->useProxy) {
                 $this->proxy = $this->proxyManager->getAvailableProxy('', false); // 不限制已验证，因为邮件连接测试本身就是验证
                 if (!$this->proxy) {
-                    throw new Exception('没有可用的代理服务器');
+                    // 如果没有可用代理，改为直连
+                    $this->useProxy = false;
+                    error_log('没有可用的代理服务器，改为直连');
                 }
             }
             
@@ -70,10 +72,28 @@ class MailFetcher {
             }
         } catch (Exception $e) {
             error_log('邮件连接失败: ' . $e->getMessage());
-            // 如果使用代理连接失败，更新代理统计
+            
+            // 如果使用代理连接失败，尝试直连
             if ($this->useProxy && $this->proxy) {
                 $this->proxyManager->updateProxyStats($this->proxy['id'], false);
+                
+                // 尝试直连作为备选方案
+                $this->useProxy = false;
+                $this->proxy = null;
+                error_log('代理连接失败，尝试直连...');
+                
+                try {
+                    if ($this->protocol === 'imap') {
+                        return $this->connectIMAP();
+                    } elseif ($this->protocol === 'pop3') {
+                        return $this->connectPOP3();
+                    }
+                } catch (Exception $fallbackError) {
+                    error_log('直连也失败: ' . $fallbackError->getMessage());
+                    return false;
+                }
             }
+            
             return false;
         }
     }
@@ -232,10 +252,17 @@ class MailFetcher {
             // 解码主题
             $subject = $this->decodeHeader($header->subject ?? '');
             
-            // 发件人信息
+            // 发件人信息 - 完整格式显示 "姓名 <email@domain.com>"
             $from = $header->from[0] ?? null;
             $fromEmail = $from ? $from->mailbox . '@' . $from->host : '未知';
-            $fromName = $from && isset($from->personal) ? $this->decodeHeader($from->personal) : $fromEmail;
+            $fromName = $from && isset($from->personal) ? $this->decodeHeader($from->personal) : '';
+            
+            // 构建完整的发件人显示格式
+            if ($fromName && $fromName !== $fromEmail) {
+                $fromDisplay = $fromName . ' <' . $fromEmail . '>';
+            } else {
+                $fromDisplay = $fromEmail;
+            }
             
             // 收件人信息
             $to = $header->to[0] ?? null;
@@ -250,8 +277,9 @@ class MailFetcher {
                 'success' => true,
                 'mail' => [
                     'subject' => $subject,
-                    'from' => $fromName,
+                    'from' => $fromDisplay,
                     'from_email' => $fromEmail,
+                    'from_name' => $fromName,
                     'to' => $toEmail,
                     'date' => $formattedDate,
                     'body' => $body,
@@ -277,23 +305,49 @@ class MailFetcher {
         if (!isset($structure->parts)) {
             // 简单邮件（无多部分）
             $body = imap_fetchbody($this->connection, $mailNumber, 1);
-            return $this->decodeBody($body, $structure);
-        }
-        
-        // 多部分邮件
-        $body = '';
-        for ($i = 1; $i <= count($structure->parts); $i++) {
-            $part = $structure->parts[$i - 1];
+            $decodedBody = $this->decodeBody($body, $structure);
             
-            // 查找文本部分
-            if ($part->type == 0) { // 文本类型
-                $partBody = imap_fetchbody($this->connection, $mailNumber, $i);
-                $body .= $this->decodeBody($partBody, $part);
-                break; // 只取第一个文本部分
+            // 检查是否为HTML内容
+            if (isset($structure->subtype) && strtolower($structure->subtype) === 'html') {
+                return $this->htmlToText($decodedBody);
+            } else {
+                return $this->formatTextContent($decodedBody);
             }
         }
         
-        return $body ?: '无法读取邮件内容';
+        // 多部分邮件 - 优先查找纯文本，其次HTML
+        $textBody = '';
+        $htmlBody = '';
+        
+        for ($i = 1; $i <= count($structure->parts); $i++) {
+            $part = $structure->parts[$i - 1];
+            
+            // 只处理文本类型的内容，跳过附件
+            if ($part->type == 0) { // 文本类型
+                $partBody = imap_fetchbody($this->connection, $mailNumber, $i);
+                $decodedBody = $this->decodeBody($partBody, $part);
+                
+                // 检查是否为HTML内容
+                if (isset($part->subtype) && strtolower($part->subtype) === 'html') {
+                    if (empty($htmlBody)) { // 只取第一个HTML部分
+                        $htmlBody = $decodedBody;
+                    }
+                } else {
+                    if (empty($textBody)) { // 只取第一个文本部分
+                        $textBody = $decodedBody;
+                    }
+                }
+            }
+        }
+        
+        // 优先返回纯文本，如果没有则转换HTML为文本
+        if (!empty($textBody)) {
+            return $this->formatTextContent($textBody);
+        } elseif (!empty($htmlBody)) {
+            return $this->htmlToText($htmlBody);
+        }
+        
+        return '无法读取邮件内容';
     }
     
     /**
@@ -360,8 +414,82 @@ class MailFetcher {
     }
     
     /**
-     * 关闭连接
+     * 格式化纯文本内容 - 提升可读性
      */
+    private function formatTextContent($text) {
+        // 清理内容
+        $text = trim($text);
+        
+        // 移除多余的空行（保留段落分隔，最多两个连续换行）
+        $text = preg_replace('/\n{3,}/', "\n\n", $text);
+        
+        // 移除行首行尾空白但保留缩进
+        $lines = explode("\n", $text);
+        $formattedLines = [];
+        
+        foreach ($lines as $line) {
+            // 移除行尾空白，保留行首缩进
+            $formattedLines[] = rtrim($line);
+        }
+        
+        $text = implode("\n", $formattedLines);
+        
+        // 移除开头和结尾的多余空行
+        $text = trim($text);
+        
+        // 清理特殊字符和乱码
+        $text = preg_replace('/[^\x{20}-\x{7E}\x{4E00}-\x{9FFF}\s]/u', '', $text);
+        
+        // 处理邮件引用符号（>开头的行）
+        $text = preg_replace('/^>\s*/m', '  > ', $text);
+        
+        return $text;
+    }
+    
+    /**
+     * 将HTML内容转换为格式化的纯文本
+     */
+    private function htmlToText($html) {
+        // 清理和预处理HTML
+        $html = trim($html);
+        
+        // 移除脚本和样式标签及其内容
+        $html = preg_replace('/<script[^>]*>.*?<\/script>/is', '', $html);
+        $html = preg_replace('/<style[^>]*>.*?<\/style>/is', '', $html);
+        $html = preg_replace('/<head[^>]*>.*?<\/head>/is', '', $html);
+        
+        // 移除HTML注释
+        $html = preg_replace('/<!--.*?-->/s', '', $html);
+        
+        // 处理标题标签 - 添加换行和分隔
+        $html = preg_replace('/<h[1-6][^>]*>/i', "\n\n", $html);
+        $html = preg_replace('/<\/h[1-6]>/i', "\n" . str_repeat('-', 20) . "\n", $html);
+        
+        // 处理段落和换行
+        $html = str_replace(['<br>', '<br/>', '<br />'], "\n", $html);
+        $html = str_replace(['</p>', '</div>', '</li>'], "\n\n", $html);
+        
+        // 处理列表
+        $html = str_replace('<li>', "• ", $html);
+        $html = preg_replace('/<\/?(ul|ol)[^>]*>/i', "\n", $html);
+        
+        // 处理表格
+        $html = str_replace(['<td>', '<th>'], "    ", $html);
+        $html = str_replace(['</td>', '</th>', '</tr>'], "\n", $html);
+        $html = preg_replace('/<\/?(table|tbody|thead)[^>]*>/i', "\n", $html);
+        
+        // 处理链接 - 保留链接文本
+        $html = preg_replace('/<a[^>]*href=["\']([^"\']*)["\'][^>]*>(.*?)<\/a>/i', '$2 [$1]', $html);
+        
+        // 移除所有剩余的HTML标签
+        $text = strip_tags($html);
+        
+        // 解码HTML实体
+        $text = html_entity_decode($text, ENT_QUOTES, 'UTF-8');
+        
+        // 清理和格式化文本
+        return $this->formatTextContent($text);
+    }
     public function close() {
         if ($this->connection) {
             imap_close($this->connection);
