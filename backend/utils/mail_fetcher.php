@@ -18,18 +18,33 @@ class MailFetcher {
     private $proxy;
     private $proxyManager;
     
-    public function __construct($server, $port, $username, $password, $protocol = 'imap', $ssl = true, $useProxy = false) {
+    public function __construct($server, $port, $username, $password, $protocol = 'imap', $ssl = true) {
         $this->server = $server;
         $this->port = $port;
         $this->username = $username;
         $this->password = $password;
         $this->protocol = strtolower($protocol);
         $this->ssl = $ssl;
-        $this->useProxy = $useProxy;
         $this->proxy = null;
         
-        if ($this->useProxy) {
-            $this->proxyManager = new ProxyManager();
+        // 初始化代理管理器，用于自动判断是否使用代理
+        $this->proxyManager = new ProxyManager();
+        
+        // 自动检查是否有可用代理，如果有则使用代理连接
+        $this->useProxy = $this->shouldUseProxy();
+    }
+    
+    /**
+     * 判断是否应该使用代理
+     * 如果代理池有可用代理，则使用代理；否则使用直连
+     */
+    private function shouldUseProxy() {
+        try {
+            $availableProxy = $this->proxyManager->getAvailableProxy('', false);
+            return $availableProxy !== null;
+        } catch (Exception $e) {
+            // 如果获取代理时出错，使用直连
+            return false;
         }
     }
     

@@ -24,7 +24,6 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 // 获取请求数据
 $input = json_decode(file_get_contents('php://input'), true);
 $email = $input['email'] ?? '';
-$useProxy = $input['useProxy'] ?? false; // 是否使用代理
 
 if (empty($email)) {
     echo json_encode([
@@ -73,59 +72,27 @@ try {
         $account['username'],
         $account['password'],
         $account['protocol'],
-        $account['ssl'] == 1,
-        $useProxy  // 传递代理使用标志
+        $account['ssl'] == 1
     );
     
     // 连接并获取最新邮件
     if ($fetcher->connect()) {
         $result = $fetcher->getLatestMail();
-        $proxyInfo = $fetcher->getCurrentProxy();
         $fetcher->close();
         
         if ($result['success']) {
             if ($result['mail']) {
-                $response = [
+                echo json_encode([
                     'success' => true,
                     'message' => '邮件获取成功',
                     'mail' => $result['mail']
-                ];
-                
-                // 如果使用了代理，添加代理信息
-                if ($useProxy && $proxyInfo) {
-                    $response['proxy'] = [
-                        'used' => true,
-                        'type' => $proxyInfo['proxy_type'],
-                        'host' => $proxyInfo['proxy_host'],
-                        'port' => $proxyInfo['proxy_port'],
-                        'name' => $proxyInfo['proxy_name'] ?: '未命名代理'
-                    ];
-                } else {
-                    $response['proxy'] = ['used' => false];
-                }
-                
-                echo json_encode($response);
+                ]);
             } else {
-                $response = [
+                echo json_encode([
                     'success' => true,
                     'message' => '邮箱中暂无邮件',
                     'mail' => null
-                ];
-                
-                // 如果使用了代理，添加代理信息
-                if ($useProxy && $proxyInfo) {
-                    $response['proxy'] = [
-                        'used' => true,
-                        'type' => $proxyInfo['proxy_type'],
-                        'host' => $proxyInfo['proxy_host'],
-                        'port' => $proxyInfo['proxy_port'],
-                        'name' => $proxyInfo['proxy_name'] ?: '未命名代理'
-                    ];
-                } else {
-                    $response['proxy'] = ['used' => false];
-                }
-                
-                echo json_encode($response);
+                ]);
             }
         } else {
             echo json_encode([

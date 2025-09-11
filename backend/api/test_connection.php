@@ -24,7 +24,6 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 // 获取请求数据
 $input = json_decode(file_get_contents('php://input'), true);
 $email = $input['email'] ?? '';
-$useProxy = $input['useProxy'] ?? false;
 
 if (empty($email)) {
     echo json_encode([
@@ -58,8 +57,7 @@ try {
         $account['username'],
         $account['password'],
         $account['protocol'],
-        $account['ssl'] == 1,
-        $useProxy
+        $account['ssl'] == 1
     );
     
     // 测试连接
@@ -73,28 +71,6 @@ try {
         'response_time' => $responseTime,
         'diagnostics' => $testResult['diagnostics'] ?? []
     ];
-    
-    // 如果使用了代理，添加代理信息
-    if ($useProxy) {
-        $proxyInfo = $fetcher->getCurrentProxy();
-        if ($proxyInfo) {
-            $response['proxy'] = [
-                'used' => true,
-                'type' => $proxyInfo['proxy_type'],
-                'host' => $proxyInfo['proxy_host'],
-                'port' => $proxyInfo['proxy_port'],
-                'name' => $proxyInfo['proxy_name'] ?: '未命名代理',
-                'verified' => $proxyInfo['is_verified'] == 1
-            ];
-        } else {
-            $response['proxy'] = [
-                'used' => false,
-                'message' => '没有可用的代理服务器'
-            ];
-        }
-    } else {
-        $response['proxy'] = ['used' => false];
-    }
     
     echo json_encode($response);
     $db->close();
