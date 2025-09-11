@@ -4,10 +4,27 @@
  * 提供邮箱测试连接等功能
  */
 
-session_start();
+// 防止PHP错误/警告污染JSON输出
+error_reporting(0);
+ini_set('display_errors', 0);
+ini_set('log_errors', 1);
+
+// 开始输出缓冲以捕获任何意外输出
+ob_start();
+
+// 安全地启动会话
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
 
 // 检查登录状态
 if (!isset($_SESSION['admin_logged_in']) || $_SESSION['admin_logged_in'] !== true) {
+    // 清理任何意外输出
+    if (ob_get_level()) {
+        ob_clean();
+    }
+    
+    header('Content-Type: application/json; charset=utf-8');
     http_response_code(401);
     echo json_encode([
         'success' => false,
@@ -16,6 +33,12 @@ if (!isset($_SESSION['admin_logged_in']) || $_SESSION['admin_logged_in'] !== tru
     exit();
 }
 
+// 清理任何意外输出
+if (ob_get_level()) {
+    ob_clean();
+}
+
+// 设置响应头
 header('Content-Type: application/json; charset=utf-8');
 header('Access-Control-Allow-Origin: *');
 header('Access-Control-Allow-Methods: GET, POST');

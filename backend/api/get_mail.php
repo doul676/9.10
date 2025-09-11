@@ -4,6 +4,19 @@
  * 为前端提供邮件获取服务，自动使用代理池（如果可用）
  */
 
+// 防止PHP错误/警告污染JSON输出
+error_reporting(0);
+ini_set('display_errors', 0);
+ini_set('log_errors', 1);
+
+// 开始输出缓冲以捕获任何意外输出
+ob_start();
+
+// 清理任何意外输出并设置响应头
+if (ob_get_level()) {
+    ob_clean();
+}
+
 header('Content-Type: application/json; charset=utf-8');
 header('Access-Control-Allow-Origin: *');
 header('Access-Control-Allow-Methods: GET, POST');
