@@ -1,10 +1,9 @@
 {
     "name": "douliu6767/mail-viewer",
-    "description": "Email viewing system with proxy support for IMAP/POP3 connections",
+    "description": "Email viewing system with true proxy support for IMAP connections",
     "type": "project",
     "require": {
-        "php": ">=7.4",
-        "webklex/php-imap": "^5.3"
+        "php": ">=7.4"
     },
     "autoload": {
         "psr-4": {

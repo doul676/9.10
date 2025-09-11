@@ -1,17 +1,17 @@
 <?php
 /**
  * 邮件获取工具类
- * 支持IMAP和POP3协议，支持SSL连接，支持自动代理连接
- * 更新为使用webklex/php-imap库以支持代理连接
+ * 支持IMAP协议，支持SSL连接，支持真实的HTTP/SOCKS5代理连接
+ * 替换webklex/php-imap为自定义代理支持实现
  */
 
-require_once __DIR__ . '/enhanced_mail_fetcher.php';
+require_once __DIR__ . '/enhanced_mail_fetcher_new.php';
 
 class MailFetcher {
     private $enhancedFetcher;
     
     public function __construct($server, $port, $username, $password, $protocol = 'imap', $ssl = true) {
-        // 使用增强版邮件获取器
+        // 使用新的增强版邮件获取器
         $this->enhancedFetcher = new EnhancedMailFetcher($server, $port, $username, $password, $protocol, $ssl);
     }
     
