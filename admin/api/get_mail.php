@@ -51,7 +51,7 @@ try {
     }
     
     // 使用完整的IMAP扩展检查函数
-    require_once '../api.php';
+    require_once '../../backend/utils/imap_check.php';
     $imapInfo = checkImapExtension();
     
     if (!$imapInfo['available']) {
@@ -65,6 +65,11 @@ try {
         exit();
     }
     
+    // 检查代理池状态
+    require_once '../../backend/utils/proxy_manager.php';
+    $proxyManager = new ProxyManager();
+    $availableProxy = $proxyManager->getAvailableProxy('', false); // 获取任何类型的可用代理
+    
     // 创建邮件获取器实例
     $fetcher = new MailFetcher(
         $account['server'],
@@ -76,34 +81,90 @@ try {
     );
     
     // 连接并获取最新邮件
+    $startTime = microtime(true);
     if ($fetcher->connect()) {
         $result = $fetcher->getLatestMail();
+        $currentProxy = $fetcher->getCurrentProxy();
         $fetcher->close();
+        $responseTime = round((microtime(true) - $startTime) * 1000);
         
         if ($result['success']) {
             if ($result['mail']) {
-                echo json_encode([
+                $responseData = [
                     'success' => true,
                     'message' => '邮件获取成功',
-                    'mail' => $result['mail']
-                ]);
+                    'mail' => $result['mail'],
+                    'response_time' => $responseTime
+                ];
+                
+                // 添加代理使用信息
+                if ($currentProxy) {
+                    $responseData['proxy'] = [
+                        'used' => true,
+                        'type' => $currentProxy['proxy_type'],
+                        'host' => $currentProxy['proxy_host'],
+                        'port' => $currentProxy['proxy_port'],
+                        'name' => $currentProxy['proxy_name'] ?? 'Unknown'
+                    ];
+                } else {
+                    $responseData['proxy'] = [
+                        'used' => false,
+                        'available' => $availableProxy !== null
+                    ];
+                }
+                
+                echo json_encode($responseData);
             } else {
-                echo json_encode([
+                $responseData = [
                     'success' => true,
                     'message' => '邮箱中暂无邮件',
-                    'mail' => null
-                ]);
+                    'mail' => null,
+                    'response_time' => $responseTime
+                ];
+                
+                // 添加代理使用信息
+                if ($currentProxy) {
+                    $responseData['proxy'] = [
+                        'used' => true,
+                        'type' => $currentProxy['proxy_type'],
+                        'host' => $currentProxy['proxy_host'],
+                        'port' => $currentProxy['proxy_port']
+                    ];
+                } else {
+                    $responseData['proxy'] = [
+                        'used' => false,
+                        'available' => $availableProxy !== null
+                    ];
+                }
+                
+                echo json_encode($responseData);
             }
         } else {
             echo json_encode([
                 'success' => false,
-                'message' => $result['message']
+                'message' => $result['message'],
+                'proxy' => $currentProxy ? [
+                    'used' => true,
+                    'type' => $currentProxy['proxy_type'],
+                    'host' => $currentProxy['proxy_host'],
+                    'port' => $currentProxy['proxy_port']
+                ] : [
+                    'used' => false,
+                    'available' => $availableProxy !== null
+                ]
             ]);
         }
     } else {
         echo json_encode([
             'success' => false,
-            'message' => '无法连接到邮件服务器，请检查邮箱配置'
+            'message' => '无法连接到邮件服务器，请检查邮箱配置或网络连接',
+            'proxy' => $fetcher->getCurrentProxy() ? [
+                'used' => true,
+                'failed' => true
+            ] : [
+                'used' => false,
+                'available' => $availableProxy !== null
+            ]
         ]);
     }
     

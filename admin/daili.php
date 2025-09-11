@@ -781,10 +781,12 @@ if (isset($_GET['logout'])) {
             <!-- 代理池状态卡片 -->
             <div class="card" id="proxyStatusCard">
                 <div class="card-header">
-                    <h2 class="card-title">🌐 代理池状态</h2>
-                    <button onclick="refreshProxyStatus()" class="btn btn-secondary">
-                        <i>🔄</i> 刷新
-                    </button>
+                    <div style="display: flex; align-items: center; gap: 15px;">
+                        <h2 class="card-title">🌐 代理池状态</h2>
+                        <button onclick="refreshProxyStatus()" class="btn btn-secondary">
+                            <i>🔄</i> 刷新
+                        </button>
+                    </div>
                 </div>
                 <div class="card-body">
                     <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 15px; margin-bottom: 15px;">

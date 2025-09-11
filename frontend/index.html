@@ -389,15 +389,30 @@
             mailDisplay.style.display = 'none';
             
             try {
-                const response = await fetch('../backend/api/get_mail.php', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({ 
-                        email: email
-                    })
-                });
+                // Try admin API first, then backend API as fallback
+                let response;
+                try {
+                    response = await fetch('../admin/api/get_mail.php', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({ 
+                            email: email
+                        })
+                    });
+                } catch (adminError) {
+                    console.log('Admin API not available, trying backend API...');
+                    response = await fetch('../backend/api/get_mail.php', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({ 
+                            email: email
+                        })
+                    });
+                }
                 
                 const data = await response.json();
                 
