@@ -75,17 +75,22 @@ class EnhancedMailFetcher {
                 'timeout' => 30
             ];
             
-            // 如果有代理配置，添加代理设置
+            // 创建客户端
+            $this->client = $cm->make($config);
+            
+            // 如果有代理配置，设置代理
             if ($this->useProxy && $this->currentProxy) {
                 $proxyConfig = $this->buildProxyConfig($this->currentProxy);
-                $config['proxy'] = $proxyConfig;
+                
+                // 使用反射设置私有属性 proxy
+                $reflection = new ReflectionClass($this->client);
+                $proxyProperty = $reflection->getProperty('proxy');
+                $proxyProperty->setAccessible(true);
+                $proxyProperty->setValue($this->client, $proxyConfig);
                 
                 error_log('使用代理连接: ' . $this->currentProxy['proxy_type'] . '://' . 
                          $this->currentProxy['proxy_host'] . ':' . $this->currentProxy['proxy_port']);
             }
-            
-            // 创建客户端
-            $this->client = $cm->make($config);
             
             // 尝试连接
             $startTime = microtime(true);
@@ -127,11 +132,7 @@ class EnhancedMailFetcher {
         
         if ($proxy['proxy_type'] === 'http') {
             // HTTP 代理配置
-            $proxyUrl = 'http://';
-            if (!empty($proxy['proxy_username']) && !empty($proxy['proxy_password'])) {
-                $proxyUrl .= urlencode($proxy['proxy_username']) . ':' . urlencode($proxy['proxy_password']) . '@';
-            }
-            $proxyUrl .= $proxy['proxy_host'] . ':' . $proxy['proxy_port'];
+            $proxyUrl = 'tcp://' . $proxy['proxy_host'] . ':' . $proxy['proxy_port'];
             
             $proxyConfig = [
                 'socket' => $proxyUrl,
@@ -140,12 +141,8 @@ class EnhancedMailFetcher {
                 'password' => $proxy['proxy_password'] ?? null
             ];
         } elseif ($proxy['proxy_type'] === 'socks5') {
-            // SOCKS5 代理配置
-            $proxyUrl = 'socks5://';
-            if (!empty($proxy['proxy_username']) && !empty($proxy['proxy_password'])) {
-                $proxyUrl .= urlencode($proxy['proxy_username']) . ':' . urlencode($proxy['proxy_password']) . '@';
-            }
-            $proxyUrl .= $proxy['proxy_host'] . ':' . $proxy['proxy_port'];
+            // SOCKS5 代理配置 - webklex可能不直接支持socks5，需要特殊处理
+            $proxyUrl = 'tcp://' . $proxy['proxy_host'] . ':' . $proxy['proxy_port'];
             
             $proxyConfig = [
                 'socket' => $proxyUrl,

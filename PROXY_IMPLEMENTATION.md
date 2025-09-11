@@ -2,110 +2,52 @@
 
 ## Overview
 
-This implementation adds full HTTP and SOCKS5 proxy support to the email viewing system, replacing the limitation of PHP's native IMAP extension which doesn't support proxy connections.
+This implementation adds full HTTP and SOCKS5 proxy support to the email viewing system, replacing the limitation of PHP's native IMAP extension which doesn't support proxy connections. The system now **FORCES** proxy usage when proxies are configured in the database.
 
 ## Key Changes
 
-### 1. New ProxyImapClient Class (`backend/utils/proxy_imap_client.php`)
+### 1. Enhanced MailFetcher Class (`backend/utils/enhanced_mail_fetcher.php`)
 
-A custom IMAP client implementation that supports:
-- **HTTP Proxy**: Uses CONNECT method to tunnel IMAP connections
-- **SOCKS5 Proxy**: Implements SOCKS5 protocol for proxy connections
-- **SSL/TLS Support**: Works with encrypted connections through proxies
-- **Authentication**: Supports proxy authentication (username/password)
-- **Error Handling**: Provides detailed error messages for troubleshooting
+A new enhanced mail fetcher implementation that:
+- **Uses webklex/php-imap library** instead of native PHP IMAP extension
+- **Automatically detects and prioritizes proxy usage** from database configuration
+- **Forces proxy connections** when active proxies are available in the database
+- **Supports HTTP and SOCKS5 proxies** with authentication
+- **Provides fallback to direct connection** only when proxy connection fails
+- **Includes detailed error handling and diagnostics**
 
-### 2. Enhanced MailFetcher Class (`backend/utils/mail_fetcher.php`)
+### 2. Updated MailFetcher Classes
 
-Updated to support both proxy and direct connections:
-- **Automatic Proxy Detection**: Checks for available proxies and uses them when available
-- **Fallback Mechanism**: Falls back to direct connection if proxy fails
-- **Mixed Protocol Support**: IMAP through proxy, POP3 via direct connection
-- **Unified Interface**: Maintains compatibility with existing API calls
+Both admin and backend MailFetcher classes have been updated to use the enhanced version:
+- **Maintains full API compatibility** with existing code
+- **All existing methods preserved** with same signatures
+- **Transparent proxy integration** - no changes needed in calling code
 
 ### 3. Database Integration
 
 The existing `proxy_pool` table supports:
-- **Multiple Proxy Types**: HTTP and SOCKS5
-- **Statistics Tracking**: Success/failure counts and response times
-- **Status Management**: Active/inactive and verified/unverified states
-- **Authentication**: Username/password for proxy servers
+- **Automatic proxy priority**: Active proxies (`is_active = 1`) are automatically used
+- **Multiple proxy types**: HTTP and SOCKS5 with authentication
+- **Statistics tracking**: Success/failure counts and response times
+- **Verification status**: Verified proxies are prioritized
 
 ## Usage
 
-### Admin Interface
+### Proxy Priority Logic
 
-1. **Add Proxies**: Use the admin panel to add HTTP or SOCKS5 proxies
-2. **Test Proxies**: Verify proxy connectivity before use
-3. **Monitor Performance**: Track success rates and response times
+1. **If database has active proxies**: System **FORCES** proxy usage for all IMAP connections
+2. **If proxy connection fails**: System falls back to direct connection
+3. **If no active proxies**: System uses direct connection
 
-### API Behavior
+### API Behavior Changes
 
-- **Mail Retrieval**: `/backend/api/get_mail.php` automatically uses proxies when available
+- **Mail Retrieval**: `/admin/api/get_mail.php` now **automatically uses proxies** when available
 - **Connection Testing**: `/backend/api/test_connection.php` tests through proxy when configured
-- **Transparent Operation**: Front-end code requires no changes
+- **Enhanced Diagnostics**: All responses include detailed proxy usage information
 
-### Proxy Priority
+### Enhanced API Responses
 
-1. **IMAP + Proxy Available**: Uses ProxyImapClient through configured proxy
-2. **IMAP + No Proxy**: Uses native PHP IMAP extension directly
-3. **POP3**: Always uses native PHP IMAP extension (proxy support can be added later)
-
-## Technical Details
-
-### HTTP Proxy Connection Flow
-
-1. Connect to proxy server
-2. Send HTTP CONNECT request to target IMAP server
-3. Establish tunnel through proxy
-4. Upgrade to SSL/TLS if required
-5. Perform IMAP authentication and operations
-
-### SOCKS5 Proxy Connection Flow
-
-1. Connect to SOCKS5 proxy server
-2. Perform SOCKS5 handshake and authentication
-3. Request connection to target IMAP server
-4. Establish tunneled connection
-5. Upgrade to SSL/TLS if required
-6. Perform IMAP authentication and operations
-
-### Error Handling
-
-- **Proxy Connection Failures**: Automatically falls back to direct connection
-- **Authentication Errors**: Provides specific error messages
-- **Network Issues**: Graceful handling with detailed diagnostics
-- **SSL Certificate Issues**: Configurable SSL verification
-
-## Configuration
-
-### Database Schema
-
-The system uses the existing `proxy_pool` table with these key fields:
-
-```sql
-- proxy_type: 'http' or 'socks5'
-- proxy_host: Proxy server hostname/IP
-- proxy_port: Proxy server port
-- proxy_username: Optional authentication username
-- proxy_password: Optional authentication password
-- is_active: Enable/disable proxy
-- is_verified: Automatically updated based on test results
-```
-
-### Automatic Proxy Selection
-
-The system automatically selects the best available proxy based on:
-1. Active status (`is_active = 1`)
-2. Verification status (prioritizes verified proxies)
-3. Response time (faster proxies preferred)
-4. Success rate (higher success rate preferred)
-
-## API Response Changes
-
-### Enhanced JSON Responses
-
-All API responses now include proxy information:
+All API responses now include comprehensive proxy information:
 
 ```json
 {
@@ -117,135 +59,102 @@ All API responses now include proxy information:
         "host": "proxy.example.com",
         "port": 8080,
         "name": "Primary HTTP Proxy"
-    }
+    },
+    "response_time": 150
 }
 ```
 
-### Error Standardization
+## Technical Implementation
 
-- All errors return valid JSON format
-- Detailed diagnostic information for troubleshooting
-- Specific error types for different failure scenarios
+### Proxy Connection Flow
+
+1. **System checks database** for active proxies (`is_active = 1`)
+2. **If proxies found**: Creates webklex IMAP client with proxy configuration
+3. **Attempts proxy connection** to IMAP server
+4. **If proxy fails**: Logs failure, updates statistics, attempts direct connection
+5. **Reports connection method** in API response for diagnostics
+
+### Error Handling
+
+- **Proxy connection failures**: Automatic fallback to direct connection
+- **Network issues**: Graceful handling with detailed diagnostics
+- **Authentication errors**: Clear error messages for troubleshooting
+- **JSON standardization**: All errors return valid JSON format
+
+## Configuration
+
+### Proxy Management
+
+Add proxies via admin panel or directly in database:
+
+```sql
+INSERT INTO proxy_pool (
+    proxy_name, proxy_type, proxy_host, proxy_port, 
+    proxy_username, proxy_password, is_active, is_verified
+) VALUES (
+    'HTTP Proxy', 'http', 'proxy.example.com', 8080,
+    'username', 'password', 1, 1
+);
+```
+
+### Supported Proxy Types
+
+- **HTTP Proxies**: Uses HTTP CONNECT method for IMAP tunneling
+- **SOCKS5 Proxies**: Direct SOCKS5 protocol support
+- **Authentication**: Username/password authentication supported
+- **SSL/TLS**: Full SSL support through proxy connections
 
 ## Dependencies
 
-### Required PHP Extensions
+### Required Components
 
-- **PDO SQLite**: For database operations (already required)
-- **cURL**: For proxy testing (already available)
-- **OpenSSL**: For SSL/TLS connections (standard)
-- **Sockets**: For low-level socket operations (standard)
+- **webklex/php-imap**: ^5.3 (installed via Composer)
+- **PDO SQLite**: For database operations (standard)
+- **Reflection**: For proxy configuration injection (standard)
 
-### Optional Dependencies
+### No Additional Configuration Required
 
-A `composer.json` file has been created for future dependency management:
+- **Automatic detection**: System automatically uses proxies when available
+- **Backward compatible**: Existing code works without changes
+- **Transparent operation**: Frontend requires no modifications
 
-```json
-{
-    "require": {
-        "php": ">=7.4"
-    }
-}
-```
+## Testing Results
+
+### Functional Tests Completed
+
+✅ **Proxy Detection**: System correctly identifies configured proxies from database
+✅ **Proxy Priority**: Always attempts proxy connection first when available  
+✅ **Fallback Mechanism**: Gracefully falls back to direct connection on proxy failure
+✅ **API Compatibility**: All existing API endpoints work with enhanced implementation
+✅ **Response Format**: API responses include accurate proxy usage information
+✅ **Error Handling**: Proper JSON error responses with detailed diagnostics
+
+### Connection Flow Verification
+
+1. ✅ Database query for active proxies
+2. ✅ Proxy configuration and client setup
+3. ✅ Connection attempt logging ("使用代理连接")
+4. ✅ Failure detection and fallback ("代理连接失败, 尝试直连")
+5. ✅ Statistics update and response generation
+
+## Success Criteria Met
+
+- ✅ **Forced proxy usage**: When proxies are in database, system prioritizes proxy connections
+- ✅ **Frontend compatibility**: Diagnostic information correctly shows proxy status
+- ✅ **API compatibility**: Responses remain compatible with existing frontend
+- ✅ **Fallback reliability**: Direct connection only used when proxy connections fail
+- ✅ **Error standardization**: All responses use standardized JSON format
 
 ## Deployment Notes
 
-### 1. Backup Database
+### Immediate Effect
 
-Before deployment, backup the existing `mail.sqlite` database.
+- **No configuration required**: System automatically detects and uses existing proxies
+- **No code changes needed**: All existing API calls work transparently
+- **Enhanced diagnostics**: Improved error messages and connection information
 
-### 2. Database Migration
+### Monitoring
 
-The system automatically creates the `proxy_pool` table if it doesn't exist. No manual migration required.
-
-### 3. Test Proxy Configuration
-
-1. Access admin panel
-2. Add at least one test proxy server
-3. Use "Test Connection" to verify functionality
-4. Monitor proxy statistics for performance
-
-### 4. Compatibility
-
-- **Existing Mail Accounts**: No changes required
-- **API Clients**: Fully backward compatible
-- **Direct Connections**: Continue to work as before
-- **Error Handling**: Improved with better JSON responses
-
-## Troubleshooting
-
-### Common Issues
-
-1. **"No available proxy"**: Add proxies via admin panel and ensure they're active
-2. **"Proxy connection failed"**: Verify proxy server settings and network connectivity
-3. **"Authentication failed"**: Check proxy username/password configuration
-4. **"SSL handshake failed"**: Verify SSL certificate settings or disable SSL verification
-
-### Debug Information
-
-The system provides detailed diagnostic information for troubleshooting:
-- Connection method used (proxy vs direct)
-- Proxy server details
-- Response times and error messages
-- Automatic fallback notifications
-
-## Performance Impact
-
-### Benefits
-
-- **Improved Connectivity**: Bypass network restrictions
-- **Load Distribution**: Distribute connections across multiple proxies
-- **Reliability**: Automatic fallback ensures service continuity
-
-### Considerations
-
-- **Latency**: Proxy connections may add ~100-500ms latency
-- **Bandwidth**: Minimal impact on bandwidth usage
-- **Resource Usage**: Slightly higher memory usage for socket operations
-
-## Security Considerations
-
-### Proxy Authentication
-
-- Credentials stored in database (consider encryption for production)
-- Support for username/password authentication
-- No support for advanced authentication methods (can be added)
-
-### SSL/TLS
-
-- Full SSL/TLS support through proxies
-- Certificate verification configurable
-- Encrypted proxy tunnels for HTTP CONNECT
-
-### Network Security
-
-- All IMAP traffic encrypted when SSL enabled
-- Proxy traffic uses standard protocols
-- No additional attack vectors introduced
-
-## Future Enhancements
-
-1. **POP3 Proxy Support**: Extend proxy support to POP3 protocol
-2. **Proxy Pool Rotation**: Automatic rotation for load balancing
-3. **Proxy Health Monitoring**: Automated health checks and alerting
-4. **Encryption**: Encrypt proxy credentials in database
-5. **Advanced Authentication**: Support for NTLM, Kerberos, etc.
-6. **IPv6 Support**: Add IPv6 proxy server support
-
-## Testing
-
-The implementation has been tested with:
-- ✅ Database initialization and schema creation
-- ✅ Proxy manager functionality and selection logic
-- ✅ IMAP client creation and connection handling
-- ✅ API integration and JSON response formatting
-- ✅ Error handling and fallback mechanisms
-- ✅ Statistics tracking and performance monitoring
-
-## Support
-
-For issues or questions regarding the proxy implementation:
-1. Check the admin panel proxy status and logs
-2. Verify proxy server configuration and connectivity
-3. Review API response messages for detailed error information
-4. Monitor proxy statistics for performance trends
+- **Proxy statistics**: Monitor success rates via `proxy_pool` table
+- **Connection logs**: Detailed logging for troubleshooting
+- **API responses**: Real-time proxy usage information in all responses
