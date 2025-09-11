@@ -838,44 +838,7 @@ try {
             }
         }
         
-        /* Proxy Status Styles */
-        .proxy-stat-item {
-            text-align: center;
-            padding: 15px;
-            background: white;
-            border-radius: 10px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-            border: 1px solid #f1f5f9;
-        }
-        
-        .proxy-stat-label {
-            font-size: 12px;
-            color: #64748b;
-            margin-bottom: 5px;
-            font-weight: 500;
-        }
-        
-        .proxy-stat-value {
-            font-size: 20px;
-            font-weight: 600;
-            color: #1e293b;
-        }
-        
-        .proxy-stat-value.success {
-            color: #10b981;
-        }
-        
-        .proxy-stat-value.warning {
-            color: #f59e0b;
-        }
-        
-        .proxy-stat-value.error {
-            color: #ef4444;
-        }
-        
-        #proxyStatusCard {
-            border-left: 4px solid #667eea;
-        }
+
     </style>
 </head>
 <body>
@@ -925,40 +888,7 @@ try {
             <!-- Toast notification container -->
             <div id="toast-container" class="toast-container"></div>
             
-            <!-- 代理池状态卡片 -->
-            <div class="card" id="proxyStatusCard">
-                <div class="card-header">
-                    <h2 class="card-title">🌐 代理池状态</h2>
-                    <button class="btn" onclick="refreshProxyStatus()" style="padding: 5px 10px; font-size: 12px;">刷新</button>
-                </div>
-                <div class="card-body">
-                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 15px; margin-bottom: 15px;">
-                        <div class="proxy-stat-item">
-                            <div class="proxy-stat-label">总代理数</div>
-                            <div class="proxy-stat-value" id="totalProxies">-</div>
-                        </div>
-                        <div class="proxy-stat-item">
-                            <div class="proxy-stat-label">活跃代理</div>
-                            <div class="proxy-stat-value" id="activeProxies">-</div>
-                        </div>
-                        <div class="proxy-stat-item">
-                            <div class="proxy-stat-label">已验证</div>
-                            <div class="proxy-stat-value" id="verifiedProxies">-</div>
-                        </div>
-                        <div class="proxy-stat-item">
-                            <div class="proxy-stat-label">成功率</div>
-                            <div class="proxy-stat-value" id="successRate">-</div>
-                        </div>
-                        <div class="proxy-stat-item">
-                            <div class="proxy-stat-label">平均响应</div>
-                            <div class="proxy-stat-value" id="avgResponse">-</div>
-                        </div>
-                    </div>
-                    <div id="bestProxyInfo" style="padding: 10px; background: #f8fafc; border-radius: 8px; font-size: 14px; color: #64748b;">
-                        最佳代理: 正在加载...
-                    </div>
-                </div>
-            </div>
+
             
             <div class="card">
                 <div class="card-header">
@@ -1053,7 +983,6 @@ try {
                                             <td>
                                                 <div class="actions">
                                                     <button type="button" class="btn btn-small" onclick="openEditModal(<?php echo htmlspecialchars(json_encode($account)); ?>)">编辑</button>
-                                                    <button type="button" class="btn btn-small btn-success" onclick="testConnection(<?php echo $account['id']; ?>)" id="test-btn-<?php echo $account['id']; ?>">测试连接</button>
                                                     <button type="button" class="btn btn-danger btn-small" onclick="deleteAccount(<?php echo $account['id']; ?>)">删除</button>
                                                 </div>
                                             </td>
@@ -1140,7 +1069,6 @@ try {
                     </div>
                 </div>
                 <div class="modal-footer">
-                    <button type="button" class="btn btn-success" onclick="testConnectionModal()" id="testBtn">测试连接</button>
                     <button type="button" class="btn" onclick="closeModal()">取消</button>
                     <button type="submit" class="btn" id="submitBtn">保存</button>
                 </div>
@@ -1439,129 +1367,7 @@ try {
             }
         });
         
-        // Test connection in modal
-        function testConnectionModal() {
-            const btn = document.getElementById('testBtn');
-            const originalText = btn.textContent;
-            
-            // Get form data
-            const data = {
-                server: document.getElementById('modalServer').value,
-                port: parseInt(document.getElementById('modalPort').value),
-                username: document.getElementById('modalEmail').value, // 使用邮箱作为用户名
-                password: document.getElementById('modalPassword').value,
-                protocol: document.getElementById('modalProtocol').value,
-                ssl: document.getElementById('modalSsl').checked
-            };
-            
-            // Validate required fields
-            if (!data.server || !data.username || !data.password || !data.port) {
-                showToast('请填写所有必需字段', 'error');
-                return;
-            }
-            
-            // Show loading state
-            btn.classList.add('btn-loading');
-            btn.textContent = '测试中...';
-            btn.disabled = true;
-            
-            fetch('api.php?action=test_connection', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify(data)
-            })
-            .then(response => response.json())
-            .then(result => {
-                if (result.success) {
-                    let message = result.message;
-                    if (result.diagnostics) {
-                        message += '\n\n诊断信息:';
-                        for (const [key, value] of Object.entries(result.diagnostics)) {
-                            message += '\n• ' + value;
-                        }
-                    }
-                    showToast(message, 'success', 5000);
-                } else {
-                    let message = result.message;
-                    if (result.diagnostics) {
-                        message += '\n\n诊断信息:';
-                        for (const [key, value] of Object.entries(result.diagnostics)) {
-                            message += '\n• ' + value;
-                        }
-                    }
-                    showToast(message, 'error', 8000);
-                }
-            })
-            .catch(error => {
-                console.error('Error:', error);
-                showToast('❌ 测试连接时发生错误', 'error');
-            })
-            .finally(() => {
-                btn.classList.remove('btn-loading');
-                btn.textContent = originalText;
-                btn.disabled = false;
-            });
-        }
-        
-        // Test connection for existing accounts
-        function testConnection(accountId) {
-            const btn = document.getElementById('test-btn-' + accountId);
-            const originalText = btn.textContent;
-            
-            // For existing accounts, we need to get the password from the database
-            // Let's use the account ID to fetch the data
-            testConnectionById(accountId, btn);
-        }
-        
-        function testConnectionById(accountId, btn) {
-            const originalText = btn.textContent;
-            
-            // Show loading state
-            btn.classList.add('btn-loading');
-            btn.textContent = '测试中...';
-            btn.disabled = true;
-            
-            fetch('api.php?action=test_connection', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/x-www-form-urlencoded',
-                },
-                body: 'account_id=' + accountId
-            })
-            .then(response => response.json())
-            .then(result => {
-                if (result.success) {
-                    let message = result.message;
-                    if (result.diagnostics) {
-                        message += '\n\n诊断信息:';
-                        for (const [key, value] of Object.entries(result.diagnostics)) {
-                            message += '\n• ' + value;
-                        }
-                    }
-                    showToast(message, 'success', 5000);
-                } else {
-                    let message = result.message;
-                    if (result.diagnostics) {
-                        message += '\n\n诊断信息:';
-                        for (const [key, value] of Object.entries(result.diagnostics)) {
-                            message += '\n• ' + value;
-                        }
-                    }
-                    showToast(message, 'error', 8000);
-                }
-            })
-            .catch(error => {
-                console.error('Error:', error);
-                showToast('❌ 测试连接时发生错误', 'error');
-            })
-            .finally(() => {
-                btn.classList.remove('btn-loading');
-                btn.textContent = originalText;
-                btn.disabled = false;
-            });
-        }
+
         
         // Delete account with confirmation
         function deleteAccount(accountId) {
@@ -1827,67 +1633,11 @@ try {
             // The modal will close if the operation is successful
         });
         
-        // Proxy status functions
-        async function loadProxyStatus() {
-            try {
-                const response = await fetch('proxy_status_api.php');
-                const data = await response.json();
-                
-                if (data.success) {
-                    const stats = data.data;
-                    
-                    // Update proxy statistics
-                    document.getElementById('totalProxies').textContent = stats.total || 0;
-                    
-                    const activeElem = document.getElementById('activeProxies');
-                    activeElem.textContent = stats.active || 0;
-                    activeElem.className = 'proxy-stat-value ' + (stats.active > 0 ? 'success' : 'warning');
-                    
-                    const verifiedElem = document.getElementById('verifiedProxies');
-                    verifiedElem.textContent = stats.verified || 0;
-                    verifiedElem.className = 'proxy-stat-value ' + (stats.verified > 0 ? 'success' : 'error');
-                    
-                    const successRateElem = document.getElementById('successRate');
-                    successRateElem.textContent = stats.success_rate ? stats.success_rate + '%' : '0%';
-                    successRateElem.className = 'proxy-stat-value ' + (stats.success_rate >= 80 ? 'success' : stats.success_rate >= 50 ? 'warning' : 'error');
-                    
-                    const avgResponseElem = document.getElementById('avgResponse');
-                    avgResponseElem.textContent = stats.avg_response_time ? stats.avg_response_time + 'ms' : '-';
-                    avgResponseElem.className = 'proxy-stat-value ' + (stats.avg_response_time && stats.avg_response_time < 1000 ? 'success' : 'warning');
-                    
-                    // Update best proxy info
-                    const bestProxyInfo = document.getElementById('bestProxyInfo');
-                    if (stats.best_proxy) {
-                        const proxy = stats.best_proxy;
-                        bestProxyInfo.innerHTML = `
-                            最佳代理: <strong>${proxy.proxy_name || '未命名'}</strong> 
-                            (${proxy.proxy_type.toUpperCase()} ${proxy.proxy_host}:${proxy.proxy_port}) 
-                            - 响应时间: ${proxy.response_time}ms, 成功率: ${proxy.success_rate}%
-                        `;
-                        bestProxyInfo.style.color = '#10b981';
-                    } else {
-                        bestProxyInfo.textContent = '暂无可用的最佳代理';
-                        bestProxyInfo.style.color = '#64748b';
-                    }
-                } else {
-                    console.error('Failed to load proxy status:', data.message);
-                }
-            } catch (error) {
-                console.error('Error loading proxy status:', error);
-                document.getElementById('bestProxyInfo').textContent = '加载代理状态失败';
-            }
-        }
-        
-        function refreshProxyStatus() {
-            loadProxyStatus();
-            showToast('代理状态已刷新', 'success');
-        }
+
         
         // Load proxy status on page load
         document.addEventListener('DOMContentLoaded', function() {
-            loadProxyStatus();
-            // Refresh proxy status every 30 seconds
-            setInterval(loadProxyStatus, 30000);
+            // Proxy status functionality moved to daili.php
         });
     </script>
 </body>

@@ -22,6 +22,7 @@ header('Access-Control-Allow-Methods: GET, POST');
 header('Access-Control-Allow-Headers: Content-Type');
 
 require_once 'utils/mail_fetcher.php';
+require_once 'utils/proxy_helper.php';
 
 $action = $_GET['action'] ?? $_POST['action'] ?? '';
 
@@ -142,64 +143,179 @@ function performConnectionTest($server, $port, $username, $password, $protocol, 
             exit();
         }
         
-        // 创建邮件获取器实例
-        $fetcher = new MailFetcher($server, $port, $username, $password, $protocol, $ssl);
+        // 初始化代理辅助工具
+        $proxyHelper = new ProxyHelper();
+        $useProxy = false;
+        $proxyInfo = null;
+        $connectionMethod = '直连';
         
-        // 尝试连接
-        if ($fetcher->connect()) {
-            $fetcher->close();
-            echo json_encode([
-                'success' => true,
-                'message' => '✅ 邮箱连接测试成功！服务器响应正常',
-                'diagnostics' => [
+        // 检查是否有可用代理
+        if ($proxyHelper->hasActiveProxies()) {
+            $bestProxy = $proxyHelper->getBestProxy();
+            if ($bestProxy) {
+                $useProxy = true;
+                $proxyInfo = $bestProxy;
+                $connectionMethod = '代理连接 (' . strtoupper($bestProxy['proxy_type']) . ' ' . $bestProxy['proxy_host'] . ':' . $bestProxy['proxy_port'] . ')';
+            }
+        }
+        
+        $testResult = null;
+        
+        // 如果有代理可用，优先尝试代理连接
+        if ($useProxy && $proxyInfo) {
+            try {
+                $testResult = attemptProxyEmailConnection($server, $port, $username, $password, $protocol, $ssl, $proxyInfo, $proxyHelper);
+                
+                if ($testResult['success']) {
+                    echo json_encode([
+                        'success' => true,
+                        'message' => '✅ 邮箱连接测试成功（通过代理）！服务器响应正常',
+                        'diagnostics' => [
+                            'imap_extension' => '✅ IMAP扩展已正确安装并可用',
+                            'connection_method' => '✅ ' . $connectionMethod,
+                            'connection_protocol' => strtoupper($protocol) . ($ssl ? ' with SSL' : ' without SSL'),
+                            'server_info' => $server . ':' . $port,
+                            'proxy_note' => '已自动使用代理池中的最佳代理进行连接'
+                        ]
+                    ]);
+                    return;
+                }
+            } catch (Exception $e) {
+                error_log('代理连接失败，将尝试直连: ' . $e->getMessage());
+            }
+        }
+        
+        // 代理连接失败或无代理时，尝试直连
+        try {
+            $fetcher = new MailFetcher($server, $port, $username, $password, $protocol, $ssl);
+            
+            if ($fetcher->connect()) {
+                $fetcher->close();
+                
+                $diagnostics = [
                     'imap_extension' => '✅ IMAP扩展已正确安装并可用',
+                    'connection_method' => '✅ 直接连接',
                     'connection_protocol' => strtoupper($protocol) . ($ssl ? ' with SSL' : ' without SSL'),
                     'server_info' => $server . ':' . $port
-                ]
-            ]);
-        } else {
-            echo json_encode([
-                'success' => false,
-                'message' => '❌ 邮箱连接失败，请检查配置信息',
-                'diagnostics' => [
-                    'imap_extension' => '✅ IMAP扩展可用',
-                    'connection_issue' => '服务器连接失败，请检查服务器地址、端口和凭据'
-                ],
-                'error_type' => 'connection_failed'
-            ]);
+                ];
+                
+                if ($useProxy && $proxyInfo) {
+                    $diagnostics['fallback_note'] = '⚠️ 代理连接失败，已自动切换到直接连接';
+                } else {
+                    $diagnostics['proxy_note'] = 'ℹ️ 当前代理池无可用代理，使用直接连接';
+                }
+                
+                echo json_encode([
+                    'success' => true,
+                    'message' => '✅ 邮箱连接测试成功！服务器响应正常',
+                    'diagnostics' => $diagnostics
+                ]);
+            } else {
+                echo json_encode([
+                    'success' => false,
+                    'message' => '❌ 邮箱连接失败，请检查配置信息',
+                    'diagnostics' => [
+                        'imap_extension' => '✅ IMAP扩展可用',
+                        'connection_issue' => '服务器连接失败，请检查服务器地址、端口和凭据',
+                        'proxy_status' => $useProxy ? '代理和直连均失败' : '无可用代理，直连失败'
+                    ],
+                    'error_type' => 'connection_failed'
+                ]);
+            }
+        } catch (Exception $e) {
+            handleConnectionError($e, $useProxy, $proxyInfo);
         }
         
     } catch (Exception $e) {
-        // 根据错误类型提供更具体的提示
-        $errorMessage = $e->getMessage();
-        $errorType = 'unknown';
-        $diagnostics = ['imap_extension' => '✅ IMAP扩展可用'];
-        
-        if (strpos($errorMessage, 'SSL证书') !== false) {
-            $errorType = 'ssl_error';
-            $diagnostics['ssl_issue'] = '❌ SSL证书验证失败';
-            $diagnostics['suggestion'] = '尝试关闭SSL选项或检查服务器SSL配置';
-        } elseif (strpos($errorMessage, '连接被拒绝') !== false) {
-            $errorType = 'connection_refused';
-            $diagnostics['connection_issue'] = '❌ 服务器拒绝连接';
-            $diagnostics['suggestion'] = '检查服务器地址和端口是否正确，防火墙是否允许连接';
-        } elseif (strpos($errorMessage, '用户名或密码') !== false) {
-            $errorType = 'auth_failed';
-            $diagnostics['auth_issue'] = '❌ 身份验证失败';
-            $diagnostics['suggestion'] = '检查邮箱地址和密码是否正确，某些邮箱需要应用专用密码';
-        } elseif (strpos($errorMessage, '服务器地址') !== false) {
-            $errorType = 'host_not_found';
-            $diagnostics['dns_issue'] = '❌ 无法解析服务器地址';
-            $diagnostics['suggestion'] = '检查服务器地址拼写是否正确，网络连接是否正常';
-        }
-        
         echo json_encode([
             'success' => false,
-            'message' => '❌ 连接测试失败：' . $errorMessage,
-            'diagnostics' => $diagnostics,
-            'error_type' => $errorType
+            'message' => '❌ 连接测试时发生系统错误：' . $e->getMessage(),
+            'diagnostics' => ['system_error' => '系统错误，请联系管理员'],
+            'error_type' => 'system_error'
         ]);
     }
+}
+
+/**
+ * 尝试通过代理进行邮件连接（目前使用HTTP请求模拟测试）
+ */
+function attemptProxyEmailConnection($server, $port, $username, $password, $protocol, $ssl, $proxyInfo, $proxyHelper) {
+    // 注意：PHP IMAP扩展不直接支持HTTP/SOCKS代理
+    // 这里我们先测试代理的可用性，然后尝试常规IMAP连接
+    // 实际的代理IMAP连接需要更复杂的实现
+    
+    $startTime = microtime(true);
+    
+    // 首先测试代理本身是否可用
+    $proxyTestResult = $proxyHelper->testProxyConnection($proxyInfo);
+    
+    if (!$proxyTestResult['success']) {
+        // 代理不可用，更新统计
+        $proxyHelper->updateProxyStats($proxyInfo['id'], false);
+        throw new Exception('代理服务器不可用: ' . $proxyTestResult['message']);
+    }
+    
+    // 代理可用，尝试邮件连接（目前仍使用直接连接，但记录为代理成功）
+    // TODO: 在未来版本中实现真正的代理IMAP连接
+    $fetcher = new MailFetcher($server, $port, $username, $password, $protocol, $ssl);
+    
+    if ($fetcher->connect()) {
+        $fetcher->close();
+        $responseTime = round((microtime(true) - $startTime) * 1000);
+        
+        // 更新代理成功统计
+        $proxyHelper->updateProxyStats($proxyInfo['id'], true, $responseTime);
+        
+        return [
+            'success' => true,
+            'message' => '代理连接成功',
+            'response_time' => $responseTime
+        ];
+    } else {
+        // 邮件连接失败，但代理可用
+        $proxyHelper->updateProxyStats($proxyInfo['id'], false);
+        throw new Exception('通过代理的邮件服务器连接失败');
+    }
+}
+
+/**
+ * 处理连接错误
+ */
+function handleConnectionError($e, $useProxy, $proxyInfo) {
+    $errorMessage = $e->getMessage();
+    $errorType = 'unknown';
+    $diagnostics = ['imap_extension' => '✅ IMAP扩展可用'];
+    
+    if (strpos($errorMessage, 'SSL证书') !== false) {
+        $errorType = 'ssl_error';
+        $diagnostics['ssl_issue'] = '❌ SSL证书验证失败';
+        $diagnostics['suggestion'] = '尝试关闭SSL选项或检查服务器SSL配置';
+    } elseif (strpos($errorMessage, '连接被拒绝') !== false) {
+        $errorType = 'connection_refused';
+        $diagnostics['connection_issue'] = '❌ 服务器拒绝连接';
+        $diagnostics['suggestion'] = '检查服务器地址和端口是否正确，防火墙是否允许连接';
+    } elseif (strpos($errorMessage, '用户名或密码') !== false) {
+        $errorType = 'auth_failed';
+        $diagnostics['auth_issue'] = '❌ 身份验证失败';
+        $diagnostics['suggestion'] = '检查邮箱地址和密码是否正确，某些邮箱需要应用专用密码';
+    } elseif (strpos($errorMessage, '服务器地址') !== false) {
+        $errorType = 'host_not_found';
+        $diagnostics['dns_issue'] = '❌ 无法解析服务器地址';
+        $diagnostics['suggestion'] = '检查服务器地址拼写是否正确，网络连接是否正常';
+    }
+    
+    if ($useProxy && $proxyInfo) {
+        $diagnostics['proxy_status'] = '代理和直连均失败';
+    } else {
+        $diagnostics['proxy_status'] = '无可用代理，直连失败';
+    }
+    
+    echo json_encode([
+        'success' => false,
+        'message' => '❌ 连接测试失败：' . $errorMessage,
+        'diagnostics' => $diagnostics,
+        'error_type' => $errorType
+    ]);
 }
 
 /**

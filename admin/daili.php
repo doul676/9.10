@@ -690,6 +690,45 @@ if (isset($_GET['logout'])) {
             from { width: 100%; }
             to { width: 0%; }
         }
+
+        /* Proxy Status Styles */
+        .proxy-stat-item {
+            text-align: center;
+            padding: 15px;
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+            border: 1px solid #f1f5f9;
+        }
+        
+        .proxy-stat-label {
+            font-size: 12px;
+            color: #64748b;
+            margin-bottom: 5px;
+            font-weight: 500;
+        }
+        
+        .proxy-stat-value {
+            font-size: 20px;
+            font-weight: 600;
+            color: #1e293b;
+        }
+        
+        .proxy-stat-value.success {
+            color: #10b981;
+        }
+        
+        .proxy-stat-value.warning {
+            color: #f59e0b;
+        }
+        
+        .proxy-stat-value.error {
+            color: #ef4444;
+        }
+        
+        #proxyStatusCard {
+            border-left: 4px solid #667eea;
+        }
     </style>
 </head>
 <body>
@@ -738,6 +777,41 @@ if (isset($_GET['logout'])) {
         <div class="content">
             <!-- Toast notification container -->
             <div id="toast-container" class="toast-container"></div>
+            
+            <!-- 代理池状态卡片 -->
+            <div class="card" id="proxyStatusCard">
+                <div class="card-header">
+                    <h2 class="card-title">🌐 代理池状态</h2>
+                    <button class="btn btn-secondary" onclick="refreshProxyStatus()" style="padding: 5px 10px; font-size: 12px;">刷新状态</button>
+                </div>
+                <div class="card-body">
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 15px; margin-bottom: 15px;">
+                        <div class="proxy-stat-item">
+                            <div class="proxy-stat-label">总代理数</div>
+                            <div class="proxy-stat-value" id="totalProxies">-</div>
+                        </div>
+                        <div class="proxy-stat-item">
+                            <div class="proxy-stat-label">活跃代理</div>
+                            <div class="proxy-stat-value" id="activeProxies">-</div>
+                        </div>
+                        <div class="proxy-stat-item">
+                            <div class="proxy-stat-label">已验证</div>
+                            <div class="proxy-stat-value" id="verifiedProxies">-</div>
+                        </div>
+                        <div class="proxy-stat-item">
+                            <div class="proxy-stat-label">成功率</div>
+                            <div class="proxy-stat-value" id="successRate">-</div>
+                        </div>
+                        <div class="proxy-stat-item">
+                            <div class="proxy-stat-label">平均响应</div>
+                            <div class="proxy-stat-value" id="avgResponse">-</div>
+                        </div>
+                    </div>
+                    <div id="bestProxyInfo" style="padding: 10px; background: #f8fafc; border-radius: 8px; font-size: 14px; color: #64748b;">
+                        最佳代理: 正在加载...
+                    </div>
+                </div>
+            </div>
             
             <!-- 操作按钮 -->
             <div class="action-buttons">
@@ -881,6 +955,9 @@ if (isset($_GET['logout'])) {
         // 页面加载完成后初始化
         document.addEventListener('DOMContentLoaded', function() {
             loadProxyList();
+            loadProxyStatus();
+            // Refresh proxy status every 30 seconds
+            setInterval(loadProxyStatus, 30000);
         });
 
         // 加载代理列表
@@ -1369,6 +1446,64 @@ if (isset($_GET['logout'])) {
                 closeModal();
             }
         });
+
+        // Proxy status functions
+        async function loadProxyStatus() {
+            try {
+                const response = await fetch('proxy_status_api.php');
+                const data = await response.json();
+                
+                if (data.success) {
+                    const stats = data.data;
+                    
+                    // Update proxy statistics
+                    document.getElementById('totalProxies').textContent = stats.total || 0;
+                    
+                    const activeElem = document.getElementById('activeProxies');
+                    activeElem.textContent = stats.active || 0;
+                    activeElem.className = 'proxy-stat-value ' + (stats.active > 0 ? 'success' : 'warning');
+                    
+                    const verifiedElem = document.getElementById('verifiedProxies');
+                    verifiedElem.textContent = stats.verified || 0;
+                    verifiedElem.className = 'proxy-stat-value ' + (stats.verified > 0 ? 'success' : 'error');
+                    
+                    const successRateElem = document.getElementById('successRate');
+                    successRateElem.textContent = stats.success_rate ? stats.success_rate + '%' : '0%';
+                    successRateElem.className = 'proxy-stat-value ' + (stats.success_rate >= 80 ? 'success' : stats.success_rate >= 50 ? 'warning' : 'error');
+                    
+                    const avgResponseElem = document.getElementById('avgResponse');
+                    avgResponseElem.textContent = stats.avg_response_time ? stats.avg_response_time + 'ms' : '-';
+                    avgResponseElem.className = 'proxy-stat-value ' + (stats.avg_response_time && stats.avg_response_time < 1000 ? 'success' : 'warning');
+                    
+                    // Update best proxy info
+                    const bestProxyInfo = document.getElementById('bestProxyInfo');
+                    if (stats.best_proxy) {
+                        const proxy = stats.best_proxy;
+                        bestProxyInfo.innerHTML = `
+                            最佳代理: <strong>${proxy.proxy_name || '未命名'}</strong> 
+                            (${proxy.proxy_type.toUpperCase()} ${proxy.proxy_host}:${proxy.proxy_port}) 
+                            - 响应时间: ${proxy.response_time}ms, 成功率: ${proxy.success_rate}%
+                        `;
+                        bestProxyInfo.style.color = '#10b981';
+                    } else {
+                        bestProxyInfo.textContent = '暂无可用的最佳代理';
+                        bestProxyInfo.style.color = '#64748b';
+                    }
+                } else {
+                    console.error('Failed to load proxy status:', data.message);
+                }
+            } catch (error) {
+                console.error('Error loading proxy status:', error);
+                document.getElementById('bestProxyInfo').textContent = '加载代理状态失败';
+            }
+        }
+        
+        function refreshProxyStatus() {
+            loadProxyStatus();
+            showToast('代理状态已刷新', 'success');
+        }
+
+
     </script>
 </body>
 </html>
