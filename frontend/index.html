@@ -268,6 +268,64 @@
             border: 1px solid #b3d7ff;
         }
         
+        /* Toast Notifications */
+        .toast-container {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 3000;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            max-width: 400px;
+        }
+        
+        .toast {
+            padding: 15px 20px;
+            border-radius: 10px;
+            color: white;
+            font-weight: 500;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+            transform: translateX(450px);
+            opacity: 0;
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+            word-wrap: break-word;
+        }
+        
+        .toast.show {
+            transform: translateX(0);
+            opacity: 1;
+        }
+        
+        .toast.success {
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+        }
+        
+        .toast.error {
+            background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+        }
+        
+        .toast.info {
+            background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+        }
+        
+        .toast::after {
+            content: '';
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            height: 3px;
+            background: rgba(255,255,255,0.8);
+            animation: toastProgress 4s linear;
+        }
+        
+        @keyframes toastProgress {
+            from { width: 100%; }
+            to { width: 0%; }
+        }
+        
 
 
         
@@ -299,6 +357,10 @@
     </style>
 </head>
 <body>
+    <a href="backend/login.php" class="admin-link">🔧 管理员后台</a>
+    
+    <!-- Toast notification container -->
+    <div id="toast-container" class="toast-container"></div>
 
     <div class="container">
         <div class="header">
@@ -420,24 +482,33 @@
         }
         
         function showMessage(text, type) {
-            const message = document.getElementById('message');
-            message.innerHTML = `<div class="message ${type}">${text}</div>`;
+            // Use toast notifications instead of inline messages
+            showToast(text, type);
+        }
+        
+        function showToast(message, type = 'info', duration = 4000) {
+            const container = document.getElementById('toast-container');
             
-            // Auto-dismiss success messages after 3 seconds
-            if (type === 'success') {
+            const toast = document.createElement('div');
+            toast.className = `toast ${type}`;
+            toast.textContent = message;
+            
+            container.appendChild(toast);
+            
+            // Trigger animation
+            setTimeout(() => {
+                toast.classList.add('show');
+            }, 10);
+            
+            // Auto remove
+            setTimeout(() => {
+                toast.classList.remove('show');
                 setTimeout(() => {
-                    const currentMessage = message.querySelector('.message.success');
-                    if (currentMessage && currentMessage.textContent.trim() === text) {
-                        currentMessage.style.transition = 'opacity 0.5s ease-out';
-                        currentMessage.style.opacity = '0';
-                        setTimeout(() => {
-                            if (message.querySelector('.message.success') === currentMessage) {
-                                message.innerHTML = '';
-                            }
-                        }, 500); // Wait for fade-out animation
+                    if (container.contains(toast)) {
+                        container.removeChild(toast);
                     }
-                }, 3000); // Auto-dismiss after 3 seconds
-            }
+                }, 300);
+            }, duration);
         }
         
         function isValidEmail(email) {

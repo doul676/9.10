@@ -61,6 +61,77 @@ if ($_POST) {
                 $stmt->execute();
                 $message = '邮箱账号删除成功';
             }
+        } elseif ($action === 'batch_delete') {
+            $ids = $_POST['ids'] ?? '';
+            if (!empty($ids)) {
+                $idArray = explode(',', $ids);
+                $placeholders = str_repeat('?,', count($idArray) - 1) . '?';
+                $stmt = $db->prepare("DELETE FROM mail_accounts WHERE id IN ($placeholders)");
+                for ($i = 0; $i < count($idArray); $i++) {
+                    $stmt->bindValue($i + 1, (int)$idArray[$i]);
+                }
+                $deletedCount = $stmt->execute() ? count($idArray) : 0;
+                $message = "批量删除成功，共删除 {$deletedCount} 个邮箱账号";
+            }
+        } elseif ($action === 'batch_add') {
+            $accounts = $_POST['accounts'] ?? '';
+            if (!empty($accounts)) {
+                $accountsData = json_decode($accounts, true);
+                $successCount = 0;
+                $errors = [];
+                
+                foreach ($accountsData as $accountData) {
+                    $email = $accountData['email'] ?? '';
+                    $username = $email; // 使用邮箱作为用户名
+                    $password = $accountData['password'] ?? '';
+                    $server = $accountData['server'] ?? '';
+                    $port = (int)($accountData['port'] ?? 0);
+                    $protocol = $accountData['protocol'] ?? 'imap';
+                    $ssl = isset($accountData['ssl']) ? 1 : 0;
+                    $remarks = $accountData['remarks'] ?? '';
+                    
+                    if ($email && $password && $server && $port) {
+                        try {
+                            // 检查邮箱是否已存在
+                            $checkStmt = $db->prepare('SELECT COUNT(*) FROM mail_accounts WHERE email = ?');
+                            $checkStmt->bindValue(1, $email);
+                            $checkResult = $checkStmt->execute();
+                            $exists = $checkResult->fetchArray()[0] > 0;
+                            
+                            if (!$exists) {
+                                // 使用北京时间作为创建时间
+                                $beijingTime = new DateTime('now', new DateTimeZone('Asia/Shanghai'));
+                                $stmt = $db->prepare('INSERT INTO mail_accounts (email, username, password, server, port, protocol, ssl, remarks, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+                                $stmt->bindValue(1, $email);
+                                $stmt->bindValue(2, $username);
+                                $stmt->bindValue(3, $password);
+                                $stmt->bindValue(4, $server);
+                                $stmt->bindValue(5, $port);
+                                $stmt->bindValue(6, $protocol);
+                                $stmt->bindValue(7, $ssl);
+                                $stmt->bindValue(8, $remarks);
+                                $stmt->bindValue(9, $beijingTime->format('Y-m-d H:i:s'));
+                                $stmt->bindValue(10, $beijingTime->format('Y-m-d H:i:s'));
+                                $stmt->execute();
+                                $successCount++;
+                            } else {
+                                $errors[] = "邮箱 {$email} 已存在，跳过";
+                            }
+                        } catch (Exception $e) {
+                            $errors[] = "邮箱 {$email} 添加失败：" . $e->getMessage();
+                        }
+                    } else {
+                        $errors[] = "邮箱 {$email} 信息不完整，跳过";
+                    }
+                }
+                
+                $message = "批量添加完成，成功添加 {$successCount} 个邮箱账号";
+                if (!empty($errors)) {
+                    $message .= "，错误信息：" . implode('; ', $errors);
+                }
+            } else {
+                $error = '批量添加数据不能为空';
+            }
         } elseif ($action === 'update') {
             $id = (int)($_POST['id'] ?? 0);
             $email = $_POST['email'] ?? '';
@@ -755,7 +826,13 @@ try {
                     <button type="button" class="btn" onclick="openAddModal()">
                         ➕ 添加邮箱
                     </button>
-                    <p style="margin-top: 15px; color: #64748b;">点击上方按钮添加新的邮箱账号</p>
+                    <button type="button" class="btn" onclick="openBatchAddModal()" style="margin-left: 10px;">
+                        📋 批量添加邮箱
+                    </button>
+                    <button type="button" class="btn" onclick="openServerManageModal()" style="margin-left: 10px; background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);">
+                        🌐 添加服务器地址
+                    </button>
+                    <p style="margin-top: 15px; color: #64748b;">管理邮箱账号和服务器地址配置</p>
                 </div>
             </div>
             
@@ -767,10 +844,20 @@ try {
                     <?php if (empty($accounts)): ?>
                         <p>暂无邮箱账号，请添加第一个邮箱账号。</p>
                     <?php else: ?>
+                        <div style="margin-bottom: 15px;">
+                            <button type="button" class="btn btn-danger" onclick="batchDeleteAccounts()" id="batchDeleteBtn" style="display: none;">
+                                🗑️ 批量删除选中项
+                            </button>
+                            <span style="margin-left: 15px; color: #64748b;" id="selectedCount">未选择任何项</span>
+                        </div>
                         <div class="table-container">
                             <table class="table">
                                 <thead>
                                     <tr>
+                                        <th>
+                                            <input type="checkbox" id="selectAll" onchange="toggleSelectAll()">
+                                            全选
+                                        </th>
                                         <th>序号</th>
                                         <th>邮箱账号</th>
                                         <th>邮箱密码</th>
@@ -787,6 +874,9 @@ try {
                                     $index = 1;
                                     foreach ($accounts as $account): ?>
                                         <tr>
+                                            <td>
+                                                <input type="checkbox" class="account-checkbox" value="<?php echo $account['id']; ?>" onchange="updateBatchDeleteButton()">
+                                            </td>
                                             <td><?php echo $index++; ?></td>
                                             <td><?php echo htmlspecialchars($account['email']); ?></td>
                                             <td><?php echo str_repeat('*', min(8, strlen($account['password']))); ?></td>
@@ -860,9 +950,18 @@ try {
                     
                     <div class="form-row">
                         <div class="form-group">
+                            <label for="modalServerSelect">选择服务器地址</label>
+                            <select id="modalServerSelect" onchange="selectServerAddress()" style="margin-bottom: 10px;">
+                                <option value="">-- 选择常用服务器地址 --</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
                             <label for="modalServer">服务器地址 *</label>
                             <input type="text" id="modalServer" name="server" required placeholder="imap.example.com">
                         </div>
+                    </div>
+                    
+                    <div class="form-row">
                         <div class="form-group">
                             <label for="modalProtocol">协议</label>
                             <select id="modalProtocol" name="protocol" onchange="updatePortByProtocol()">
@@ -870,22 +969,19 @@ try {
                                 <option value="pop3">POP3</option>
                             </select>
                         </div>
-                    </div>
-                    
-                    <div class="form-row">
                         <div class="form-group">
                             <label for="modalPort">端口 *</label>
                             <input type="number" id="modalPort" name="port" value="993" required>
                         </div>
+                    </div>
+                    
+                    <div class="form-row">
                         <div class="form-group">
                             <div class="checkbox-group">
                                 <input type="checkbox" id="modalSsl" name="ssl" checked onchange="updatePortBySsl()">
                                 <label for="modalSsl">是否启用SSL安全连接</label>
                             </div>
                         </div>
-                    </div>
-                    
-                    <div class="form-row">
                         <div class="form-group">
                             <label for="modalRemarks">备注</label>
                             <input type="text" id="modalRemarks" name="remarks" placeholder="可选备注信息">
@@ -896,6 +992,116 @@ try {
                     <button type="button" class="btn btn-success" onclick="testConnectionModal()" id="testBtn">测试连接</button>
                     <button type="button" class="btn" onclick="closeModal()">取消</button>
                     <button type="submit" class="btn" id="submitBtn">保存</button>
+                </div>
+            </form>
+        </div>
+    </div>
+    
+    <!-- Server Management Modal -->
+    <div id="serverManageModal" class="modal">
+        <div class="modal-content" style="max-width: 900px;">
+            <div class="modal-header">
+                <h3 class="modal-title">服务器地址管理</h3>
+                <button type="button" class="modal-close" onclick="closeServerModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div style="margin-bottom: 20px;">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="newServerName">服务器名称 *</label>
+                            <input type="text" id="newServerName" placeholder="例如：Gmail" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="newServerAddress">服务器地址 *</label>
+                            <input type="text" id="newServerAddress" placeholder="例如：imap.gmail.com" required>
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="newServerImapPort">IMAP默认端口</label>
+                            <input type="number" id="newServerImapPort" value="993">
+                        </div>
+                        <div class="form-group">
+                            <label for="newServerPop3Port">POP3默认端口</label>
+                            <input type="number" id="newServerPop3Port" value="995">
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <div class="checkbox-group">
+                                <input type="checkbox" id="newServerSsl" checked>
+                                <label for="newServerSsl">默认启用SSL</label>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label for="newServerRemarks">备注</label>
+                            <input type="text" id="newServerRemarks" placeholder="服务器描述">
+                        </div>
+                    </div>
+                    <button type="button" class="btn" onclick="addServerAddress()">➕ 添加服务器</button>
+                </div>
+                
+                <h4>已添加的服务器地址</h4>
+                <div class="table-container" style="max-height: 300px; overflow-y: auto;">
+                    <table class="table" id="serverTable">
+                        <thead>
+                            <tr>
+                                <th>名称</th>
+                                <th>地址</th>
+                                <th>IMAP端口</th>
+                                <th>POP3端口</th>
+                                <th>SSL</th>
+                                <th>备注</th>
+                                <th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody id="serverTableBody">
+                            <!-- 动态加载 -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn" onclick="closeServerModal()">关闭</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Batch Add Modal -->
+    <div id="batchAddModal" class="modal">
+        <div class="modal-content" style="max-width: 800px;">
+            <div class="modal-header">
+                <h3 class="modal-title">批量添加邮箱</h3>
+                <button type="button" class="modal-close" onclick="closeBatchAddModal()">&times;</button>
+            </div>
+            <form id="batchAddForm" method="POST">
+                <div class="modal-body">
+                    <input type="hidden" name="action" value="batch_add">
+                    <input type="hidden" name="accounts" id="batchAccountsData" value="">
+                    
+                    <p style="margin-bottom: 15px; color: #64748b;">
+                        每行一个邮箱账号，格式：邮箱地址|密码|服务器地址|端口|协议|SSL|备注<br>
+                        例如：user@gmail.com|password|imap.gmail.com|993|imap|1|Gmail账号
+                    </p>
+                    
+                    <div class="form-group">
+                        <label for="batchAccountsText">邮箱账号列表 (每行一个)</label>
+                        <textarea id="batchAccountsText" rows="10" style="width: 100%; padding: 10px; border: 2px solid #e5e7eb; border-radius: 8px; font-family: monospace;" placeholder="user1@gmail.com|password1|imap.gmail.com|993|imap|1|账号1&#10;user2@outlook.com|password2|outlook.office365.com|993|imap|1|账号2"></textarea>
+                    </div>
+                    
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="batchServerSelect">批量设置服务器</label>
+                            <select id="batchServerSelect" onchange="applyBatchServerSettings()">
+                                <option value="">-- 选择服务器应用到所有账号 --</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn" onclick="closeBatchAddModal()">取消</button>
+                    <button type="button" class="btn" onclick="previewBatchAdd()">预览</button>
+                    <button type="submit" class="btn">批量添加</button>
                 </div>
             </form>
         </div>
@@ -1179,6 +1385,341 @@ try {
         // Legacy function for compatibility
         function toggleEdit(id) {
             // This function is no longer used but kept for compatibility
+        }
+        
+        // Server address management functions
+        let serverAddresses = [];
+        
+        // Load server addresses on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            loadServerAddresses();
+        });
+        
+        function loadServerAddresses() {
+            fetch('api/server_addresses.php?action=list')
+                .then(response => response.json())
+                .then(result => {
+                    if (result.success) {
+                        serverAddresses = result.data;
+                        updateServerSelectOptions();
+                        updateServerTable();
+                    }
+                })
+                .catch(error => {
+                    console.error('Error loading server addresses:', error);
+                });
+        }
+        
+        function updateServerSelectOptions() {
+            const selects = ['modalServerSelect', 'batchServerSelect'];
+            selects.forEach(selectId => {
+                const select = document.getElementById(selectId);
+                if (select) {
+                    // Clear existing options except the first one
+                    while (select.children.length > 1) {
+                        select.removeChild(select.lastChild);
+                    }
+                    
+                    // Add server options
+                    serverAddresses.forEach(server => {
+                        const option = document.createElement('option');
+                        option.value = server.id;
+                        option.textContent = `${server.server_name} (${server.server_address})`;
+                        option.dataset.server = JSON.stringify(server);
+                        select.appendChild(option);
+                    });
+                }
+            });
+        }
+        
+        function selectServerAddress() {
+            const select = document.getElementById('modalServerSelect');
+            const selectedOption = select.options[select.selectedIndex];
+            
+            if (selectedOption.value) {
+                const serverData = JSON.parse(selectedOption.dataset.server);
+                document.getElementById('modalServer').value = serverData.server_address;
+                
+                // Update port based on current protocol and SSL setting
+                const protocol = document.getElementById('modalProtocol').value;
+                const ssl = document.getElementById('modalSsl').checked;
+                
+                if (protocol === 'imap') {
+                    document.getElementById('modalPort').value = ssl ? serverData.default_port_imap || 993 : 143;
+                } else {
+                    document.getElementById('modalPort').value = ssl ? serverData.default_port_pop3 || 995 : 110;
+                }
+                
+                document.getElementById('modalSsl').checked = serverData.default_ssl == 1;
+            }
+        }
+        
+        function openServerManageModal() {
+            loadServerAddresses();
+            document.getElementById('serverManageModal').classList.add('show');
+            document.body.style.overflow = 'hidden';
+        }
+        
+        function closeServerModal() {
+            document.getElementById('serverManageModal').classList.remove('show');
+            document.body.style.overflow = '';
+        }
+        
+        function updateServerTable() {
+            const tbody = document.getElementById('serverTableBody');
+            tbody.innerHTML = '';
+            
+            serverAddresses.forEach(server => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>${escapeHtml(server.server_name)}</td>
+                    <td>${escapeHtml(server.server_address)}</td>
+                    <td>${server.default_port_imap}</td>
+                    <td>${server.default_port_pop3}</td>
+                    <td>${server.default_ssl ? '✅' : '❌'}</td>
+                    <td>${escapeHtml(server.remarks || '')}</td>
+                    <td>
+                        <button class="btn btn-small" onclick="editServerAddress(${server.id})">编辑</button>
+                        <button class="btn btn-danger btn-small" onclick="deleteServerAddress(${server.id})">删除</button>
+                    </td>
+                `;
+                tbody.appendChild(row);
+            });
+        }
+        
+        function addServerAddress() {
+            const name = document.getElementById('newServerName').value.trim();
+            const address = document.getElementById('newServerAddress').value.trim();
+            const imapPort = parseInt(document.getElementById('newServerImapPort').value) || 993;
+            const pop3Port = parseInt(document.getElementById('newServerPop3Port').value) || 995;
+            const ssl = document.getElementById('newServerSsl').checked;
+            const remarks = document.getElementById('newServerRemarks').value.trim();
+            
+            if (!name || !address) {
+                showToast('请填写服务器名称和地址', 'error');
+                return;
+            }
+            
+            const data = {
+                server_name: name,
+                server_address: address,
+                default_port_imap: imapPort,
+                default_port_pop3: pop3Port,
+                default_ssl: ssl,
+                remarks: remarks
+            };
+            
+            fetch('api/server_addresses.php?action=add', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(data)
+            })
+            .then(response => response.json())
+            .then(result => {
+                if (result.success) {
+                    showToast(result.message, 'success');
+                    // Clear form
+                    document.getElementById('newServerName').value = '';
+                    document.getElementById('newServerAddress').value = '';
+                    document.getElementById('newServerImapPort').value = '993';
+                    document.getElementById('newServerPop3Port').value = '995';
+                    document.getElementById('newServerSsl').checked = true;
+                    document.getElementById('newServerRemarks').value = '';
+                    // Reload server list
+                    loadServerAddresses();
+                } else {
+                    showToast(result.message, 'error');
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                showToast('添加服务器地址失败', 'error');
+            });
+        }
+        
+        function deleteServerAddress(id) {
+            if (confirm('确定要删除这个服务器地址吗？')) {
+                fetch('api/server_addresses.php?action=delete', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ id: id })
+                })
+                .then(response => response.json())
+                .then(result => {
+                    if (result.success) {
+                        showToast(result.message, 'success');
+                        loadServerAddresses();
+                    } else {
+                        showToast(result.message, 'error');
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    showToast('删除服务器地址失败', 'error');
+                });
+            }
+        }
+        
+        // Batch operations
+        function toggleSelectAll() {
+            const selectAll = document.getElementById('selectAll');
+            const checkboxes = document.querySelectorAll('.account-checkbox');
+            
+            checkboxes.forEach(checkbox => {
+                checkbox.checked = selectAll.checked;
+            });
+            
+            updateBatchDeleteButton();
+        }
+        
+        function updateBatchDeleteButton() {
+            const checkboxes = document.querySelectorAll('.account-checkbox:checked');
+            const deleteBtn = document.getElementById('batchDeleteBtn');
+            const countSpan = document.getElementById('selectedCount');
+            
+            if (checkboxes.length > 0) {
+                deleteBtn.style.display = 'inline-block';
+                countSpan.textContent = `已选择 ${checkboxes.length} 项`;
+            } else {
+                deleteBtn.style.display = 'none';
+                countSpan.textContent = '未选择任何项';
+            }
+        }
+        
+        function batchDeleteAccounts() {
+            const checkboxes = document.querySelectorAll('.account-checkbox:checked');
+            
+            if (checkboxes.length === 0) {
+                showToast('请选择要删除的邮箱账号', 'error');
+                return;
+            }
+            
+            if (confirm(`确定要删除选中的 ${checkboxes.length} 个邮箱账号吗？此操作不可撤销。`)) {
+                const ids = Array.from(checkboxes).map(cb => cb.value).join(',');
+                
+                const form = document.createElement('form');
+                form.method = 'POST';
+                form.innerHTML = `
+                    <input type="hidden" name="action" value="batch_delete">
+                    <input type="hidden" name="ids" value="${ids}">
+                `;
+                document.body.appendChild(form);
+                form.submit();
+            }
+        }
+        
+        // Batch add functions
+        function openBatchAddModal() {
+            loadServerAddresses();
+            document.getElementById('batchAddModal').classList.add('show');
+            document.body.style.overflow = 'hidden';
+        }
+        
+        function closeBatchAddModal() {
+            document.getElementById('batchAddModal').classList.remove('show');
+            document.body.style.overflow = '';
+        }
+        
+        function applyBatchServerSettings() {
+            const select = document.getElementById('batchServerSelect');
+            const selectedOption = select.options[select.selectedIndex];
+            
+            if (selectedOption.value) {
+                const serverData = JSON.parse(selectedOption.dataset.server);
+                const textarea = document.getElementById('batchAccountsText');
+                const lines = textarea.value.split('\n');
+                
+                const updatedLines = lines.map(line => {
+                    if (line.trim()) {
+                        const parts = line.split('|');
+                        if (parts.length >= 2) {
+                            // Keep email and password, update server settings
+                            const email = parts[0].trim();
+                            const password = parts[1].trim();
+                            const port = serverData.default_port_imap;
+                            const protocol = 'imap';
+                            const ssl = serverData.default_ssl;
+                            const remarks = parts[6] || serverData.server_name;
+                            
+                            return `${email}|${password}|${serverData.server_address}|${port}|${protocol}|${ssl}|${remarks}`;
+                        }
+                    }
+                    return line;
+                });
+                
+                textarea.value = updatedLines.join('\n');
+            }
+        }
+        
+        function previewBatchAdd() {
+            const textarea = document.getElementById('batchAccountsText');
+            const lines = textarea.value.split('\n').filter(line => line.trim());
+            
+            if (lines.length === 0) {
+                showToast('请输入邮箱账号数据', 'error');
+                return;
+            }
+            
+            let preview = '预览批量添加数据:\n\n';
+            let validCount = 0;
+            
+            lines.forEach((line, index) => {
+                const parts = line.split('|');
+                if (parts.length >= 4) {
+                    preview += `${index + 1}. ${parts[0]} | ${parts[2]} | ${parts[3]} | ${parts[4] || 'imap'}\n`;
+                    validCount++;
+                } else {
+                    preview += `${index + 1}. [格式错误] ${line}\n`;
+                }
+            });
+            
+            preview += `\n共 ${lines.length} 行，有效数据 ${validCount} 行`;
+            showToast(preview, 'info', 8000);
+        }
+        
+        document.getElementById('batchAddForm').addEventListener('submit', function(e) {
+            const textarea = document.getElementById('batchAccountsText');
+            const lines = textarea.value.split('\n').filter(line => line.trim());
+            
+            if (lines.length === 0) {
+                e.preventDefault();
+                showToast('请输入邮箱账号数据', 'error');
+                return;
+            }
+            
+            const accounts = [];
+            lines.forEach(line => {
+                const parts = line.split('|');
+                if (parts.length >= 4) {
+                    accounts.push({
+                        email: parts[0].trim(),
+                        password: parts[1].trim(),
+                        server: parts[2].trim(),
+                        port: parseInt(parts[3].trim()) || 993,
+                        protocol: parts[4] ? parts[4].trim() : 'imap',
+                        ssl: parts[5] ? (parts[5].trim() === '1') : true,
+                        remarks: parts[6] ? parts[6].trim() : ''
+                    });
+                }
+            });
+            
+            document.getElementById('batchAccountsData').value = JSON.stringify(accounts);
+        });
+        
+        // Utility function
+        function escapeHtml(text) {
+            const map = {
+                '&': '&amp;',
+                '<': '&lt;',
+                '>': '&gt;',
+                '"': '&quot;',
+                "'": '&#039;'
+            };
+            return text.replace(/[&<>"']/g, function(m) { return map[m]; });
         }
     </script>
 </body>
