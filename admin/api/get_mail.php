@@ -22,7 +22,7 @@ header('Access-Control-Allow-Origin: *');
 header('Access-Control-Allow-Methods: GET, POST');
 header('Access-Control-Allow-Headers: Content-Type');
 
-require_once '../utils/mail_fetcher.php';
+require_once '../../backend/utils/mail_fetcher.php';
 
 // 只允许POST请求
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
