@@ -48,6 +48,9 @@ if (empty($email)) {
 }
 
 try {
+    // Set maximum execution time for API call
+    set_time_limit(30);
+    
     // 连接数据库查找邮箱配置 - 规范化路径处理
     $dbPath = realpath(__DIR__ . '/../../db/mail.sqlite');
     if (!$dbPath || !file_exists($dbPath)) {

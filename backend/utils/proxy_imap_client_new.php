@@ -59,7 +59,7 @@ class ProxyImapClient {
             $target,
             $errno,
             $errstr,
-            30,
+            10, // Reduced timeout to 10 seconds
             STREAM_CLIENT_CONNECT,
             $context
         );
@@ -93,7 +93,7 @@ class ProxyImapClient {
             'tcp://' . $this->proxy['proxy_host'] . ':' . $this->proxy['proxy_port'],
             $errno,
             $errstr,
-            30
+            10 // Reduced timeout to 10 seconds
         );
         
         if (!$proxySocket) {
@@ -174,7 +174,7 @@ class ProxyImapClient {
             'tcp://' . $this->proxy['proxy_host'] . ':' . $this->proxy['proxy_port'],
             $errno,
             $errstr,
-            30
+            10 // Reduced timeout to 10 seconds
         );
         
         if (!$proxySocket) {
