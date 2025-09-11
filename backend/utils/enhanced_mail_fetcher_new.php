@@ -48,6 +48,16 @@ class EnhancedMailFetcher {
                          $availableProxy['proxy_host'] . ':' . $availableProxy['proxy_port']);
                 return true;
             }
+            
+            // 如果没有已验证的代理，尝试获取任何活跃的代理
+            $anyProxy = $this->proxyManager->getAvailableProxy('', false);
+            if ($anyProxy) {
+                $this->currentProxy = $anyProxy;
+                error_log('检测到未验证代理，将尝试使用: ' . $anyProxy['proxy_type'] . '://' . 
+                         $anyProxy['proxy_host'] . ':' . $anyProxy['proxy_port']);
+                return true;
+            }
+            
             return false;
         } catch (Exception $e) {
             error_log('获取代理时出错: ' . $e->getMessage());
@@ -80,7 +90,7 @@ class EnhancedMailFetcher {
                 error_log('使用代理连接: ' . $this->currentProxy['proxy_type'] . '://' . 
                          $this->currentProxy['proxy_host'] . ':' . $this->currentProxy['proxy_port']);
             } else {
-                error_log('使用直接连接');
+                error_log('使用直接连接到 ' . $this->server . ':' . $this->port);
             }
             
             // 尝试连接
@@ -88,13 +98,18 @@ class EnhancedMailFetcher {
             $result = $this->client->connect();
             $responseTime = round((microtime(true) - $startTime) * 1000);
             
-            // 更新代理统计（如果使用了代理）
-            if ($this->useProxy && $this->currentProxy) {
-                $this->proxyManager->updateProxyStats($this->currentProxy['id'], true, $responseTime);
-                error_log('代理连接成功，响应时间: ' . $responseTime . 'ms');
+            if ($result) {
+                // 更新代理统计（如果使用了代理）
+                if ($this->useProxy && $this->currentProxy) {
+                    $this->proxyManager->updateProxyStats($this->currentProxy['id'], true, $responseTime);
+                    error_log('代理连接成功，响应时间: ' . $responseTime . 'ms');
+                } else {
+                    error_log('直接连接成功，响应时间: ' . $responseTime . 'ms');
+                }
+                return true;
+            } else {
+                throw new Exception('连接失败，服务器未响应');
             }
-            
-            return $result;
             
         } catch (Exception $e) {
             $errorMessage = $e->getMessage();
@@ -106,9 +121,18 @@ class EnhancedMailFetcher {
                 
                 // 重置代理状态并尝试直连
                 $this->useProxy = false;
+                $originalProxy = $this->currentProxy;
                 $this->currentProxy = null;
                 
-                return $this->connect();
+                try {
+                    // 递归调用进行直连尝试
+                    return $this->connect();
+                } catch (Exception $directConnectException) {
+                    // 直连也失败，恢复代理信息用于错误报告
+                    $this->currentProxy = $originalProxy;
+                    error_log('直连也失败: ' . $directConnectException->getMessage());
+                    throw new Exception('代理连接失败: ' . $errorMessage . '; 直连也失败: ' . $directConnectException->getMessage());
+                }
             }
             
             error_log('邮件连接失败: ' . $errorMessage);
