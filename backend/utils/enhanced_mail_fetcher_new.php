@@ -535,12 +535,6 @@ class EnhancedMailFetcher {
                 $proxy,
                 $this->protocol
             );
-                $this->port,
-                $this->username,
-                $this->password,
-                $this->ssl,
-                $proxy
-            );
             
             $startTime = microtime(true);
             $result = $testClient->testConnection();
