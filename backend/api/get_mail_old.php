@@ -130,29 +130,19 @@ try {
                 ];
                 
                 // 添加代理使用信息
-                if ($useProxyFetcher && method_exists($fetcher, 'getCurrentProxy')) {
-                    $currentProxy = $fetcher->getCurrentProxy();
-                    if ($currentProxy) {
-                        $responseData['proxy'] = [
-                            'used' => true,
-                            'type' => $currentProxy['proxy_type'],
-                            'host' => $currentProxy['proxy_host'],
-                            'port' => $currentProxy['proxy_port'],
-                            'name' => $currentProxy['proxy_name'] ?? 'Unknown',
-                            'fetcher' => 'webklex/php-imap'
-                        ];
-                    } else {
-                        $responseData['proxy'] = [
-                            'used' => false,
-                            'message' => $availableProxy ? '代理可用但未使用' : '无可用代理，使用直连',
-                            'fetcher' => 'webklex/php-imap'
-                        ];
-                    }
+                $currentProxy = $fetcher->getCurrentProxy();
+                if ($currentProxy) {
+                    $responseData['proxy'] = [
+                        'used' => true,
+                        'type' => $currentProxy['proxy_type'],
+                        'host' => $currentProxy['proxy_host'],
+                        'port' => $currentProxy['proxy_port'],
+                        'name' => $currentProxy['proxy_name'] ?? 'Unknown'
+                    ];
                 } else {
                     $responseData['proxy'] = [
                         'used' => false,
-                        'message' => '使用传统IMAP扩展，不支持代理',
-                        'fetcher' => 'php-imap'
+                        'message' => $availableProxy ? '代理可用但未使用' : '无可用代理，使用直连'
                     ];
                 }
                 
@@ -166,29 +156,19 @@ try {
                 ];
                 
                 // 添加代理使用信息
-                if ($useProxyFetcher && method_exists($fetcher, 'getCurrentProxy')) {
-                    $currentProxy = $fetcher->getCurrentProxy();
-                    if ($currentProxy) {
-                        $responseData['proxy'] = [
-                            'used' => true,
-                            'type' => $currentProxy['proxy_type'],
-                            'host' => $currentProxy['proxy_host'],
-                            'port' => $currentProxy['proxy_port'],
-                            'name' => $currentProxy['proxy_name'] ?? 'Unknown',
-                            'fetcher' => 'webklex/php-imap'
-                        ];
-                    } else {
-                        $responseData['proxy'] = [
-                            'used' => false,
-                            'message' => $availableProxy ? '代理可用但未使用' : '无可用代理，使用直连',
-                            'fetcher' => 'webklex/php-imap'
-                        ];
-                    }
+                $currentProxy = $fetcher->getCurrentProxy();
+                if ($currentProxy) {
+                    $responseData['proxy'] = [
+                        'used' => true,
+                        'type' => $currentProxy['proxy_type'],
+                        'host' => $currentProxy['proxy_host'],
+                        'port' => $currentProxy['proxy_port'],
+                        'name' => $currentProxy['proxy_name'] ?? 'Unknown'
+                    ];
                 } else {
                     $responseData['proxy'] = [
                         'used' => false,
-                        'message' => '使用传统IMAP扩展，不支持代理',
-                        'fetcher' => 'php-imap'
+                        'message' => $availableProxy ? '代理可用但未使用' : '无可用代理，使用直连'
                     ];
                 }
                 
