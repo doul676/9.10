@@ -451,13 +451,27 @@ class ProxyImapClient {
                 }
             }
             
-            // Extract body content
+            // Extract body content with improved parsing
             if (preg_match('/BODY\[TEXT\]\s*{[^}]*}\s*([^}]+?)\s*\)/s', $response, $bodyMatches)) {
-                $mail['body'] = trim($bodyMatches[1]);
+                $rawBody = trim($bodyMatches[1]);
+                $mail['body'] = $this->cleanAndDecodeBody($rawBody);
                 $mail['size'] = strlen($mail['body']);
             } elseif (preg_match('/BODY\[TEXT\]\s*"([^"]*)"/', $response, $bodyMatches)) {
-                $mail['body'] = $this->decodeBody($bodyMatches[1]);
+                $rawBody = $this->decodeBody($bodyMatches[1]);
+                $mail['body'] = $this->cleanAndDecodeBody($rawBody);
                 $mail['size'] = strlen($mail['body']);
+            } else {
+                // Fallback: try to extract any text content
+                if (preg_match('/BODY\[.*?\]\s*{[^}]*}\s*([^}]+)/s', $response, $bodyMatches)) {
+                    $rawBody = trim($bodyMatches[1]);
+                    $mail['body'] = $this->cleanAndDecodeBody($rawBody);
+                    $mail['size'] = strlen($mail['body']);
+                }
+            }
+            
+            // Ensure we have some content
+            if (empty($mail['body'])) {
+                $mail['body'] = '(邮件内容为空或解析失败)';
             }
             
             return $mail;
@@ -810,10 +824,59 @@ class ProxyImapClient {
             $mail['message_id'] = trim($matches[1]);
         }
         
-        // Decode body
-        $mail['body'] = $this->decodePOP3Body($body, $headers);
+        // Handle multipart messages
+        if (preg_match('/Content-Type:\s*multipart/i', $headers)) {
+            $mail['body'] = $this->parseMultipartPOP3Body($body, $headers);
+        } else {
+            // Single part message
+            $mail['body'] = $this->decodePOP3Body($body, $headers);
+        }
         
         return $mail;
+    }
+    
+    /**
+     * Parse multipart POP3 body
+     */
+    private function parseMultipartPOP3Body($body, $headers) {
+        // Extract boundary from Content-Type header
+        $boundary = '';
+        if (preg_match('/boundary=([^;\s]+)/i', $headers, $matches)) {
+            $boundary = trim($matches[1], '"\'');
+        }
+        
+        if (empty($boundary)) {
+            // No boundary found, treat as single part
+            return $this->decodePOP3Body($body, $headers);
+        }
+        
+        // Split message by boundary
+        $parts = preg_split('/--' . preg_quote($boundary, '/') . '/', $body);
+        $textContent = '';
+        
+        foreach ($parts as $part) {
+            $part = trim($part);
+            if (empty($part) || $part === '--') {
+                continue;
+            }
+            
+            // Split part into headers and content
+            $partParts = preg_split('/\r?\n\r?\n/', $part, 2);
+            $partHeaders = $partParts[0] ?? '';
+            $partContent = $partParts[1] ?? '';
+            
+            // Check if this is a text part
+            if (preg_match('/Content-Type:\s*text\/plain/i', $partHeaders)) {
+                $textContent .= $this->decodePOP3Body($partContent, $partHeaders) . "\n\n";
+                break; // Use first text/plain part
+            } elseif (preg_match('/Content-Type:\s*text\/html/i', $partHeaders) && empty($textContent)) {
+                // Fallback to HTML if no plain text found
+                $htmlContent = $this->decodePOP3Body($partContent, $partHeaders);
+                $textContent = strip_tags($htmlContent); // Simple HTML to text conversion
+            }
+        }
+        
+        return trim($textContent) ?: '(邮件内容为空)';
     }
     
     /**
@@ -850,7 +913,7 @@ class ProxyImapClient {
         
         // Handle charset conversion
         $charset = 'UTF-8';
-        if (preg_match('/charset=([^;\s]+)/i', $headers, $matches)) {
+        if (preg_match('/charset=([^;\s\r\n]+)/i', $headers, $matches)) {
             $charset = trim($matches[1], '"\'');
         }
         
@@ -859,17 +922,35 @@ class ProxyImapClient {
                 $converted = mb_convert_encoding($body, 'UTF-8', $charset);
                 if ($converted !== false && mb_check_encoding($converted, 'UTF-8')) {
                     $body = $converted;
+                } else {
+                    // Try common encodings
+                    $commonEncodings = ['GBK', 'GB2312', 'Big5', 'ISO-8859-1', 'Windows-1252'];
+                    foreach ($commonEncodings as $encoding) {
+                        try {
+                            $converted = mb_convert_encoding($body, 'UTF-8', $encoding);
+                            if ($converted !== false && mb_check_encoding($converted, 'UTF-8')) {
+                                $body = $converted;
+                                break;
+                            }
+                        } catch (Exception $e) {
+                            continue;
+                        }
+                    }
                 }
             } catch (Exception $e) {
                 error_log('Charset conversion failed: ' . $e->getMessage());
             }
         }
         
-        // Clean up and limit length
+        // Clean up content
         $body = trim($body);
         if (empty($body)) {
             return '(邮件内容为空)';
         }
+        
+        // Remove excessive whitespace but preserve structure
+        $body = preg_replace('/\n{3,}/', "\n\n", $body);
+        $body = preg_replace('/[ \t]+/', ' ', $body);
         
         if (mb_strlen($body, 'UTF-8') > 10000) {
             $body = mb_substr($body, 0, 10000, 'UTF-8') . "\n\n(内容过长，已截断...)";
@@ -933,6 +1014,44 @@ class ProxyImapClient {
         }
     }
     
+    /**
+     * Clean and decode email body content
+     */
+    private function cleanAndDecodeBody($body) {
+        if (empty($body)) {
+            return '(邮件内容为空)';
+        }
+        
+        // Remove any null characters or control characters
+        $body = preg_replace('/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/', '', $body);
+        
+        // Clean up whitespace but preserve structure
+        $body = preg_replace('/\r\n/', "\n", $body);
+        $body = preg_replace('/\r/', "\n", $body);
+        $body = preg_replace('/\n{3,}/', "\n\n", $body);
+        
+        // Try to decode if it looks like base64 or quoted-printable
+        if (preg_match('/^[A-Za-z0-9+\/=\s]+$/', trim($body)) && strlen($body) > 20) {
+            $decoded = base64_decode(preg_replace('/\s/', '', $body));
+            if ($decoded !== false && mb_check_encoding($decoded, 'UTF-8')) {
+                $body = $decoded;
+            }
+        } elseif (strpos($body, '=') !== false) {
+            $decoded = quoted_printable_decode($body);
+            if (mb_check_encoding($decoded, 'UTF-8')) {
+                $body = $decoded;
+            }
+        }
+        
+        $body = trim($body);
+        
+        if (mb_strlen($body, 'UTF-8') > 10000) {
+            $body = mb_substr($body, 0, 10000, 'UTF-8') . "\n\n(内容过长，已截断...)";
+        }
+        
+        return $body ?: '(邮件内容为空)';
+    }
+
     /**
      * Decode email body
      */
