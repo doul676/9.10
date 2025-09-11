@@ -51,6 +51,13 @@ class MailFetcher {
     }
     
     /**
+     * 检查是否尝试过使用代理
+     */
+    public function wasProxyAttempted() {
+        return $this->enhancedFetcher->wasProxyAttempted();
+    }
+    
+    /**
      * 设置是否使用代理
      */
     public function setUseProxy($useProxy) {

@@ -170,6 +170,7 @@ try {
     } else {
         // Connection failed - provide detailed diagnostic information
         $currentProxy = $fetcher->getCurrentProxy();
+        $proxyAttempted = $fetcher->wasProxyAttempted();
         $responseTime = round((microtime(true) - $startTime) * 1000);
         
         $response = [
@@ -180,7 +181,20 @@ try {
         ];
         
         // 添加代理使用信息
-        if ($currentProxy) {
+        if ($proxyAttempted && $availableProxy) {
+            // We attempted proxy but it failed
+            $response['proxy'] = [
+                'used' => false,
+                'attempted' => true,
+                'available' => true,
+                'type' => $availableProxy['proxy_type'],
+                'host' => $availableProxy['proxy_host'],
+                'port' => $availableProxy['proxy_port'],
+                'name' => $availableProxy['proxy_name'] ?? 'Unknown',
+                'failed' => true,
+                'message' => '代理连接失败，已回退到直连'
+            ];
+        } elseif ($currentProxy) {
             $response['proxy'] = [
                 'used' => true,
                 'type' => $currentProxy['proxy_type'],

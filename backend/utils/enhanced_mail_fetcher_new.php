@@ -18,6 +18,7 @@ class EnhancedMailFetcher {
     private $currentProxy;
     private $proxyManager;
     private $useProxy;
+    private $proxyAttempted = false; // Track if proxy was attempted
     
     public function __construct($server, $port, $username, $password, $protocol = 'imap', $ssl = true) {
         $this->server = $server;
@@ -33,6 +34,7 @@ class EnhancedMailFetcher {
         
         // 强制检查是否有可用代理，如果有则使用代理
         $this->useProxy = $this->shouldUseProxy();
+        $this->proxyAttempted = false;
     }
     
     /**
@@ -82,6 +84,12 @@ class EnhancedMailFetcher {
             
             // IMAP协议使用原有的代理客户端
             $proxy = $this->useProxy ? $this->currentProxy : null;
+            
+            // Mark that we're attempting to use proxy if available
+            if ($this->useProxy && $this->currentProxy) {
+                $this->proxyAttempted = true;
+            }
+            
             $this->client = new ProxyImapClient(
                 $this->server,
                 $this->port,
@@ -152,6 +160,12 @@ class EnhancedMailFetcher {
     private function connectPOP3WithProxy() {
         // 使用新的ProxyImapClient来支持POP3代理连接
         $proxy = $this->useProxy ? $this->currentProxy : null;
+        
+        // Mark that we're attempting to use proxy if available
+        if ($this->useProxy && $this->currentProxy) {
+            $this->proxyAttempted = true;
+        }
+        
         $this->client = new ProxyImapClient(
             $this->server,
             $this->port,
@@ -327,6 +341,13 @@ class EnhancedMailFetcher {
     public function getCurrentProxy() {
         // POP3协议现在也支持代理连接，返回实际使用的代理信息
         return $this->useProxy ? $this->currentProxy : null;
+    }
+    
+    /**
+     * 检查是否尝试过使用代理
+     */
+    public function wasProxyAttempted() {
+        return $this->proxyAttempted;
     }
     
     /**

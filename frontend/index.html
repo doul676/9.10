@@ -532,6 +532,23 @@
                 } else {
                     let errorMsg = '❌ ' + (data.message || '获取邮件失败');
                     
+                    // 添加代理连接信息
+                    if (data.proxy) {
+                        if (data.proxy.attempted && data.proxy.failed) {
+                            errorMsg += `\n• 代理连接: 尝试使用 ${data.proxy.type.toUpperCase()} ${data.proxy.host}:${data.proxy.port} 失败`;
+                            if (data.proxy.name && data.proxy.name !== 'Unknown') {
+                                errorMsg += `\n• 代理名称: ${data.proxy.name}`;
+                            }
+                            errorMsg += '\n• 已回退到直连模式';
+                        } else if (data.proxy.used) {
+                            errorMsg += `\n• 代理连接: 使用 ${data.proxy.type.toUpperCase()} ${data.proxy.host}:${data.proxy.port} 失败`;
+                        } else if (data.proxy.available) {
+                            errorMsg += '\n• 代理状态: 有可用代理但未使用';
+                        } else {
+                            errorMsg += '\n• 代理状态: 无可用代理，使用直连';
+                        }
+                    }
+                    
                     // 添加具体的错误信息
                     if (data.error_type) {
                         switch(data.error_type) {
@@ -555,7 +572,11 @@
                         }
                     }
                     
-                    showToast(errorMsg, 'error', 8000);
+                    if (data.response_time) {
+                        errorMsg += `\n• 响应时间: ${data.response_time}ms`;
+                    }
+                    
+                    showToast(errorMsg, 'error', 10000);
                 }
                 
             } catch (error) {
