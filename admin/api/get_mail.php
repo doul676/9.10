@@ -177,7 +177,13 @@ try {
             'success' => false,
             'message' => '无法连接到邮件服务器，请检查邮箱配置。' . 
                         ($availableProxy ? ' 已尝试通过代理连接。' : ' 无可用代理，已尝试直连。'),
-            'response_time' => $responseTime
+            'response_time' => $responseTime,
+            'error_type' => 'connection_failed',
+            'diagnostics' => [
+                'server' => $account['server'] . ':' . $account['port'],
+                'protocol' => strtoupper($account['protocol']) . ($account['ssl'] ? ' with SSL' : ''),
+                'suggestion' => '请检查服务器地址、端口、用户名密码是否正确，或者网络连接是否正常'
+            ]
         ];
         
         // 添加代理使用信息

@@ -15,6 +15,7 @@ class ProxyImapClient {
     private $socket;
     private $connected = false;
     private $protocol;
+    private $connectionTimeout = 15; // Configurable connection timeout
     
     public function __construct($server, $port, $username, $password, $ssl = true, $proxy = null, $protocol = 'imap') {
         $this->server = $server;
@@ -59,7 +60,7 @@ class ProxyImapClient {
             $target,
             $errno,
             $errstr,
-            10, // Reduced timeout to 10 seconds
+            $this->connectionTimeout,
             STREAM_CLIENT_CONNECT,
             $context
         );
@@ -93,7 +94,7 @@ class ProxyImapClient {
             'tcp://' . $this->proxy['proxy_host'] . ':' . $this->proxy['proxy_port'],
             $errno,
             $errstr,
-            10 // Reduced timeout to 10 seconds
+            $this->connectionTimeout
         );
         
         if (!$proxySocket) {
@@ -174,7 +175,7 @@ class ProxyImapClient {
             'tcp://' . $this->proxy['proxy_host'] . ':' . $this->proxy['proxy_port'],
             $errno,
             $errstr,
-            10 // Reduced timeout to 10 seconds
+            $this->connectionTimeout
         );
         
         if (!$proxySocket) {
