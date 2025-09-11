@@ -168,17 +168,36 @@ try {
             ]);
         }
     } else {
-        echo json_encode([
+        // Connection failed - provide detailed diagnostic information
+        $currentProxy = $fetcher->getCurrentProxy();
+        $responseTime = round((microtime(true) - $startTime) * 1000);
+        
+        $response = [
             'success' => false,
-            'message' => '无法连接到邮件服务器，请检查邮箱配置或网络连接',
-            'proxy' => $fetcher->getCurrentProxy() ? [
+            'message' => '无法连接到邮件服务器，请检查邮箱配置。' . 
+                        ($availableProxy ? ' 已尝试通过代理连接。' : ' 无可用代理，已尝试直连。'),
+            'response_time' => $responseTime
+        ];
+        
+        // 添加代理使用信息
+        if ($currentProxy) {
+            $response['proxy'] = [
                 'used' => true,
+                'type' => $currentProxy['proxy_type'],
+                'host' => $currentProxy['proxy_host'],
+                'port' => $currentProxy['proxy_port'],
+                'name' => $currentProxy['proxy_name'] ?? 'Unknown',
                 'failed' => true
-            ] : [
+            ];
+        } else {
+            $response['proxy'] = [
                 'used' => false,
-                'available' => $availableProxy !== null
-            ]
-        ]);
+                'available' => $availableProxy !== null,
+                'message' => $availableProxy ? '代理可用但未使用' : '无可用代理，使用直连'
+            ];
+        }
+        
+        echo json_encode($response);
     }
     
     $db->close();
