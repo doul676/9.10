@@ -492,23 +492,9 @@ class MailFetcher {
      * 然后尝试常规连接，在生产环境中可能需要使用其他方案
      */
     private function connectWithProxy() {
-        // 首先测试代理是否可用
-        $proxyTest = $this->proxyManager->testProxy($this->proxy);
+        // 不进行代理测试，直接尝试邮件连接
+        // 如果连接失败，会在上层catch中处理代理失败并尝试直连
         
-        if (!$proxyTest['success']) {
-            throw new Exception('代理连接失败: ' . $proxyTest['message']);
-        }
-        
-        // 尝试通过代理连接到邮件服务器进行网络可达性测试
-        $connectivityTest = $this->testMailServerThroughProxy();
-        
-        if (!$connectivityTest['success']) {
-            throw new Exception('通过代理无法连接到邮件服务器: ' . $connectivityTest['message']);
-        }
-        
-        // 如果代理连通性测试通过，则尝试常规IMAP连接
-        // 注意：这里仍然使用常规连接，因为PHP IMAP扩展的限制
-        // 在真实生产环境中，可能需要使用支持代理的第三方库
         $startTime = microtime(true);
         
         try {

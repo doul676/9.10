@@ -24,10 +24,37 @@ header('Access-Control-Allow-Headers: Content-Type');
 try {
     $db = new SQLite3(__DIR__ . '/../db/mail.sqlite');
     
-    // 检查表是否存在
+    // 检查表是否存在，如果不存在则创建
     $tableExists = $db->querySingle("SELECT name FROM sqlite_master WHERE type='table' AND name='proxy_pool'");
     
     if (!$tableExists) {
+        // 创建代理池表
+        $createTableSql = "CREATE TABLE IF NOT EXISTS proxy_pool (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            proxy_name TEXT NOT NULL DEFAULT '',
+            proxy_type TEXT NOT NULL CHECK (proxy_type IN ('http', 'socks5')),
+            proxy_host TEXT NOT NULL,
+            proxy_port INTEGER NOT NULL,
+            proxy_username TEXT DEFAULT '',
+            proxy_password TEXT DEFAULT '',
+            is_active INTEGER NOT NULL DEFAULT 1,
+            is_verified INTEGER NOT NULL DEFAULT 0,
+            last_test_time DATETIME DEFAULT NULL,
+            test_success_count INTEGER DEFAULT 0,
+            test_fail_count INTEGER DEFAULT 0,
+            response_time INTEGER DEFAULT 0,
+            remarks TEXT DEFAULT '',
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )";
+        
+        $db->exec($createTableSql);
+        
+        // 创建索引
+        $db->exec("CREATE INDEX IF NOT EXISTS idx_proxy_pool_type ON proxy_pool(proxy_type)");
+        $db->exec("CREATE INDEX IF NOT EXISTS idx_proxy_pool_active ON proxy_pool(is_active)");
+        $db->exec("CREATE INDEX IF NOT EXISTS idx_proxy_pool_host_port ON proxy_pool(proxy_host, proxy_port)");
+        
         echo json_encode([
             'success' => true,
             'data' => [
@@ -36,7 +63,10 @@ try {
                 'verified' => 0,
                 'http' => 0,
                 'socks5' => 0,
-                'last_used' => null
+                'avg_response_time' => 0,
+                'success_rate' => 0,
+                'last_used' => null,
+                'best_proxy' => null
             ]
         ]);
         exit();

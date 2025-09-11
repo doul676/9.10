@@ -1486,18 +1486,38 @@ if (isset($_GET['logout'])) {
                         bestProxyInfo.textContent = '暂无可用的最佳代理';
                         bestProxyInfo.style.color = '#64748b';
                     }
+                    
+                    return Promise.resolve();
                 } else {
                     console.error('Failed to load proxy status:', data.message);
+                    return Promise.reject(new Error(data.message));
                 }
             } catch (error) {
                 console.error('Error loading proxy status:', error);
                 document.getElementById('bestProxyInfo').textContent = '加载代理状态失败';
+                return Promise.reject(error);
             }
         }
         
         function refreshProxyStatus() {
-            loadProxyStatus();
-            showMessage('代理状态已刷新', 'success');
+            // Add loading state
+            const refreshBtn = document.querySelector('.card-header button');
+            const originalText = refreshBtn.textContent;
+            refreshBtn.disabled = true;
+            refreshBtn.textContent = '刷新中...';
+            
+            loadProxyStatus()
+                .then(() => {
+                    showMessage('✅ 代理状态已刷新', 'success');
+                })
+                .catch((error) => {
+                    console.error('刷新失败:', error);
+                    showMessage('❌ 刷新失败，请重试', 'error');
+                })
+                .finally(() => {
+                    refreshBtn.disabled = false;
+                    refreshBtn.textContent = originalText;
+                });
         }
         
         // Load proxy status on page load and set up auto-refresh
