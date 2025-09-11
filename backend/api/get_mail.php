@@ -109,20 +109,25 @@ try {
                     'response_time' => $responseTime
                 ];
                 
-                // 添加代理使用信息
+                // 添加连接信息（包括代理状态）
                 $currentProxy = $fetcher->getCurrentProxy();
                 if ($currentProxy) {
-                    $responseData['proxy'] = [
-                        'used' => true,
-                        'type' => $currentProxy['proxy_type'],
-                        'host' => $currentProxy['proxy_host'],
-                        'port' => $currentProxy['proxy_port'],
-                        'name' => $currentProxy['proxy_name'] ?? 'Unknown'
+                    $responseData['connection_info'] = [
+                        'proxy_detected' => true,
+                        'proxy_used' => false, // IMAP扩展不支持代理
+                        'proxy_type' => $currentProxy['proxy_type'],
+                        'proxy_host' => $currentProxy['proxy_host'],
+                        'proxy_port' => $currentProxy['proxy_port'],
+                        'proxy_name' => $currentProxy['proxy_name'] ?? 'Unknown',
+                        'connection_method' => 'direct',
+                        'proxy_note' => 'PHP IMAP扩展不支持代理，已自动使用直连'
                     ];
                 } else {
-                    $responseData['proxy'] = [
-                        'used' => false,
-                        'message' => $availableProxy ? '代理可用但未使用' : '无可用代理，使用直连'
+                    $responseData['connection_info'] = [
+                        'proxy_detected' => false,
+                        'proxy_used' => false,
+                        'connection_method' => 'direct',
+                        'note' => '使用直连方式'
                     ];
                 }
                 
@@ -135,20 +140,25 @@ try {
                     'response_time' => $responseTime
                 ];
                 
-                // 添加代理使用信息
+                // 添加连接信息（包括代理状态）
                 $currentProxy = $fetcher->getCurrentProxy();
                 if ($currentProxy) {
-                    $responseData['proxy'] = [
-                        'used' => true,
-                        'type' => $currentProxy['proxy_type'],
-                        'host' => $currentProxy['proxy_host'],
-                        'port' => $currentProxy['proxy_port'],
-                        'name' => $currentProxy['proxy_name'] ?? 'Unknown'
+                    $responseData['connection_info'] = [
+                        'proxy_detected' => true,
+                        'proxy_used' => false, // IMAP扩展不支持代理
+                        'proxy_type' => $currentProxy['proxy_type'],
+                        'proxy_host' => $currentProxy['proxy_host'],
+                        'proxy_port' => $currentProxy['proxy_port'],
+                        'proxy_name' => $currentProxy['proxy_name'] ?? 'Unknown',
+                        'connection_method' => 'direct',
+                        'proxy_note' => 'PHP IMAP扩展不支持代理，已自动使用直连'
                     ];
                 } else {
-                    $responseData['proxy'] = [
-                        'used' => false,
-                        'message' => $availableProxy ? '代理可用但未使用' : '无可用代理，使用直连'
+                    $responseData['connection_info'] = [
+                        'proxy_detected' => false,
+                        'proxy_used' => false,
+                        'connection_method' => 'direct',
+                        'note' => '使用直连方式'
                     ];
                 }
                 
@@ -162,19 +172,55 @@ try {
             ]);
         }
     } else {
-        echo json_encode([
+        // 连接失败
+        $errorMessage = '无法连接到邮件服务器，请检查邮箱配置';
+        
+        // 添加代理相关错误信息
+        if ($availableProxy) {
+            $errorMessage .= '。注意：检测到可用代理但PHP IMAP扩展不支持代理连接，已使用直连尝试';
+        } else {
+            $errorMessage .= '。无可用代理，已使用直连方式尝试';
+        }
+        
+        $errorData = [
             'success' => false,
-            'message' => '无法连接到邮件服务器，请检查邮箱配置。' . 
-                        ($availableProxy ? ' 已尝试通过代理连接。' : ' 无可用代理，已尝试直连。')
-        ]);
+            'message' => $errorMessage,
+            'connection_info' => [
+                'proxy_detected' => $availableProxy ? true : false,
+                'proxy_used' => false,
+                'connection_method' => 'direct',
+                'imap_limitation' => 'PHP IMAP扩展不支持代理连接',
+                'recommendation' => '请检查服务器地址、端口、用户名和密码。如需代理访问，请考虑其他方案'
+            ]
+        ];
+        
+        if ($availableProxy) {
+            $errorData['connection_info']['proxy_details'] = [
+                'type' => $availableProxy['proxy_type'],
+                'host' => $availableProxy['proxy_host'],
+                'port' => $availableProxy['proxy_port'],
+                'note' => '代理已检测但无法用于IMAP连接'
+            ];
+        }
+        
+        echo json_encode($errorData);
     }
     
     $db->close();
     
 } catch (Exception $e) {
+    $errorMessage = '服务器错误: ' . $e->getMessage();
+    
+    // 检查是否是代理相关错误
+    if (strpos($e->getMessage(), '代理') !== false || strpos($e->getMessage(), 'proxy') !== false) {
+        $errorMessage .= '。提示：PHP IMAP扩展不支持代理连接，请检查网络配置或考虑替代方案';
+    }
+    
     echo json_encode([
         'success' => false,
-        'message' => '服务器错误: ' . $e->getMessage()
+        'message' => $errorMessage,
+        'error_type' => 'server_error',
+        'proxy_note' => 'PHP IMAP扩展不支持代理连接'
     ]);
 }
 ?>

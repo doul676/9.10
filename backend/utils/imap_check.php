@@ -174,6 +174,20 @@ function checkImapExtension() {
     $diagnostics['final_status'] = '✅ IMAP扩展完全可用，所有核心功能正常';
     $diagnostics['ready_for_connection'] = '✅ 已准备就绪，可以进行邮箱连接测试';
     
+    // 添加代理兼容性信息
+    $diagnostics['proxy_limitation'] = '⚠️ PHP IMAP扩展不支持代理连接';
+    $diagnostics['proxy_details'] = [
+        'technical_reason' => 'imap_open()函数没有代理参数，底层C库不支持代理',
+        'current_behavior' => '系统将检测代理配置但始终使用直连进行邮件操作',
+        'workaround_needed' => '如需代理访问邮件服务器，请考虑替代方案'
+    ];
+    $diagnostics['proxy_alternatives'] = [
+        'api_method' => '使用邮件服务商的API接口替代IMAP协议',
+        'proxy_forwarding' => '在代理服务器上配置端口转发',
+        'vpn_tunnel' => '使用VPN或SSH隧道建立网络连接',
+        'mail_gateway' => '通过邮件网关服务转发请求'
+    ];
+    
     return [
         'available' => true,
         'message' => '✅ IMAP扩展已正确安装并完全可用',
