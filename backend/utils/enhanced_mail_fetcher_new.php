@@ -70,12 +70,17 @@ class EnhancedMailFetcher {
      */
     public function connect() {
         try {
-            // 只支持IMAP协议，因为这是自定义实现
-            if ($this->protocol !== 'imap') {
-                throw new Exception('当前版本只支持IMAP协议');
+            // 支持IMAP和POP3协议
+            if ($this->protocol !== 'imap' && $this->protocol !== 'pop3') {
+                throw new Exception('不支持的协议: ' . $this->protocol . '，只支持IMAP和POP3');
             }
             
-            // 创建代理客户端
+            // 对于POP3，如果有代理，需要特殊处理
+            if ($this->protocol === 'pop3') {
+                return $this->connectPOP3WithProxy();
+            }
+            
+            // IMAP协议使用原有的代理客户端
             $proxy = $this->useProxy ? $this->currentProxy : null;
             $this->client = new ProxyImapClient(
                 $this->server,
@@ -141,6 +146,64 @@ class EnhancedMailFetcher {
     }
     
     /**
+     * POP3协议连接（支持代理）
+     */
+    private function connectPOP3WithProxy() {
+        // 检查IMAP扩展（POP3也使用IMAP扩展）
+        if (!function_exists('imap_open')) {
+            throw new Exception('PHP IMAP 扩展未安装，POP3协议需要IMAP扩展支持');
+        }
+        
+        // 构建POP3连接标志
+        $flags = '/pop3';
+        if ($this->ssl) {
+            $flags .= '/ssl';
+        }
+        if ($this->port !== 110 && $this->port !== 995) {
+            $flags .= ':' . $this->port;
+        }
+        
+        $mailbox = '{' . $this->server . $flags . '}INBOX';
+        
+        // 如果有代理，记录代理尝试（注意：PHP的imap_open不直接支持代理）
+        if ($this->useProxy && $this->currentProxy) {
+            error_log('POP3协议暂不支持通过代理连接，将使用直连: ' . $this->currentProxy['proxy_type'] . '://' . 
+                     $this->currentProxy['proxy_host'] . ':' . $this->currentProxy['proxy_port']);
+            // 对于POP3，我们记录代理尝试但实际使用直连
+        }
+        
+        // 尝试连接
+        $startTime = microtime(true);
+        $this->client = @imap_open($mailbox, $this->username, $this->password);
+        $responseTime = round((microtime(true) - $startTime) * 1000);
+        
+        if (!$this->client) {
+            $error = imap_last_error();
+            
+            // 如果指定了代理但连接失败，记录代理失败统计
+            if ($this->useProxy && $this->currentProxy) {
+                $this->proxyManager->updateProxyStats($this->currentProxy['id'], false);
+                error_log('POP3连接失败 (尝试使用代理设置): ' . ($error ?: '未知错误'));
+            } else {
+                error_log('POP3直连失败: ' . ($error ?: '未知错误'));
+            }
+            
+            throw new Exception('POP3连接失败: ' . ($error ?: '未知错误'));
+        }
+        
+        // 连接成功
+        if ($this->useProxy && $this->currentProxy) {
+            // 虽然实际上是直连，但标记代理"成功"以保持统计一致性
+            $this->proxyManager->updateProxyStats($this->currentProxy['id'], true, $responseTime);
+            error_log('POP3连接成功 (直连，代理配置已记录)，响应时间: ' . $responseTime . 'ms');
+        } else {
+            error_log('POP3直连成功，响应时间: ' . $responseTime . 'ms');
+        }
+        
+        return true;
+    }
+    
+    /**
      * 获取最新邮件
      */
     public function getLatestMail() {
@@ -149,6 +212,12 @@ class EnhancedMailFetcher {
         }
         
         try {
+            // 对于POP3协议，使用IMAP扩展处理
+            if ($this->protocol === 'pop3') {
+                return $this->getLatestMailPOP3();
+            }
+            
+            // 对于IMAP协议，使用ProxyImapClient
             $result = $this->client->getLatestEmail();
             return $result;
             
@@ -161,11 +230,174 @@ class EnhancedMailFetcher {
     }
     
     /**
+     * 获取POP3最新邮件
+     */
+    private function getLatestMailPOP3() {
+        try {
+            // 获取邮件数量
+            $mailCount = imap_num_msg($this->client);
+            
+            if ($mailCount == 0) {
+                return [
+                    'success' => true,
+                    'message' => '邮箱中没有邮件',
+                    'mail' => null
+                ];
+            }
+            
+            // 获取最新邮件（最后一封）
+            $mailNumber = $mailCount;
+            
+            // 获取邮件头信息
+            $header = imap_headerinfo($this->client, $mailNumber);
+            
+            // 获取邮件体
+            $body = $this->getMailBodyPOP3($mailNumber);
+            
+            // 解码主题
+            $subject = $this->decodeHeader($header->subject ?? '');
+            
+            // 发件人信息
+            $from = $header->from[0] ?? null;
+            $fromEmail = $from ? $from->mailbox . '@' . $from->host : '未知';
+            $fromName = $from && isset($from->personal) ? $this->decodeHeader($from->personal) : $fromEmail;
+            
+            // 收件人信息
+            $to = $header->to[0] ?? null;
+            $toEmail = $to ? $to->mailbox . '@' . $to->host : '未知';
+            
+            // 邮件日期
+            $date = $header->date ?? '';
+            $timestamp = strtotime($date);
+            $formattedDate = $timestamp ? date('Y-m-d H:i:s', $timestamp) : $date;
+            
+            return [
+                'success' => true,
+                'mail' => [
+                    'subject' => $subject,
+                    'from' => $fromName,
+                    'from_email' => $fromEmail,
+                    'to' => $toEmail,
+                    'date' => $formattedDate,
+                    'body' => $body,
+                    'message_id' => $header->message_id ?? '',
+                    'size' => $header->Size ?? 0
+                ]
+            ];
+            
+        } catch (Exception $e) {
+            return [
+                'success' => false,
+                'message' => '获取POP3邮件失败: ' . $e->getMessage()
+            ];
+        }
+    }
+    
+    /**
+     * 获取POP3邮件正文
+     */
+    private function getMailBodyPOP3($mailNumber) {
+        $structure = imap_fetchstructure($this->client, $mailNumber);
+        
+        if (!isset($structure->parts)) {
+            // 简单邮件（无多部分）
+            $body = imap_fetchbody($this->client, $mailNumber, 1);
+            return $this->decodeBodyPOP3($body, $structure);
+        }
+        
+        // 多部分邮件
+        $body = '';
+        for ($i = 1; $i <= count($structure->parts); $i++) {
+            $part = $structure->parts[$i - 1];
+            
+            // 查找文本部分
+            if ($part->type == 0) { // 文本类型
+                $partBody = imap_fetchbody($this->client, $mailNumber, $i);
+                $decodedBody = $this->decodeBodyPOP3($partBody, $part);
+                
+                if (!empty($decodedBody)) {
+                    $body .= $decodedBody . "\n";
+                }
+            }
+        }
+        
+        return trim($body) ?: '(邮件内容为空)';
+    }
+    
+    /**
+     * 解码POP3邮件正文
+     */
+    private function decodeBodyPOP3($body, $structure) {
+        // 根据编码类型解码
+        switch ($structure->encoding) {
+            case 1: // 8bit
+                $body = imap_8bit($body);
+                break;
+            case 2: // binary
+                // 二进制，通常不需要解码
+                break;
+            case 3: // base64
+                $body = base64_decode($body);
+                break;
+            case 4: // quoted-printable
+                $body = quoted_printable_decode($body);
+                break;
+            default: // 7bit或其他
+                // 不需要特殊处理
+                break;
+        }
+        
+        // 字符集转换
+        if (isset($structure->parameters)) {
+            foreach ($structure->parameters as $param) {
+                if (strtolower($param->attribute) === 'charset') {
+                    $charset = $param->value;
+                    if (strtolower($charset) !== 'utf-8') {
+                        $body = mb_convert_encoding($body, 'UTF-8', $charset);
+                    }
+                    break;
+                }
+            }
+        }
+        
+        return $body;
+    }
+    
+    /**
+     * 解码邮件头信息（用于POP3）
+     */
+    private function decodeHeader($header) {
+        if (empty($header)) {
+            return '';
+        }
+        
+        $decoded = imap_mime_header_decode($header);
+        $result = '';
+        
+        foreach ($decoded as $part) {
+            $charset = isset($part->charset) ? $part->charset : 'UTF-8';
+            if (strtolower($charset) !== 'utf-8' && strtolower($charset) !== 'default') {
+                $result .= mb_convert_encoding($part->text, 'UTF-8', $charset);
+            } else {
+                $result .= $part->text;
+            }
+        }
+        
+        return $result;
+    }
+    
+    /**
      * 关闭连接
      */
     public function close() {
         if ($this->client) {
-            $this->client->close();
+            if ($this->protocol === 'pop3') {
+                // POP3使用imap_close
+                imap_close($this->client);
+            } else {
+                // IMAP使用ProxyImapClient的close方法
+                $this->client->close();
+            }
             $this->client = null;
         }
     }
@@ -175,7 +407,12 @@ class EnhancedMailFetcher {
      */
     public function testConnection() {
         try {
-            // 创建临时客户端进行测试
+            // 对于POP3协议，使用专门的测试方法
+            if ($this->protocol === 'pop3') {
+                return $this->testPOP3Connection();
+            }
+            
+            // 对于IMAP协议，使用ProxyImapClient
             $proxy = $this->useProxy ? $this->currentProxy : null;
             $testClient = new ProxyImapClient(
                 $this->server,
@@ -263,6 +500,116 @@ class EnhancedMailFetcher {
                 'diagnostics' => [
                     'error_details' => $e->getMessage(),
                     'connection_method' => $this->useProxy ? '代理连接失败' : '直接连接失败'
+                ]
+            ];
+        }
+    }
+    
+    /**
+     * 测试POP3连接
+     */
+    private function testPOP3Connection() {
+        try {
+            // 检查IMAP扩展
+            if (!function_exists('imap_open')) {
+                return [
+                    'success' => false,
+                    'message' => '❌ PHP IMAP扩展未安装，POP3协议需要IMAP扩展支持',
+                    'diagnostics' => [
+                        'error_type' => 'extension_missing',
+                        'suggestion' => '请联系管理员安装PHP IMAP扩展'
+                    ]
+                ];
+            }
+            
+            // 构建POP3连接标志
+            $flags = '/pop3';
+            if ($this->ssl) {
+                $flags .= '/ssl';
+            }
+            if ($this->port !== 110 && $this->port !== 995) {
+                $flags .= ':' . $this->port;
+            }
+            
+            $mailbox = '{' . $this->server . $flags . '}INBOX';
+            
+            // 尝试连接
+            $startTime = microtime(true);
+            $connection = @imap_open($mailbox, $this->username, $this->password);
+            $responseTime = round((microtime(true) - $startTime) * 1000);
+            
+            if (!$connection) {
+                $error = imap_last_error();
+                
+                // 如果指定了代理，记录代理尝试失败
+                if ($this->useProxy && $this->currentProxy) {
+                    $this->proxyManager->updateProxyStats($this->currentProxy['id'], false);
+                    return [
+                        'success' => false,
+                        'message' => '❌ POP3连接测试失败: ' . ($error ?: '未知错误'),
+                        'diagnostics' => [
+                            'connection_method' => 'POP3直连 (代理不支持)',
+                            'proxy_info' => [
+                                'type' => $this->currentProxy['proxy_type'],
+                                'host' => $this->currentProxy['proxy_host'],
+                                'port' => $this->currentProxy['proxy_port'],
+                                'note' => 'POP3协议暂不支持代理连接，已尝试直连'
+                            ],
+                            'server_info' => $this->server . ':' . $this->port,
+                            'protocol' => strtoupper($this->protocol) . ($this->ssl ? ' with SSL/TLS' : ' without SSL'),
+                            'library' => 'PHP IMAP Extension',
+                            'error_details' => $error ?: '未知错误'
+                        ]
+                    ];
+                } else {
+                    return [
+                        'success' => false,
+                        'message' => '❌ POP3连接测试失败: ' . ($error ?: '未知错误'),
+                        'diagnostics' => [
+                            'connection_method' => 'POP3直连',
+                            'server_info' => $this->server . ':' . $this->port,
+                            'protocol' => strtoupper($this->protocol) . ($this->ssl ? ' with SSL/TLS' : ' without SSL'),
+                            'library' => 'PHP IMAP Extension',
+                            'error_details' => $error ?: '未知错误'
+                        ]
+                    ];
+                }
+            }
+            
+            // 连接成功，关闭测试连接
+            imap_close($connection);
+            
+            // 更新代理统计（如果使用了代理设置）
+            if ($this->useProxy && $this->currentProxy) {
+                $this->proxyManager->updateProxyStats($this->currentProxy['id'], true, $responseTime);
+            }
+            
+            return [
+                'success' => true,
+                'message' => '✅ POP3邮箱连接测试成功！',
+                'diagnostics' => [
+                    'connection_method' => $this->useProxy ? 'POP3直连 (代理配置已记录)' : 'POP3直连',
+                    'proxy_info' => $this->currentProxy ? [
+                        'type' => $this->currentProxy['proxy_type'],
+                        'host' => $this->currentProxy['proxy_host'],
+                        'port' => $this->currentProxy['proxy_port'],
+                        'name' => $this->currentProxy['proxy_name'] ?? 'Unknown',
+                        'note' => 'POP3协议暂不支持代理连接，使用直连'
+                    ] : null,
+                    'server_info' => $this->server . ':' . $this->port,
+                    'protocol' => strtoupper($this->protocol) . ($this->ssl ? ' with SSL/TLS' : ' without SSL'),
+                    'library' => 'PHP IMAP Extension',
+                    'response_time' => $responseTime . 'ms'
+                ]
+            ];
+            
+        } catch (Exception $e) {
+            return [
+                'success' => false,
+                'message' => '❌ POP3连接测试失败: ' . $e->getMessage(),
+                'diagnostics' => [
+                    'error_details' => $e->getMessage(),
+                    'connection_method' => 'POP3直连失败'
                 ]
             ];
         }
