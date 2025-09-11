@@ -83,9 +83,45 @@
         
         .input-group {
             display: flex;
+            flex-direction: column;
             gap: 15px;
             margin-bottom: 20px;
             position: relative;
+        }
+        
+        .email-input-row {
+            display: flex;
+            gap: 15px;
+        }
+        
+        .proxy-controls {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            padding: 15px;
+            background: rgba(255,255,255,0.1);
+            border-radius: 10px;
+            border: 1px solid rgba(255,255,255,0.2);
+        }
+        
+        .proxy-checkbox {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            color: white;
+            font-size: 14px;
+        }
+        
+        .proxy-checkbox input[type="checkbox"] {
+            width: 18px;
+            height: 18px;
+            accent-color: #667eea;
+        }
+        
+        .proxy-status {
+            color: rgba(255,255,255,0.8);
+            font-size: 13px;
+            margin-left: auto;
         }
         
         .input-group input {
@@ -280,8 +316,15 @@
                 font-size: 24px;
             }
             
-            .input-group {
+            .email-input-row {
                 flex-direction: column;
+                gap: 10px;
+            }
+            
+            .proxy-controls {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 10px;
             }
             
             .mail-input-card, .mail-display {
@@ -308,8 +351,21 @@
         
         <div class="mail-input-card">
             <div class="input-group">
-                <input type="email" id="emailInput" placeholder="请输入邮箱地址 (例: user@example.com)" required>
-                <button class="get-mail-btn" onclick="getMail()">获取邮件</button>
+                <div class="email-input-row">
+                    <input type="email" id="emailInput" placeholder="请输入邮箱地址 (例: user@example.com)" required>
+                    <button class="get-mail-btn" onclick="getMail()">获取邮件</button>
+                    <button class="get-mail-btn" onclick="testConnection()" style="background: linear-gradient(135deg, #10b981 0%, #059669 100%);">测试连接</button>
+                </div>
+                
+                <div class="proxy-controls">
+                    <div class="proxy-checkbox">
+                        <input type="checkbox" id="useProxy" onchange="toggleProxyStatus()">
+                        <label for="useProxy">使用代理连接</label>
+                    </div>
+                    <div class="proxy-status" id="proxyStatus">
+                        代理功能可提高连接成功率
+                    </div>
+                </div>
             </div>
             
             <div class="loading" id="loading">正在获取邮件，请稍候...</div>
@@ -355,6 +411,7 @@
             const message = document.getElementById('message');
             const mailDisplay = document.getElementById('mailDisplay');
             const getMailBtn = document.querySelector('.get-mail-btn');
+            const useProxy = document.getElementById('useProxy').checked;
             
             const email = emailInput.value.trim();
             
@@ -381,7 +438,10 @@
                     headers: {
                         'Content-Type': 'application/json',
                     },
-                    body: JSON.stringify({ email: email })
+                    body: JSON.stringify({ 
+                        email: email,
+                        useProxy: useProxy
+                    })
                 });
                 
                 const data = await response.json();
@@ -389,9 +449,23 @@
                 if (data.success) {
                     if (data.mail) {
                         displayMail(data.mail);
-                        showMessage('邮件获取成功', 'success');
+                        let successMsg = '邮件获取成功';
+                        
+                        // 添加代理使用信息
+                        if (data.proxy && data.proxy.used) {
+                            successMsg += ` (通过代理: ${data.proxy.type.toUpperCase()} ${data.proxy.host}:${data.proxy.port})`;
+                        }
+                        
+                        showMessage(successMsg, 'success');
                     } else {
-                        showMessage('邮箱中暂无邮件', 'info');
+                        let infoMsg = '邮箱中暂无邮件';
+                        
+                        // 添加代理使用信息
+                        if (data.proxy && data.proxy.used) {
+                            infoMsg += ` (通过代理: ${data.proxy.type.toUpperCase()} ${data.proxy.host}:${data.proxy.port})`;
+                        }
+                        
+                        showMessage(infoMsg, 'info');
                     }
                 } else {
                     showMessage(data.message || '获取邮件失败', 'error');
@@ -451,6 +525,75 @@
             const sizes = ['B', 'KB', 'MB', 'GB'];
             const i = Math.floor(Math.log(bytes) / Math.log(k));
             return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+        }
+        
+        function toggleProxyStatus() {
+            const useProxy = document.getElementById('useProxy').checked;
+            const proxyStatus = document.getElementById('proxyStatus');
+            
+            if (useProxy) {
+                proxyStatus.textContent = '将通过代理池连接邮件服务器';
+                proxyStatus.style.color = '#90EE90';
+            } else {
+                proxyStatus.textContent = '代理功能可提高连接成功率';
+                proxyStatus.style.color = 'rgba(255,255,255,0.8)';
+            }
+        }
+        
+        // 添加测试连接功能
+        async function testConnection() {
+            const emailInput = document.getElementById('emailInput');
+            const useProxy = document.getElementById('useProxy').checked;
+            const email = emailInput.value.trim();
+            
+            if (!email) {
+                showMessage('请输入邮箱地址', 'error');
+                return;
+            }
+            
+            if (!isValidEmail(email)) {
+                showMessage('请输入有效的邮箱地址', 'error');
+                return;
+            }
+            
+            showMessage('正在测试连接...', 'info');
+            
+            try {
+                const response = await fetch('/backend/api/test_connection.php', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ 
+                        email: email,
+                        useProxy: useProxy
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    let successMsg = `连接测试成功 (${data.response_time}ms)`;
+                    
+                    if (data.proxy && data.proxy.used) {
+                        successMsg += ` - 代理: ${data.proxy.type.toUpperCase()} ${data.proxy.host}:${data.proxy.port}`;
+                    }
+                    
+                    showMessage(successMsg, 'success');
+                } else {
+                    let errorMsg = `连接测试失败: ${data.message}`;
+                    
+                    if (data.proxy && data.proxy.used && data.proxy.message) {
+                        errorMsg += ` (${data.proxy.message})`;
+                    }
+                    
+                    showMessage(errorMsg, 'error');
+                }
+                
+            } catch (error) {
+                console.error('测试连接失败:', error);
+                showMessage('测试连接失败: 网络错误', 'error');
+            }
         }
     </script>
 </body>
