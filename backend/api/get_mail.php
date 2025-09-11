@@ -1,29 +1,15 @@
 <?php
 /**
  * 邮件获取API
- * 为前端提供邮件获取服务，自动使用代理池（如果可用）
+ * 为前端提供邮件获取服务
  */
-
-// 防止PHP错误/警告污染JSON输出
-error_reporting(0);
-ini_set('display_errors', 0);
-ini_set('log_errors', 1);
-
-// 开始输出缓冲以捕获任何意外输出
-ob_start();
-
-// 清理任何意外输出并设置响应头
-if (ob_get_level()) {
-    ob_clean();
-}
 
 header('Content-Type: application/json; charset=utf-8');
 header('Access-Control-Allow-Origin: *');
 header('Access-Control-Allow-Methods: GET, POST');
 header('Access-Control-Allow-Headers: Content-Type');
 
-require_once '../utils/mail_fetcher.php';
-require_once '../utils/proxy_manager.php';
+require_once __DIR__ . '/../utils/simple_mail_fetcher.php';
 
 // 只允许POST请求
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
@@ -64,27 +50,18 @@ try {
         exit();
     }
     
-    // 使用完整的IMAP扩展检查函数
-    require_once '../utils/imap_check.php';
-    $imapInfo = checkImapExtension();
-    
-    if (!$imapInfo['available']) {
+    // 检查IMAP扩展
+    if (!function_exists('imap_open')) {
         echo json_encode([
             'success' => false,
-            'message' => $imapInfo['message'],
-            'diagnostics' => $imapInfo['diagnostics'],
-            'error_type' => 'extension_issue'
+            'message' => '服务器未安装IMAP扩展，请联系管理员'
         ]);
         $db->close();
         exit();
     }
     
-    // 检查代理池状态
-    $proxyManager = new ProxyManager();
-    $availableProxy = $proxyManager->getAvailableProxy('', false); // 获取任何类型的可用代理
-    
     // 创建邮件获取器实例
-    $fetcher = new MailFetcher(
+    $fetcher = new SimpleMailFetcher(
         $account['server'],
         $account['port'],
         $account['username'],
@@ -94,78 +71,34 @@ try {
     );
     
     // 连接并获取最新邮件
-    $startTime = microtime(true);
     if ($fetcher->connect()) {
         $result = $fetcher->getLatestMail();
         $fetcher->close();
-        $responseTime = round((microtime(true) - $startTime) * 1000);
         
         if ($result['success']) {
             if ($result['mail']) {
-                $responseData = [
+                echo json_encode([
                     'success' => true,
                     'message' => '邮件获取成功',
-                    'mail' => $result['mail'],
-                    'response_time' => $responseTime
-                ];
-                
-                // 添加代理使用信息
-                $currentProxy = $fetcher->getCurrentProxy();
-                if ($currentProxy) {
-                    $responseData['proxy'] = [
-                        'used' => true,
-                        'type' => $currentProxy['proxy_type'],
-                        'host' => $currentProxy['proxy_host'],
-                        'port' => $currentProxy['proxy_port'],
-                        'name' => $currentProxy['proxy_name'] ?? 'Unknown'
-                    ];
-                } else {
-                    $responseData['proxy'] = [
-                        'used' => false,
-                        'message' => $availableProxy ? '代理可用但未使用' : '无可用代理，使用直连'
-                    ];
-                }
-                
-                echo json_encode($responseData);
+                    'mail' => $result['mail']
+                ]);
             } else {
-                $responseData = [
+                echo json_encode([
                     'success' => true,
                     'message' => '邮箱中暂无邮件',
-                    'mail' => null,
-                    'response_time' => $responseTime
-                ];
-                
-                // 添加代理使用信息
-                $currentProxy = $fetcher->getCurrentProxy();
-                if ($currentProxy) {
-                    $responseData['proxy'] = [
-                        'used' => true,
-                        'type' => $currentProxy['proxy_type'],
-                        'host' => $currentProxy['proxy_host'],
-                        'port' => $currentProxy['proxy_port'],
-                        'name' => $currentProxy['proxy_name'] ?? 'Unknown'
-                    ];
-                } else {
-                    $responseData['proxy'] = [
-                        'used' => false,
-                        'message' => $availableProxy ? '代理可用但未使用' : '无可用代理，使用直连'
-                    ];
-                }
-                
-                echo json_encode($responseData);
+                    'mail' => null
+                ]);
             }
         } else {
             echo json_encode([
                 'success' => false,
-                'message' => $result['message'],
-                'response_time' => $responseTime
+                'message' => $result['message']
             ]);
         }
     } else {
         echo json_encode([
             'success' => false,
-            'message' => '无法连接到邮件服务器，请检查邮箱配置。' . 
-                        ($availableProxy ? ' 已尝试通过代理连接。' : ' 无可用代理，已尝试直连。')
+            'message' => '无法连接到邮件服务器，请检查邮箱配置'
         ]);
     }
     
