@@ -14,14 +14,16 @@ class ProxyImapClient {
     private $proxy;
     private $socket;
     private $connected = false;
+    private $protocol;
     
-    public function __construct($server, $port, $username, $password, $ssl = true, $proxy = null) {
+    public function __construct($server, $port, $username, $password, $ssl = true, $proxy = null, $protocol = 'imap') {
         $this->server = $server;
         $this->port = $port;
         $this->username = $username;
         $this->password = $password;
         $this->ssl = $ssl;
         $this->proxy = $proxy;
+        $this->protocol = strtolower($protocol);
     }
     
     /**
@@ -304,9 +306,20 @@ class ProxyImapClient {
     }
     
     /**
-     * Perform IMAP protocol handshake
+     * Perform protocol handshake (IMAP or POP3)
      */
     private function performImapHandshake() {
+        if ($this->protocol === 'pop3') {
+            return $this->performPop3Handshake();
+        } else {
+            return $this->performImapLoginHandshake();
+        }
+    }
+    
+    /**
+     * Perform IMAP handshake
+     */
+    private function performImapLoginHandshake() {
         // Read server greeting
         $greeting = $this->readLine();
         if (!preg_match('/^\*\s+OK/', $greeting)) {
@@ -322,6 +335,38 @@ class ProxyImapClient {
         $response = $this->readLine();
         if (!preg_match("/^$tag OK/", $response)) {
             throw new Exception('IMAP login failed: ' . $response);
+        }
+        
+        $this->connected = true;
+        return true;
+    }
+    
+    /**
+     * Perform POP3 handshake  
+     */
+    private function performPop3Handshake() {
+        // Read server greeting
+        $greeting = $this->readLine();
+        if (!preg_match('/^\+OK/', $greeting)) {
+            throw new Exception('Invalid POP3 server greeting: ' . $greeting);
+        }
+        
+        // Send USER command
+        $user_command = "USER " . $this->username . "\r\n";
+        fwrite($this->socket, $user_command);
+        
+        $response = $this->readLine();
+        if (!preg_match('/^\+OK/', $response)) {
+            throw new Exception('POP3 USER failed: ' . $response);
+        }
+        
+        // Send PASS command
+        $pass_command = "PASS " . $this->password . "\r\n";
+        fwrite($this->socket, $pass_command);
+        
+        $response = $this->readLine();
+        if (!preg_match('/^\+OK/', $response)) {
+            throw new Exception('POP3 PASS failed: ' . $response);
         }
         
         $this->connected = true;
@@ -446,13 +491,75 @@ class ProxyImapClient {
     }
 
     /**
+     * Find latest message by date instead of by ID
+     */
+    private function findLatestMessageByDate($messageIds) {
+        if (empty($messageIds)) {
+            return null;
+        }
+        
+        // If only one message, return it
+        if (count($messageIds) === 1) {
+            return $messageIds[0];
+        }
+        
+        $latestId = null;
+        $latestTimestamp = 0;
+        
+        // For each message, get its date and find the most recent
+        foreach ($messageIds as $id) {
+            try {
+                $tag = 'A00' . $id;
+                $command = "$tag FETCH $id (ENVELOPE)\r\n";
+                fwrite($this->socket, $command);
+                
+                $envelopeResponse = '';
+                while (($line = $this->readLine()) !== false) {
+                    $envelopeResponse .= $line;
+                    if (preg_match("/^$tag (OK|NO|BAD)/", $line)) {
+                        break;
+                    }
+                }
+                
+                // Extract date from envelope
+                if (preg_match('/ENVELOPE \([^"]*"([^"]*)"/', $envelopeResponse, $matches)) {
+                    $dateStr = $matches[1];
+                    $timestamp = strtotime($dateStr);
+                    if ($timestamp > $latestTimestamp) {
+                        $latestTimestamp = $timestamp;
+                        $latestId = $id;
+                    }
+                }
+            } catch (Exception $e) {
+                // If we can't get date for this message, skip it
+                error_log('Could not get date for message ' . $id . ': ' . $e->getMessage());
+                continue;
+            }
+        }
+        
+        // Fallback to highest ID if date parsing failed for all messages
+        return $latestId ?: max($messageIds);
+    }
+
+    /**
      * Get the latest email with improved parsing
      */
     public function getLatestEmail() {
         if (!$this->connected) {
-            throw new Exception('Not connected to IMAP server');
+            throw new Exception('Not connected to mail server');
         }
         
+        if ($this->protocol === 'pop3') {
+            return $this->getLatestEmailPOP3();
+        } else {
+            return $this->getLatestEmailIMAP();
+        }
+    }
+    
+    /**
+     * Get latest email using IMAP protocol
+     */
+    private function getLatestEmailIMAP() {
         $this->selectInbox();
         
         // Search for all messages
@@ -480,8 +587,8 @@ class ProxyImapClient {
             ];
         }
         
-        // Get the latest message (highest ID)
-        $latestId = max($messageIds);
+        // Get the latest message by date, not just highest ID
+        $latestId = $this->findLatestMessageByDate($messageIds);
         
         // Fetch message with better field selection
         $tag = 'A004';
@@ -536,6 +643,239 @@ class ProxyImapClient {
             'success' => true,
             'mail' => $mail
         ];
+    }
+    
+    /**
+     * Get latest email using POP3 protocol with proxy support
+     */
+    private function getLatestEmailPOP3() {
+        // Get number of messages
+        fwrite($this->socket, "STAT\r\n");
+        $response = $this->readLine();
+        
+        if (!preg_match('/^\+OK\s+(\d+)/', $response, $matches)) {
+            throw new Exception('POP3 STAT failed: ' . $response);
+        }
+        
+        $messageCount = (int)$matches[1];
+        
+        if ($messageCount === 0) {
+            return [
+                'success' => true,
+                'message' => '邮箱中没有邮件',
+                'mail' => null
+            ];
+        }
+        
+        // For POP3, messages are numbered 1 to N, and typically the highest number is the newest
+        // But to be sure, let's get the date of the last few messages and find the most recent
+        $latestMessageNum = $this->findLatestPOP3MessageByDate($messageCount);
+        
+        // Get the latest message headers and body
+        $mail = $this->retrievePOP3Message($latestMessageNum);
+        
+        return [
+            'success' => true,
+            'mail' => $mail
+        ];
+    }
+    
+    /**
+     * Find the latest POP3 message by comparing dates
+     */
+    private function findLatestPOP3MessageByDate($messageCount) {
+        $latestNum = $messageCount; // Default to last message
+        $latestTimestamp = 0;
+        
+        // Check last few messages to find the most recent by date
+        $checkCount = min(5, $messageCount); // Check last 5 messages or all if fewer
+        $startNum = max(1, $messageCount - $checkCount + 1);
+        
+        for ($num = $startNum; $num <= $messageCount; $num++) {
+            try {
+                // Get message headers
+                fwrite($this->socket, "TOP $num 0\r\n");
+                $response = $this->readLine();
+                
+                if (preg_match('/^\+OK/', $response)) {
+                    $headers = '';
+                    while (($line = $this->readLine()) !== false) {
+                        if (trim($line) === '.') {
+                            break;
+                        }
+                        $headers .= $line;
+                    }
+                    
+                    // Extract date from headers
+                    if (preg_match('/Date:\s*(.+?)(?:\r?\n|\r)(?![[:space:]])/i', $headers, $matches)) {
+                        $dateStr = trim($matches[1]);
+                        $timestamp = strtotime($dateStr);
+                        
+                        if ($timestamp > $latestTimestamp) {
+                            $latestTimestamp = $timestamp;
+                            $latestNum = $num;
+                        }
+                    }
+                }
+            } catch (Exception $e) {
+                // If we can't get headers for this message, skip it
+                error_log('Could not get headers for POP3 message ' . $num . ': ' . $e->getMessage());
+                continue;
+            }
+        }
+        
+        return $latestNum;
+    }
+    
+    /**
+     * Retrieve a specific POP3 message
+     */
+    private function retrievePOP3Message($messageNum) {
+        // Get full message
+        fwrite($this->socket, "RETR $messageNum\r\n");
+        $response = $this->readLine();
+        
+        if (!preg_match('/^\+OK/', $response)) {
+            throw new Exception('POP3 RETR failed: ' . $response);
+        }
+        
+        $fullMessage = '';
+        while (($line = $this->readLine()) !== false) {
+            if (trim($line) === '.') {
+                break;
+            }
+            $fullMessage .= $line;
+        }
+        
+        // Parse the message
+        return $this->parsePOP3Message($fullMessage);
+    }
+    
+    /**
+     * Parse POP3 message format
+     */
+    private function parsePOP3Message($message) {
+        // Split headers and body
+        $parts = preg_split('/\r?\n\r?\n/', $message, 2);
+        $headers = $parts[0] ?? '';
+        $body = $parts[1] ?? '';
+        
+        // Initialize default values
+        $mail = [
+            'subject' => 'No Subject',
+            'from' => 'Unknown',
+            'from_email' => 'unknown@unknown.com',
+            'from_name' => 'Unknown',
+            'to' => 'Unknown',
+            'date' => date('Y-m-d H:i:s'),
+            'body' => '',
+            'message_id' => '<unknown@unknown.com>',
+            'size' => strlen($message)
+        ];
+        
+        // Parse headers
+        if (preg_match('/From:\s*(.+?)(?:\r?\n|\r)(?![[:space:]])/i', $headers, $matches)) {
+            $fromHeader = trim($matches[1]);
+            $mail['from'] = $fromHeader;
+            
+            // Extract email and name from From header
+            if (preg_match('/(.*?)<([^>]+)>/', $fromHeader, $fromMatches)) {
+                $mail['from_name'] = trim($fromMatches[1], ' "');
+                $mail['from_email'] = trim($fromMatches[2]);
+            } elseif (preg_match('/([^@]+@[^@]+)/', $fromHeader, $emailMatches)) {
+                $mail['from_email'] = $emailMatches[1];
+                $mail['from_name'] = $emailMatches[1];
+            }
+        }
+        
+        if (preg_match('/Subject:\s*(.+?)(?:\r?\n|\r)(?![[:space:]])/i', $headers, $matches)) {
+            $mail['subject'] = $this->decodeImapUtf8(trim($matches[1]));
+        }
+        
+        if (preg_match('/To:\s*(.+?)(?:\r?\n|\r)(?![[:space:]])/i', $headers, $matches)) {
+            $mail['to'] = trim($matches[1]);
+        }
+        
+        if (preg_match('/Date:\s*(.+?)(?:\r?\n|\r)(?![[:space:]])/i', $headers, $matches)) {
+            $dateStr = trim($matches[1]);
+            $timestamp = strtotime($dateStr);
+            if ($timestamp !== false) {
+                $mail['date'] = date('Y-m-d H:i:s', $timestamp);
+            } else {
+                $mail['date'] = $dateStr;
+            }
+        }
+        
+        if (preg_match('/Message-ID:\s*(.+?)(?:\r?\n|\r)(?![[:space:]])/i', $headers, $matches)) {
+            $mail['message_id'] = trim($matches[1]);
+        }
+        
+        // Decode body
+        $mail['body'] = $this->decodePOP3Body($body, $headers);
+        
+        return $mail;
+    }
+    
+    /**
+     * Decode POP3 message body
+     */
+    private function decodePOP3Body($body, $headers) {
+        if (empty($body)) {
+            return '(邮件内容为空)';
+        }
+        
+        // Check for Content-Transfer-Encoding
+        $encoding = '';
+        if (preg_match('/Content-Transfer-Encoding:\s*(.+?)(?:\r?\n|\r)(?![[:space:]])/i', $headers, $matches)) {
+            $encoding = strtolower(trim($matches[1]));
+        }
+        
+        // Decode based on encoding
+        switch ($encoding) {
+            case 'base64':
+                $decoded = base64_decode($body);
+                if ($decoded !== false) {
+                    $body = $decoded;
+                }
+                break;
+            case 'quoted-printable':
+                $body = quoted_printable_decode($body);
+                break;
+            case '8bit':
+            case '7bit':
+            default:
+                // No decoding needed
+                break;
+        }
+        
+        // Handle charset conversion
+        $charset = 'UTF-8';
+        if (preg_match('/charset=([^;\s]+)/i', $headers, $matches)) {
+            $charset = trim($matches[1], '"\'');
+        }
+        
+        if (strtolower($charset) !== 'utf-8') {
+            try {
+                $converted = mb_convert_encoding($body, 'UTF-8', $charset);
+                if ($converted !== false && mb_check_encoding($converted, 'UTF-8')) {
+                    $body = $converted;
+                }
+            } catch (Exception $e) {
+                error_log('Charset conversion failed: ' . $e->getMessage());
+            }
+        }
+        
+        // Clean up and limit length
+        $body = trim($body);
+        if (empty($body)) {
+            return '(邮件内容为空)';
+        }
+        
+        if (mb_strlen($body, 'UTF-8') > 10000) {
+            $body = mb_substr($body, 0, 10000, 'UTF-8') . "\n\n(内容过长，已截断...)";
+        }
+        
+        return $body;
     }
     
     /**

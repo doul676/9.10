@@ -75,7 +75,7 @@ class EnhancedMailFetcher {
                 throw new Exception('不支持的协议: ' . $this->protocol . '，只支持IMAP和POP3');
             }
             
-            // 对于POP3，如果有代理，需要特殊处理
+            // 对于POP3，现在也支持代理连接了
             if ($this->protocol === 'pop3') {
                 return $this->connectPOP3WithProxy();
             }
@@ -88,7 +88,8 @@ class EnhancedMailFetcher {
                 $this->username,
                 $this->password,
                 $this->ssl,
-                $proxy
+                $proxy,
+                $this->protocol
             );
             
             if ($this->useProxy && $this->currentProxy) {
@@ -146,50 +147,45 @@ class EnhancedMailFetcher {
     }
     
     /**
-     * POP3协议连接（支持代理）
+     * POP3协议连接（现在支持代理）
      */
     private function connectPOP3WithProxy() {
-        // 检查IMAP扩展（POP3也使用IMAP扩展）
-        if (!function_exists('imap_open')) {
-            throw new Exception('PHP IMAP 扩展未安装，POP3协议需要IMAP扩展支持');
-        }
+        // 使用新的ProxyImapClient来支持POP3代理连接
+        $proxy = $this->useProxy ? $this->currentProxy : null;
+        $this->client = new ProxyImapClient(
+            $this->server,
+            $this->port,
+            $this->username,
+            $this->password,
+            $this->ssl,
+            $proxy,
+            'pop3'
+        );
         
-        // 构建POP3连接标志
-        $flags = '/pop3';
-        if ($this->ssl) {
-            $flags .= '/ssl';
-        }
-        if ($this->port !== 110 && $this->port !== 995) {
-            $flags .= ':' . $this->port;
-        }
-        
-        $mailbox = '{' . $this->server . $flags . '}INBOX';
-        
-        // 重要：PHP的imap_open不支持代理，需要明确告知用户
         if ($this->useProxy && $this->currentProxy) {
-            error_log('注意：POP3协议使用PHP的imap_open函数，不支持代理连接。代理设置: ' . 
-                     $this->currentProxy['proxy_type'] . '://' . 
+            error_log('POP3使用代理连接: ' . $this->currentProxy['proxy_type'] . '://' . 
                      $this->currentProxy['proxy_host'] . ':' . $this->currentProxy['proxy_port']);
-            
-            // 将代理标记为无效，因为POP3实际不能使用代理
-            $this->useProxy = false;
-            $this->currentProxy = null;
+        } else {
+            error_log('POP3使用直接连接到 ' . $this->server . ':' . $this->port);
         }
         
-        // 尝试直接连接（POP3协议限制）
+        // 尝试连接
         $startTime = microtime(true);
-        $this->client = @imap_open($mailbox, $this->username, $this->password);
+        $result = $this->client->connect();
         $responseTime = round((microtime(true) - $startTime) * 1000);
         
-        if (!$this->client) {
-            $error = imap_last_error();
-            error_log('POP3直连失败: ' . ($error ?: '未知错误'));
-            throw new Exception('POP3连接失败: ' . ($error ?: '未知错误') . ' (注意：POP3协议不支持代理连接)');
+        if ($result) {
+            // 更新代理统计（如果使用了代理）
+            if ($this->useProxy && $this->currentProxy) {
+                $this->proxyManager->updateProxyStats($this->currentProxy['id'], true, $responseTime);
+                error_log('POP3代理连接成功，响应时间: ' . $responseTime . 'ms');
+            } else {
+                error_log('POP3直接连接成功，响应时间: ' . $responseTime . 'ms');
+            }
+            return true;
+        } else {
+            throw new Exception('POP3连接失败，服务器未响应');
         }
-        
-        // 连接成功
-        error_log('POP3直连成功，响应时间: ' . $responseTime . 'ms (POP3协议不支持代理)');
-        return true;
     }
     
     /**
@@ -201,12 +197,7 @@ class EnhancedMailFetcher {
         }
         
         try {
-            // 对于POP3协议，使用IMAP扩展处理
-            if ($this->protocol === 'pop3') {
-                return $this->getLatestMailPOP3();
-            }
-            
-            // 对于IMAP协议，使用ProxyImapClient
+            // 现在两种协议都使用ProxyImapClient，统一处理
             $result = $this->client->getLatestEmail();
             return $result;
             
@@ -522,13 +513,8 @@ class EnhancedMailFetcher {
      */
     public function close() {
         if ($this->client) {
-            if ($this->protocol === 'pop3') {
-                // POP3使用imap_close
-                imap_close($this->client);
-            } else {
-                // IMAP使用ProxyImapClient的close方法
-                $this->client->close();
-            }
+            // 现在所有协议都使用ProxyImapClient的close方法
+            $this->client->close();
             $this->client = null;
         }
     }
@@ -538,15 +524,17 @@ class EnhancedMailFetcher {
      */
     public function testConnection() {
         try {
-            // 对于POP3协议，使用专门的测试方法
-            if ($this->protocol === 'pop3') {
-                return $this->testPOP3Connection();
-            }
-            
-            // 对于IMAP协议，使用ProxyImapClient
+            // 现在所有协议都使用ProxyImapClient，统一处理
             $proxy = $this->useProxy ? $this->currentProxy : null;
             $testClient = new ProxyImapClient(
                 $this->server,
+                $this->port,
+                $this->username,
+                $this->password,
+                $this->ssl,
+                $proxy,
+                $this->protocol
+            );
                 $this->port,
                 $this->username,
                 $this->password,
@@ -594,7 +582,8 @@ class EnhancedMailFetcher {
                         $this->username,
                         $this->password,
                         $this->ssl,
-                        null // 无代理
+                        null, // 无代理
+                        $this->protocol
                     );
                     
                     $directResult = $directClient->testConnection();
