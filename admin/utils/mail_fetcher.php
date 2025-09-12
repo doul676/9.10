@@ -179,7 +179,7 @@ class MailFetcher {
             $header = imap_headerinfo($this->connection, $mailNumber);
             
             // 获取邮件体
-            $body = $this->getMailBody($mailNumber);
+            $bodyInfo = $this->getMailBody($mailNumber);
             
             // 解码主题
             $subject = $this->decodeHeader($header->subject ?? '');
@@ -198,18 +198,33 @@ class MailFetcher {
             $timestamp = strtotime($date);
             $formattedDate = $timestamp ? date('Y-m-d H:i:s', $timestamp) : $date;
             
+            $mailData = [
+                'subject' => $subject,
+                'from' => $fromName,
+                'from_email' => $fromEmail,
+                'to' => $toEmail,
+                'date' => $formattedDate,
+                'message_id' => $header->message_id ?? '',
+                'size' => $header->Size ?? 0
+            ];
+            
+            // 处理邮件内容
+            if (is_array($bodyInfo)) {
+                $mailData['body_type'] = $bodyInfo['type'];
+                $mailData['body'] = $bodyInfo['content'];
+                $mailData['images'] = $bodyInfo['images'] ?? [];
+                $mailData['attachments'] = $bodyInfo['attachments'] ?? [];
+            } else {
+                // 兼容旧版本返回格式
+                $mailData['body_type'] = 'text';
+                $mailData['body'] = $bodyInfo;
+                $mailData['images'] = [];
+                $mailData['attachments'] = [];
+            }
+            
             return [
                 'success' => true,
-                'mail' => [
-                    'subject' => $subject,
-                    'from' => $fromName,
-                    'from_email' => $fromEmail,
-                    'to' => $toEmail,
-                    'date' => $formattedDate,
-                    'body' => $body,
-                    'message_id' => $header->message_id ?? '',
-                    'size' => $header->Size ?? 0
-                ]
+                'mail' => $mailData
             ];
             
         } catch (Exception $e) {
@@ -221,7 +236,7 @@ class MailFetcher {
     }
     
     /**
-     * 获取邮件正文
+     * 获取邮件正文和附件信息
      */
     private function getMailBody($mailNumber) {
         $structure = imap_fetchstructure($this->connection, $mailNumber);
@@ -229,23 +244,209 @@ class MailFetcher {
         if (!isset($structure->parts)) {
             // 简单邮件（无多部分）
             $body = imap_fetchbody($this->connection, $mailNumber, 1);
-            return $this->decodeBody($body, $structure);
+            $decodedBody = $this->decodeBody($body, $structure);
+            
+            // 检查是否是图片内容
+            if ($structure->type == 5) { // IMAGE type
+                return [
+                    'type' => 'image',
+                    'content' => $decodedBody,
+                    'subtype' => strtolower($structure->subtype ?? ''),
+                    'encoding' => $structure->encoding ?? 0
+                ];
+            }
+            
+            return [
+                'type' => 'text',
+                'content' => $decodedBody
+            ];
         }
         
         // 多部分邮件
-        $body = '';
-        for ($i = 1; $i <= count($structure->parts); $i++) {
-            $part = $structure->parts[$i - 1];
+        $textBody = '';
+        $htmlBody = '';
+        $images = [];
+        $attachments = [];
+        
+        $this->parseMailParts($structure->parts, $mailNumber, '', $textBody, $htmlBody, $images, $attachments);
+        
+        // 如果有HTML内容，优先使用HTML，否则使用文本
+        $mainContent = $htmlBody ?: $textBody;
+        
+        // 如果没有文本内容但有图片，显示图片
+        if (empty($mainContent) && !empty($images)) {
+            return [
+                'type' => 'image',
+                'content' => '',
+                'images' => $images,
+                'attachments' => $attachments
+            ];
+        }
+        
+        return [
+            'type' => !empty($htmlBody) ? 'html' : 'text',
+            'content' => $mainContent ?: '无法读取邮件内容',
+            'images' => $images,
+            'attachments' => $attachments
+        ];
+    }
+    
+    /**
+     * 递归解析邮件各部分
+     */
+    private function parseMailParts($parts, $mailNumber, $prefix, &$textBody, &$htmlBody, &$images, &$attachments) {
+        foreach ($parts as $partIndex => $part) {
+            $partNumber = $prefix . ($partIndex + 1);
             
-            // 查找文本部分
-            if ($part->type == 0) { // 文本类型
-                $partBody = imap_fetchbody($this->connection, $mailNumber, $i);
-                $body .= $this->decodeBody($partBody, $part);
-                break; // 只取第一个文本部分
+            if (isset($part->parts)) {
+                // 嵌套部分，递归处理
+                $this->parseMailParts($part->parts, $mailNumber, $partNumber . '.', $textBody, $htmlBody, $images, $attachments);
+            } else {
+                // 处理具体内容部分
+                $this->procesMailPart($part, $mailNumber, $partNumber, $textBody, $htmlBody, $images, $attachments);
+            }
+        }
+    }
+    
+    /**
+     * 处理单个邮件部分
+     */
+    private function procesMailPart($part, $mailNumber, $partNumber, &$textBody, &$htmlBody, &$images, &$attachments) {
+        // 获取MIME类型
+        $mimeType = $this->getMimeType($part);
+        $disposition = $this->getDisposition($part);
+        $filename = $this->getFilename($part);
+        
+        // 获取部分内容
+        $partBody = imap_fetchbody($this->connection, $mailNumber, $partNumber);
+        $decodedBody = $this->decodeBody($partBody, $part);
+        
+        // 根据类型和disposition处理
+        if ($part->type == 0) { // TEXT
+            if (strtolower($part->subtype) == 'plain' && empty($textBody)) {
+                $textBody = $decodedBody;
+            } elseif (strtolower($part->subtype) == 'html' && empty($htmlBody)) {
+                $htmlBody = $decodedBody;
+            }
+        } elseif ($part->type == 5) { // IMAGE
+            $imageInfo = [
+                'filename' => $filename ?: 'image_' . $partNumber . '.' . strtolower($part->subtype),
+                'mime_type' => $mimeType,
+                'size' => $part->bytes ?? strlen($decodedBody),
+                'content' => base64_encode($decodedBody),
+                'part_number' => $partNumber,
+                'subtype' => strtolower($part->subtype ?? '')
+            ];
+            
+            if ($disposition == 'inline' || empty($disposition)) {
+                $images[] = $imageInfo;
+            } else {
+                $attachments[] = $imageInfo;
+            }
+        } else {
+            // 其他类型作为附件处理
+            if (!empty($filename) || $disposition == 'attachment') {
+                $attachments[] = [
+                    'filename' => $filename ?: 'attachment_' . $partNumber,
+                    'mime_type' => $mimeType,
+                    'size' => $part->bytes ?? strlen($decodedBody),
+                    'content' => base64_encode($decodedBody),
+                    'part_number' => $partNumber,
+                    'type' => $this->getTypeDescription($part->type)
+                ];
+            }
+        }
+    }
+    
+    /**
+     * 获取MIME类型
+     */
+    private function getMimeType($part) {
+        $primaryTypes = ['TEXT', 'MULTIPART', 'MESSAGE', 'APPLICATION', 'AUDIO', 'IMAGE', 'VIDEO', 'OTHER'];
+        $primaryType = $primaryTypes[$part->type] ?? 'OTHER';
+        $subType = $part->subtype ?? '';
+        return strtolower($primaryType . '/' . $subType);
+    }
+    
+    /**
+     * 获取disposition
+     */
+    private function getDisposition($part) {
+        if (isset($part->disposition)) {
+            return strtolower($part->disposition);
+        }
+        return '';
+    }
+    
+    /**
+     * 获取文件名
+     */
+    private function getFilename($part) {
+        $filename = '';
+        
+        // 从disposition参数中获取文件名
+        if (isset($part->dparameters)) {
+            foreach ($part->dparameters as $param) {
+                if (strtolower($param->attribute) == 'filename') {
+                    $filename = $param->value;
+                    break;
+                }
             }
         }
         
-        return $body ?: '无法读取邮件内容';
+        // 从parameters中获取文件名
+        if (empty($filename) && isset($part->parameters)) {
+            foreach ($part->parameters as $param) {
+                if (strtolower($param->attribute) == 'name') {
+                    $filename = $param->value;
+                    break;
+                }
+            }
+        }
+        
+        return $this->decodeFilename($filename);
+    }
+    
+    /**
+     * 解码文件名
+     */
+    private function decodeFilename($filename) {
+        if (empty($filename)) {
+            return '';
+        }
+        
+        $decoded = '';
+        $elements = imap_mime_header_decode($filename);
+        
+        foreach ($elements as $element) {
+            $charset = $element->charset ?? 'UTF-8';
+            $text = $element->text;
+            
+            if (strtolower($charset) !== 'utf-8' && $charset !== 'default') {
+                $text = mb_convert_encoding($text, 'UTF-8', $charset);
+            }
+            
+            $decoded .= $text;
+        }
+        
+        return $decoded;
+    }
+    
+    /**
+     * 获取类型描述
+     */
+    private function getTypeDescription($type) {
+        $types = [
+            0 => 'text',
+            1 => 'multipart', 
+            2 => 'message',
+            3 => 'application',
+            4 => 'audio',
+            5 => 'image',
+            6 => 'video',
+            7 => 'other'
+        ];
+        return $types[$type] ?? 'unknown';
     }
     
     /**

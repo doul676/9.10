@@ -243,6 +243,154 @@
             word-break: break-word;
         }
         
+        /* Image display styles */
+        .mail-images {
+            margin-top: 20px;
+        }
+        
+        .image-container {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15px;
+            margin-top: 15px;
+        }
+        
+        .image-item {
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            overflow: hidden;
+            background: white;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            transition: transform 0.2s ease;
+        }
+        
+        .image-item:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        }
+        
+        .image-item img {
+            max-width: 300px;
+            max-height: 200px;
+            width: auto;
+            height: auto;
+            display: block;
+            cursor: pointer;
+        }
+        
+        .image-info {
+            padding: 10px;
+            font-size: 12px;
+            color: #666;
+            border-top: 1px solid #eee;
+        }
+        
+        /* Attachments display styles */
+        .mail-attachments {
+            margin-top: 20px;
+        }
+        
+        .attachment-list {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            margin-top: 15px;
+        }
+        
+        .attachment-item {
+            display: flex;
+            align-items: center;
+            padding: 12px 15px;
+            background: white;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            transition: background-color 0.2s ease;
+        }
+        
+        .attachment-item:hover {
+            background: #f8f9fa;
+        }
+        
+        .attachment-icon {
+            font-size: 24px;
+            margin-right: 12px;
+            color: #667eea;
+        }
+        
+        .attachment-info {
+            flex: 1;
+        }
+        
+        .attachment-name {
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 2px;
+        }
+        
+        .attachment-meta {
+            font-size: 12px;
+            color: #666;
+        }
+        
+        .attachment-download {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: 500;
+            transition: all 0.2s ease;
+        }
+        
+        .attachment-download:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 3px 8px rgba(102, 126, 234, 0.3);
+        }
+        
+        /* Image modal styles */
+        .image-modal {
+            display: none;
+            position: fixed;
+            z-index: 3000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0,0,0,0.8);
+            animation: fadeIn 0.3s ease;
+        }
+        
+        .image-modal.show {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .image-modal-content {
+            max-width: 90%;
+            max-height: 90%;
+            border-radius: 10px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.3);
+            animation: slideIn 0.3s ease;
+        }
+        
+        .image-modal-close {
+            position: absolute;
+            top: 20px;
+            right: 30px;
+            color: white;
+            font-size: 40px;
+            font-weight: bold;
+            cursor: pointer;
+            z-index: 3001;
+        }
+        
+        .image-modal-close:hover {
+            opacity: 0.7;
+        }
+        
         .message {
             padding: 15px;
             border-radius: 10px;
@@ -398,7 +546,25 @@
             </div>
             
             <div class="mail-body" id="mailBody"></div>
+            
+            <!-- Images section -->
+            <div class="mail-images" id="mailImages" style="display: none;">
+                <h4 style="color: #667eea; margin-bottom: 10px;">📷 图片内容</h4>
+                <div class="image-container" id="imageContainer"></div>
+            </div>
+            
+            <!-- Attachments section -->
+            <div class="mail-attachments" id="mailAttachments" style="display: none;">
+                <h4 style="color: #667eea; margin-bottom: 10px;">📎 附件</h4>
+                <div class="attachment-list" id="attachmentList"></div>
+            </div>
         </div>
+    </div>
+    
+    <!-- Image Modal -->
+    <div id="imageModal" class="image-modal">
+        <span class="image-modal-close" onclick="closeImageModal()">&times;</span>
+        <img class="image-modal-content" id="modalImage">
     </div>
     
     <script>
@@ -472,10 +638,164 @@
             document.getElementById('mailFrom').textContent = mail.from || '未知';
             document.getElementById('mailTo').textContent = mail.to || '未知';
             document.getElementById('mailDate').textContent = mail.date || '未知';
-            // 邮件大小不再显示，按要求隐藏
-            document.getElementById('mailBody').textContent = mail.body || '(邮件内容为空)';
+            
+            // 显示邮件正文
+            const mailBodyElement = document.getElementById('mailBody');
+            if (mail.body_type === 'html') {
+                mailBodyElement.innerHTML = mail.body || '(邮件内容为空)';
+            } else {
+                mailBodyElement.textContent = mail.body || '(邮件内容为空)';
+            }
+            
+            // 显示图片
+            displayImages(mail.images || []);
+            
+            // 显示附件
+            displayAttachments(mail.attachments || []);
             
             document.getElementById('mailDisplay').style.display = 'block';
+        }
+        
+        function displayImages(images) {
+            const imagesSection = document.getElementById('mailImages');
+            const imageContainer = document.getElementById('imageContainer');
+            
+            if (images && images.length > 0) {
+                imageContainer.innerHTML = '';
+                
+                images.forEach((image, index) => {
+                    const imageItem = document.createElement('div');
+                    imageItem.className = 'image-item';
+                    
+                    const img = document.createElement('img');
+                    img.src = 'data:' + image.mime_type + ';base64,' + image.content;
+                    img.alt = image.filename;
+                    img.onclick = () => openImageModal(img.src);
+                    
+                    const imageInfo = document.createElement('div');
+                    imageInfo.className = 'image-info';
+                    imageInfo.innerHTML = `
+                        <div class="attachment-name">${escapeHtml(image.filename)}</div>
+                        <div class="attachment-meta">${formatFileSize(image.size)} • ${image.mime_type}</div>
+                    `;
+                    
+                    imageItem.appendChild(img);
+                    imageItem.appendChild(imageInfo);
+                    imageContainer.appendChild(imageItem);
+                });
+                
+                imagesSection.style.display = 'block';
+            } else {
+                imagesSection.style.display = 'none';
+            }
+        }
+        
+        function displayAttachments(attachments) {
+            const attachmentsSection = document.getElementById('mailAttachments');
+            const attachmentList = document.getElementById('attachmentList');
+            
+            if (attachments && attachments.length > 0) {
+                attachmentList.innerHTML = '';
+                
+                attachments.forEach((attachment, index) => {
+                    const attachmentItem = document.createElement('div');
+                    attachmentItem.className = 'attachment-item';
+                    
+                    const icon = getFileIcon(attachment.mime_type);
+                    
+                    attachmentItem.innerHTML = `
+                        <div class="attachment-icon">${icon}</div>
+                        <div class="attachment-info">
+                            <div class="attachment-name">${escapeHtml(attachment.filename)}</div>
+                            <div class="attachment-meta">${formatFileSize(attachment.size)} • ${attachment.mime_type}</div>
+                        </div>
+                        <button class="attachment-download" onclick="downloadAttachment('${attachment.content}', '${escapeHtml(attachment.filename)}', '${attachment.mime_type}')">
+                            下载
+                        </button>
+                    `;
+                    
+                    attachmentList.appendChild(attachmentItem);
+                });
+                
+                attachmentsSection.style.display = 'block';
+            } else {
+                attachmentsSection.style.display = 'none';
+            }
+        }
+        
+        function getFileIcon(mimeType) {
+            if (mimeType.startsWith('image/')) return '🖼️';
+            if (mimeType.startsWith('video/')) return '🎥';
+            if (mimeType.startsWith('audio/')) return '🎵';
+            if (mimeType.includes('pdf')) return '📄';
+            if (mimeType.includes('word') || mimeType.includes('doc')) return '📝';
+            if (mimeType.includes('excel') || mimeType.includes('sheet')) return '📊';
+            if (mimeType.includes('zip') || mimeType.includes('rar')) return '📦';
+            return '📎';
+        }
+        
+        function openImageModal(src) {
+            const modal = document.getElementById('imageModal');
+            const modalImg = document.getElementById('modalImage');
+            modal.classList.add('show');
+            modalImg.src = src;
+            document.body.style.overflow = 'hidden';
+        }
+        
+        function closeImageModal() {
+            const modal = document.getElementById('imageModal');
+            modal.classList.remove('show');
+            document.body.style.overflow = '';
+        }
+        
+        // Close modal when clicking outside
+        document.getElementById('imageModal').addEventListener('click', function(e) {
+            if (e.target === this) {
+                closeImageModal();
+            }
+        });
+        
+        function downloadAttachment(base64Content, filename, mimeType) {
+            try {
+                // Convert base64 to blob
+                const byteCharacters = atob(base64Content);
+                const byteNumbers = new Array(byteCharacters.length);
+                for (let i = 0; i < byteCharacters.length; i++) {
+                    byteNumbers[i] = byteCharacters.charCodeAt(i);
+                }
+                const byteArray = new Uint8Array(byteNumbers);
+                const blob = new Blob([byteArray], { type: mimeType });
+                
+                // Create download link
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.style.display = 'none';
+                a.href = url;
+                a.download = filename;
+                document.body.appendChild(a);
+                a.click();
+                window.URL.revokeObjectURL(url);
+                document.body.removeChild(a);
+                
+                showToast('附件下载已开始', 'success');
+            } catch (error) {
+                console.error('Download error:', error);
+                showToast('附件下载失败', 'error');
+            }
+        }
+        
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+        
+        function formatFileSize(bytes) {
+            if (bytes === 0) return '0 B';
+            const k = 1024;
+            const sizes = ['B', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
         }
         
         // Toast notification system
@@ -533,14 +853,6 @@
         function isValidEmail(email) {
             const re = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
             return re.test(email);
-        }
-        
-        function formatFileSize(bytes) {
-            if (bytes === 0) return '0 B';
-            const k = 1024;
-            const sizes = ['B', 'KB', 'MB', 'GB'];
-            const i = Math.floor(Math.log(bytes) / Math.log(k));
-            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
         }
     </script>
 </body>

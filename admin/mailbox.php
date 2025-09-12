@@ -1813,11 +1813,70 @@ try {
         
         // Refresh server table
         function refreshServerTable() {
-            // For now, we'll reload the page to refresh the table
-            // In a more advanced implementation, we could refresh just the table content
-            setTimeout(() => {
-                window.location.reload();
-            }, 1500);
+            // Fetch updated server list and refresh table content dynamically
+            fetch('api.php?action=get_servers')
+            .then(response => response.json())
+            .then(result => {
+                if (result.success) {
+                    updateServerTable(result.servers);
+                    updateServerDropdowns(result.servers);
+                } else {
+                    console.error('Failed to refresh server table:', result.message);
+                }
+            })
+            .catch(error => {
+                console.error('Error refreshing server table:', error);
+            });
+        }
+        
+        // Update server table content
+        function updateServerTable(servers) {
+            const tableBody = document.getElementById('serverTableBody');
+            if (!tableBody) return;
+            
+            // Clear existing content
+            tableBody.innerHTML = '';
+            
+            // Add new rows
+            servers.forEach((server, index) => {
+                const row = document.createElement('tr');
+                row.id = `server-row-${server.id}`;
+                row.innerHTML = `
+                    <td>
+                        <input type="checkbox" class="server-checkbox" value="${server.id}" onchange="updateBatchDeleteServersButton()">
+                    </td>
+                    <td>${index + 1}</td>
+                    <td>${escapeHtml(server.server_name)}</td>
+                    <td>${escapeHtml(server.server_address)}</td>
+                    <td>
+                        <div class="actions">
+                            <button type="button" class="btn btn-small" onclick="editServer(${JSON.stringify(server).replace(/"/g, '&quot;')})">编辑</button>
+                            <button type="button" class="btn btn-danger btn-small" onclick="deleteServer(${server.id})">删除</button>
+                        </div>
+                    </td>
+                `;
+                tableBody.appendChild(row);
+            });
+            
+            // Update server count in header
+            const headerElement = tableBody.closest('.card').querySelector('.card-header h4');
+            if (headerElement) {
+                headerElement.textContent = `已添加的服务器地址 (共 ${servers.length} 个)`;
+            }
+            
+            // Reset checkbox states
+            const selectAllServers = document.getElementById('selectAllServers');
+            if (selectAllServers) {
+                selectAllServers.checked = false;
+            }
+            updateBatchDeleteServersButton();
+        }
+        
+        // Utility function to escape HTML
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
         }
     </script>
 </body>
