@@ -17,6 +17,35 @@ if (isset($_GET['logout'])) {
 $message = '';
 $error = '';
 
+/**
+ * 生成自动代理名称
+ */
+function generateProxyName($db, $proxyType) {
+    $prefix = $proxyType === 'socks5' ? 'SOCKS5' : 'HTTP';
+    $tableName = $proxyType === 'socks5' ? 'socks5_proxies' : 'http_proxies';
+    
+    // 查找已存在的"未命名"代理的最大编号
+    $result = $db->query("SELECT name FROM {$tableName} WHERE name LIKE '未命名%' ORDER BY name DESC LIMIT 1");
+    $lastUnnamed = $result->fetchArray();
+    
+    $nextNumber = 1;
+    if ($lastUnnamed && preg_match('/未命名(\d+)/', $lastUnnamed['name'], $matches)) {
+        $nextNumber = (int)$matches[1] + 1;
+    }
+    
+    // 检查生成的名称是否已存在，如果存在则递增编号
+    while (true) {
+        $generatedName = "未命名{$nextNumber}";
+        $checkResult = $db->query("SELECT COUNT(*) as count FROM {$tableName} WHERE name = '{$generatedName}'");
+        $count = $checkResult->fetchArray()['count'];
+        
+        if ($count == 0) {
+            return $generatedName;
+        }
+        $nextNumber++;
+    }
+}
+
 // 处理代理操作
 if ($_POST) {
     $action = $_POST['action'] ?? '';
@@ -70,7 +99,12 @@ if ($_POST) {
             $password = $_POST['password'] ?? '';
             $remarks = $_POST['remarks'] ?? '';
             
-            if ($name && $host && $port) {
+            // 如果名称为空，自动生成名称
+            if (empty($name)) {
+                $name = generateProxyName($db, $proxyType);
+            }
+            
+            if ($host && $port) {
                 $beijingTime = new DateTime('now', new DateTimeZone('Asia/Shanghai'));
                 $stmt = $db->prepare("INSERT INTO {$tableName} (name, host, port, username, password, remarks, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
                 $stmt->bindValue(1, $name);
@@ -103,7 +137,12 @@ if ($_POST) {
             $password = $_POST['password'] ?? '';
             $remarks = $_POST['remarks'] ?? '';
             
-            if ($id > 0 && $name && $host && $port) {
+            // 如果名称为空，自动生成名称
+            if (empty($name)) {
+                $name = generateProxyName($db, $proxyType);
+            }
+            
+            if ($id > 0 && $host && $port) {
                 $beijingTime = new DateTime('now', new DateTimeZone('Asia/Shanghai'));
                 $stmt = $db->prepare("UPDATE {$tableName} SET name=?, host=?, port=?, username=?, password=?, remarks=?, updated_at=? WHERE id=?");
                 $stmt->bindValue(1, $name);
@@ -141,8 +180,7 @@ if ($_POST) {
 }
 
 // 获取代理列表
-$httpProxies = [];
-$socks5Proxies = [];
+$allProxies = [];
 try {
     $db = new SQLite3('../db/mail.sqlite');
     
@@ -181,22 +219,31 @@ try {
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )');
     
-    // 获取HTTP代理
-    $result = $db->query('SELECT * FROM http_proxies ORDER BY created_at DESC');
+    // 获取HTTP代理并添加类型标识
+    $result = $db->query('SELECT *, "http" as proxy_type FROM http_proxies ORDER BY created_at DESC');
     while ($row = $result->fetchArray()) {
-        $httpProxies[] = $row;
+        $allProxies[] = $row;
     }
     
-    // 获取SOCKS5代理
-    $result = $db->query('SELECT * FROM socks5_proxies ORDER BY created_at DESC');
+    // 获取SOCKS5代理并添加类型标识
+    $result = $db->query('SELECT *, "socks5" as proxy_type FROM socks5_proxies ORDER BY created_at DESC');
     while ($row = $result->fetchArray()) {
-        $socks5Proxies[] = $row;
+        $allProxies[] = $row;
     }
+    
+    // 按创建时间排序所有代理
+    usort($allProxies, function($a, $b) {
+        return strtotime($b['created_at']) - strtotime($a['created_at']);
+    });
     
     $db->close();
 } catch (Exception $e) {
     $error = '获取代理列表失败：' . $e->getMessage();
 }
+
+// 为兼容性保留原有变量
+$httpProxies = array_filter($allProxies, function($proxy) { return $proxy['proxy_type'] === 'http'; });
+$socks5Proxies = array_filter($allProxies, function($proxy) { return $proxy['proxy_type'] === 'socks5'; });
 ?>
 <!DOCTYPE html>
 <html lang="zh-CN">
@@ -667,44 +714,6 @@ try {
             border-left-color: #ef4444;
         }
         
-        /* Tabs */
-        .tabs {
-            display: flex;
-            border-bottom: 2px solid #f1f5f9;
-            margin-bottom: 20px;
-        }
-        
-        .tab {
-            padding: 15px 25px;
-            cursor: pointer;
-            border-bottom: 3px solid transparent;
-            transition: var(--transition);
-            background: none;
-            border: none;
-            font-size: 16px;
-            font-weight: 500;
-            color: #64748b;
-        }
-        
-        .tab.active {
-            color: var(--primary-color);
-            border-bottom-color: var(--primary-color);
-            background: rgba(102, 126, 234, 0.05);
-        }
-        
-        .tab:hover:not(.active) {
-            color: #374151;
-            background: #f8fafc;
-        }
-        
-        .tab-content {
-            display: none;
-        }
-        
-        .tab-content.active {
-            display: block;
-        }
-        
         /* Status indicators */
         .status {
             padding: 4px 8px;
@@ -738,6 +747,17 @@ try {
                 opacity: 1;
                 transform: translateY(0);
             }
+        }
+        
+        /* Enhanced proxy type indicators */
+        .proxy-type-http {
+            background: #dcfce7;
+            color: #166534;
+        }
+        
+        .proxy-type-socks5 {
+            background: #e0e7ff;
+            color: #3730a3;
         }
     </style>
 </head>
@@ -788,193 +808,101 @@ try {
             <!-- Toast notification container -->
             <div id="toast-container" class="toast-container"></div>
             
-            <!-- Tabs for proxy types -->
+            <!-- Unified Proxy Management -->
             <div class="card">
-                <div class="card-body" style="padding: 0;">
-                    <div class="tabs">
-                        <button class="tab active" onclick="switchTab('http')">HTTP代理</button>
-                        <button class="tab" onclick="switchTab('socks5')">SOCKS5代理</button>
+                <div class="card-header">
+                    <h2 class="card-title">代理池管理</h2>
+                </div>
+                <div class="card-body">
+                    <div class="button-group" style="display: flex; gap: 15px; flex-wrap: wrap;">
+                        <button type="button" class="btn" onclick="openAddModal('http')">
+                            ➕ 添加HTTP代理
+                        </button>
+                        <button type="button" class="btn" onclick="openAddModal('socks5')">
+                            ➕ 添加SOCKS5代理
+                        </button>
+                        <button type="button" class="btn btn-success" onclick="testAllProxies()">
+                            🔍 测试所有代理
+                        </button>
                     </div>
+                    <p style="margin-top: 15px; color: #64748b;">管理HTTP和SOCKS5代理服务器配置，统一展示所有代理类型</p>
                 </div>
             </div>
             
-            <!-- HTTP Proxy Tab -->
-            <div id="http-tab" class="tab-content active">
-                <div class="card">
-                    <div class="card-header">
-                        <h2 class="card-title">HTTP代理管理</h2>
-                    </div>
-                    <div class="card-body">
-                        <div class="button-group" style="display: flex; gap: 15px; flex-wrap: wrap;">
-                            <button type="button" class="btn" onclick="openAddModal('http')">
-                                ➕ 添加HTTP代理
-                            </button>
-                            <button type="button" class="btn btn-success" onclick="testAllProxies('http')">
-                                🔍 测试所有HTTP代理
-                            </button>
-                        </div>
-                        <p style="margin-top: 15px; color: #64748b;">管理HTTP代理服务器配置</p>
-                    </div>
+            <!-- Unified Proxy List -->
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title">代理列表 (共 <?php echo count($allProxies); ?> 个：<?php echo count($httpProxies); ?> 个HTTP，<?php echo count($socks5Proxies); ?> 个SOCKS5)</h2>
                 </div>
-                
-                <div class="card">
-                    <div class="card-header">
-                        <h2 class="card-title">HTTP代理列表 (共 <?php echo count($httpProxies); ?> 个)</h2>
-                    </div>
-                    <div class="card-body">
-                        <?php if (empty($httpProxies)): ?>
-                            <p>暂无HTTP代理，请添加第一个HTTP代理。</p>
-                        <?php else: ?>
-                            <div class="table-container">
-                                <div style="margin-bottom: 15px; display: flex; gap: 10px; align-items: center;">
-                                    <button type="button" class="btn btn-danger" onclick="batchDelete('http')" id="batchDeleteHttpBtn" style="display: none;">
-                                        🗑️ 批量删除选中
-                                    </button>
-                                    <span id="selectedHttpCount" style="color: #64748b; font-size: 14px;"></span>
-                                </div>
-                                <table class="table">
-                                    <thead>
-                                        <tr>
-                                            <th style="width: 40px;">
-                                                <input type="checkbox" id="selectAllHttp" onchange="toggleSelectAll('http')">
-                                            </th>
-                                            <th>序号</th>
-                                            <th>代理名称</th>
-                                            <th>地址:端口</th>
-                                            <th>用户名</th>
-                                            <th>状态</th>
-                                            <th>响应时间</th>
-                                            <th>成功/失败</th>
-                                            <th>备注</th>
-                                            <th>添加时间</th>
-                                            <th>操作</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        <?php 
-                                        $index = 1;
-                                        foreach ($httpProxies as $proxy): ?>
-                                            <tr>
-                                                <td>
-                                                    <input type="checkbox" class="http-checkbox" value="<?php echo $proxy['id']; ?>" onchange="updateBatchDeleteButton('http')">
-                                                </td>
-                                                <td><?php echo $index++; ?></td>
-                                                <td><?php echo htmlspecialchars($proxy['name']); ?></td>
-                                                <td><?php echo htmlspecialchars($proxy['host']) . ':' . $proxy['port']; ?></td>
-                                                <td><?php echo htmlspecialchars($proxy['username'] ?: '无'); ?></td>
-                                                <td>
-                                                    <span class="status <?php echo $proxy['status'] ? 'active' : 'inactive'; ?>">
-                                                        <?php echo $proxy['status'] ? '正常' : '异常'; ?>
-                                                    </span>
-                                                </td>
-                                                <td><?php echo $proxy['response_time'] ? $proxy['response_time'] . 'ms' : '-'; ?></td>
-                                                <td><?php echo $proxy['success_count'] . '/' . $proxy['fail_count']; ?></td>
-                                                <td><?php echo htmlspecialchars($proxy['remarks'] ?? ''); ?></td>
-                                                <td><?php echo htmlspecialchars($proxy['created_at']); ?></td>
-                                                <td>
-                                                    <div class="actions">
-                                                        <button type="button" class="btn btn-small" onclick="openEditModal('http', <?php echo htmlspecialchars(json_encode($proxy)); ?>)">编辑</button>
-                                                        <button type="button" class="btn btn-small btn-success" onclick="testProxy('http', <?php echo $proxy['id']; ?>)" id="test-btn-http-<?php echo $proxy['id']; ?>">测试</button>
-                                                        <button type="button" class="btn btn-danger btn-small" onclick="deleteProxy('http', <?php echo $proxy['id']; ?>)">删除</button>
-                                                    </div>
-                                                </td>
-                                            </tr>
-                                        <?php endforeach; ?>
-                                    </tbody>
-                                </table>
+                <div class="card-body">
+                    <?php if (empty($allProxies)): ?>
+                        <p>暂无代理，请添加第一个代理。</p>
+                    <?php else: ?>
+                        <div class="table-container">
+                            <div style="margin-bottom: 15px; display: flex; gap: 10px; align-items: center;">
+                                <button type="button" class="btn btn-danger" onclick="batchDeleteSelected()" id="batchDeleteBtn" style="display: none;">
+                                    🗑️ 批量删除选中
+                                </button>
+                                <span id="selectedCount" style="color: #64748b; font-size: 14px;"></span>
                             </div>
-                        <?php endif; ?>
-                    </div>
-                </div>
-            </div>
-            
-            <!-- SOCKS5 Proxy Tab -->
-            <div id="socks5-tab" class="tab-content">
-                <div class="card">
-                    <div class="card-header">
-                        <h2 class="card-title">SOCKS5代理管理</h2>
-                    </div>
-                    <div class="card-body">
-                        <div class="button-group" style="display: flex; gap: 15px; flex-wrap: wrap;">
-                            <button type="button" class="btn" onclick="openAddModal('socks5')">
-                                ➕ 添加SOCKS5代理
-                            </button>
-                            <button type="button" class="btn btn-success" onclick="testAllProxies('socks5')">
-                                🔍 测试所有SOCKS5代理
-                            </button>
-                        </div>
-                        <p style="margin-top: 15px; color: #64748b;">管理SOCKS5代理服务器配置</p>
-                    </div>
-                </div>
-                
-                <div class="card">
-                    <div class="card-header">
-                        <h2 class="card-title">SOCKS5代理列表 (共 <?php echo count($socks5Proxies); ?> 个)</h2>
-                    </div>
-                    <div class="card-body">
-                        <?php if (empty($socks5Proxies)): ?>
-                            <p>暂无SOCKS5代理，请添加第一个SOCKS5代理。</p>
-                        <?php else: ?>
-                            <div class="table-container">
-                                <div style="margin-bottom: 15px; display: flex; gap: 10px; align-items: center;">
-                                    <button type="button" class="btn btn-danger" onclick="batchDelete('socks5')" id="batchDeleteSocks5Btn" style="display: none;">
-                                        🗑️ 批量删除选中
-                                    </button>
-                                    <span id="selectedSocks5Count" style="color: #64748b; font-size: 14px;"></span>
-                                </div>
-                                <table class="table">
-                                    <thead>
+                            <table class="table">
+                                <thead>
+                                    <tr>
+                                        <th style="width: 40px;">
+                                            <input type="checkbox" id="selectAll" onchange="toggleSelectAll()">
+                                        </th>
+                                        <th>序号</th>
+                                        <th>代理类型</th>
+                                        <th>代理名称</th>
+                                        <th>地址:端口</th>
+                                        <th>用户名</th>
+                                        <th>状态</th>
+                                        <th>响应时间</th>
+                                        <th>成功/失败</th>
+                                        <th>备注</th>
+                                        <th>添加时间</th>
+                                        <th>操作</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <?php 
+                                    $index = 1;
+                                    foreach ($allProxies as $proxy): ?>
                                         <tr>
-                                            <th style="width: 40px;">
-                                                <input type="checkbox" id="selectAllSocks5" onchange="toggleSelectAll('socks5')">
-                                            </th>
-                                            <th>序号</th>
-                                            <th>代理名称</th>
-                                            <th>地址:端口</th>
-                                            <th>用户名</th>
-                                            <th>状态</th>
-                                            <th>响应时间</th>
-                                            <th>成功/失败</th>
-                                            <th>备注</th>
-                                            <th>添加时间</th>
-                                            <th>操作</th>
+                                            <td>
+                                                <input type="checkbox" class="proxy-checkbox" value="<?php echo $proxy['proxy_type'] . '-' . $proxy['id']; ?>" onchange="updateBatchDeleteButton()">
+                                            </td>
+                                            <td><?php echo $index++; ?></td>
+                                            <td>
+                                                <span class="status <?php echo $proxy['proxy_type'] === 'http' ? 'active' : 'inactive'; ?>" style="<?php echo $proxy['proxy_type'] === 'socks5' ? 'background: #e0e7ff; color: #3730a3;' : ''; ?>">
+                                                    <?php echo strtoupper($proxy['proxy_type']); ?>
+                                                </span>
+                                            </td>
+                                            <td><?php echo htmlspecialchars($proxy['name']); ?></td>
+                                            <td><?php echo htmlspecialchars($proxy['host']) . ':' . $proxy['port']; ?></td>
+                                            <td><?php echo htmlspecialchars($proxy['username'] ?: '无'); ?></td>
+                                            <td>
+                                                <span class="status <?php echo $proxy['status'] ? 'active' : 'inactive'; ?>">
+                                                    <?php echo $proxy['status'] ? '正常' : '异常'; ?>
+                                                </span>
+                                            </td>
+                                            <td><?php echo $proxy['response_time'] ? $proxy['response_time'] . 'ms' : '-'; ?></td>
+                                            <td><?php echo $proxy['success_count'] . '/' . $proxy['fail_count']; ?></td>
+                                            <td><?php echo htmlspecialchars($proxy['remarks'] ?? ''); ?></td>
+                                            <td><?php echo htmlspecialchars($proxy['created_at']); ?></td>
+                                            <td>
+                                                <div class="actions">
+                                                    <button type="button" class="btn btn-small" onclick="openEditModal('<?php echo $proxy['proxy_type']; ?>', <?php echo htmlspecialchars(json_encode($proxy)); ?>)">编辑</button>
+                                                    <button type="button" class="btn btn-small btn-success" onclick="testProxy('<?php echo $proxy['proxy_type']; ?>', <?php echo $proxy['id']; ?>)" id="test-btn-<?php echo $proxy['proxy_type']; ?>-<?php echo $proxy['id']; ?>">测试</button>
+                                                    <button type="button" class="btn btn-danger btn-small" onclick="deleteProxy('<?php echo $proxy['proxy_type']; ?>', <?php echo $proxy['id']; ?>)">删除</button>
+                                                </div>
+                                            </td>
                                         </tr>
-                                    </thead>
-                                    <tbody>
-                                        <?php 
-                                        $index = 1;
-                                        foreach ($socks5Proxies as $proxy): ?>
-                                            <tr>
-                                                <td>
-                                                    <input type="checkbox" class="socks5-checkbox" value="<?php echo $proxy['id']; ?>" onchange="updateBatchDeleteButton('socks5')">
-                                                </td>
-                                                <td><?php echo $index++; ?></td>
-                                                <td><?php echo htmlspecialchars($proxy['name']); ?></td>
-                                                <td><?php echo htmlspecialchars($proxy['host']) . ':' . $proxy['port']; ?></td>
-                                                <td><?php echo htmlspecialchars($proxy['username'] ?: '无'); ?></td>
-                                                <td>
-                                                    <span class="status <?php echo $proxy['status'] ? 'active' : 'inactive'; ?>">
-                                                        <?php echo $proxy['status'] ? '正常' : '异常'; ?>
-                                                    </span>
-                                                </td>
-                                                <td><?php echo $proxy['response_time'] ? $proxy['response_time'] . 'ms' : '-'; ?></td>
-                                                <td><?php echo $proxy['success_count'] . '/' . $proxy['fail_count']; ?></td>
-                                                <td><?php echo htmlspecialchars($proxy['remarks'] ?? ''); ?></td>
-                                                <td><?php echo htmlspecialchars($proxy['created_at']); ?></td>
-                                                <td>
-                                                    <div class="actions">
-                                                        <button type="button" class="btn btn-small" onclick="openEditModal('socks5', <?php echo htmlspecialchars(json_encode($proxy)); ?>)">编辑</button>
-                                                        <button type="button" class="btn btn-small btn-success" onclick="testProxy('socks5', <?php echo $proxy['id']; ?>)" id="test-btn-socks5-<?php echo $proxy['id']; ?>">测试</button>
-                                                        <button type="button" class="btn btn-danger btn-small" onclick="deleteProxy('socks5', <?php echo $proxy['id']; ?>)">删除</button>
-                                                    </div>
-                                                </td>
-                                            </tr>
-                                        <?php endforeach; ?>
-                                    </tbody>
-                                </table>
-                            </div>
-                        <?php endif; ?>
-                    </div>
+                                    <?php endforeach; ?>
+                                </tbody>
+                            </table>
+                        </div>
+                    <?php endif; ?>
                 </div>
             </div>
         </div>
@@ -995,8 +923,8 @@ try {
                     
                     <div class="form-row">
                         <div class="form-group">
-                            <label for="modalName">代理名称 *</label>
-                            <input type="text" id="modalName" name="name" required placeholder="例如：主代理服务器">
+                            <label for="modalName">代理名称</label>
+                            <input type="text" id="modalName" name="name" placeholder="留空则自动命名（未命名1、未命名2等）">
                         </div>
                         <div class="form-group">
                             <label for="modalHost">代理地址 *</label>
@@ -1073,21 +1001,6 @@ try {
             <?php endif; ?>
         });
         
-        // Tab switching functionality
-        function switchTab(type) {
-            // Update tab buttons
-            document.querySelectorAll('.tab').forEach(tab => {
-                tab.classList.remove('active');
-            });
-            event.target.classList.add('active');
-            
-            // Update tab content
-            document.querySelectorAll('.tab-content').forEach(content => {
-                content.classList.remove('active');
-            });
-            document.getElementById(type + '-tab').classList.add('active');
-        }
-        
         // Modal control functions
         function openAddModal(proxyType) {
             document.getElementById('modalTitle').textContent = '添加' + (proxyType === 'socks5' ? 'SOCKS5' : 'HTTP') + '代理';
@@ -1144,7 +1057,7 @@ try {
             
             // Get form data
             const data = {
-                name: document.getElementById('modalName').value,
+                name: document.getElementById('modalName').value || '',  // Allow empty name
                 host: document.getElementById('modalHost').value,
                 port: parseInt(document.getElementById('modalPort').value),
                 username: document.getElementById('modalUsername').value,
@@ -1152,9 +1065,9 @@ try {
                 proxy_type: document.getElementById('formProxyType').value
             };
             
-            // Validate required fields
-            if (!data.name || !data.host || !data.port) {
-                showToast('请填写代理名称、地址和端口', 'error');
+            // Validate required fields (name is no longer required)
+            if (!data.host || !data.port) {
+                showToast('请填写代理地址和端口', 'error');
                 return;
             }
             
@@ -1222,8 +1135,8 @@ try {
         }
         
         // Test all proxies
-        function testAllProxies(proxyType) {
-            showToast('开始测试所有' + (proxyType === 'socks5' ? 'SOCKS5' : 'HTTP') + '代理...', 'info');
+        function testAllProxies() {
+            showToast('开始测试所有代理...', 'info');
             
             // This would be implemented as a batch operation
             // For now, just show a placeholder
@@ -1247,50 +1160,79 @@ try {
             }
         }
         
-        // Batch delete functionality
-        function toggleSelectAll(proxyType) {
-            const selectAll = document.getElementById('selectAll' + (proxyType === 'socks5' ? 'Socks5' : 'Http'));
-            const checkboxes = document.querySelectorAll('.' + proxyType + '-checkbox');
+        // Unified batch delete functionality
+        function toggleSelectAll() {
+            const selectAll = document.getElementById('selectAll');
+            const checkboxes = document.querySelectorAll('.proxy-checkbox');
             checkboxes.forEach(checkbox => {
                 checkbox.checked = selectAll.checked;
             });
-            updateBatchDeleteButton(proxyType);
+            updateBatchDeleteButton();
         }
         
-        function updateBatchDeleteButton(proxyType) {
-            const checkboxes = document.querySelectorAll('.' + proxyType + '-checkbox:checked');
-            const batchDeleteBtn = document.getElementById('batchDelete' + (proxyType === 'socks5' ? 'Socks5' : 'Http') + 'Btn');
-            const selectedCount = document.getElementById('selected' + (proxyType === 'socks5' ? 'Socks5' : 'Http') + 'Count');
+        function updateBatchDeleteButton() {
+            const checkboxes = document.querySelectorAll('.proxy-checkbox:checked');
+            const batchDeleteBtn = document.getElementById('batchDeleteBtn');
+            const selectedCount = document.getElementById('selectedCount');
             
             if (checkboxes.length > 0) {
                 batchDeleteBtn.style.display = 'inline-block';
-                selectedCount.textContent = `已选择 ${checkboxes.length} 个${proxyType === 'socks5' ? 'SOCKS5' : 'HTTP'}代理`;
+                selectedCount.textContent = `已选择 ${checkboxes.length} 个代理`;
             } else {
                 batchDeleteBtn.style.display = 'none';
                 selectedCount.textContent = '';
             }
         }
         
-        function batchDelete(proxyType) {
-            const checkboxes = document.querySelectorAll('.' + proxyType + '-checkbox:checked');
-            const ids = Array.from(checkboxes).map(cb => cb.value);
+        function batchDeleteSelected() {
+            const checkboxes = document.querySelectorAll('.proxy-checkbox:checked');
+            const selections = Array.from(checkboxes).map(cb => cb.value);
             
-            if (ids.length === 0) {
+            if (selections.length === 0) {
                 showToast('请选择要删除的代理', 'error');
                 return;
             }
             
-            const typeName = proxyType === 'socks5' ? 'SOCKS5' : 'HTTP';
-            if (confirm(`确认删除选中的 ${ids.length} 个${typeName}代理吗？此操作不可撤销。`)) {
-                const form = document.createElement('form');
-                form.method = 'POST';
-                form.innerHTML = `
-                    <input type="hidden" name="action" value="batch_delete">
-                    <input type="hidden" name="proxy_type" value="${proxyType}">
-                    ${ids.map(id => `<input type="hidden" name="ids[]" value="${id}">`).join('')}
-                `;
-                document.body.appendChild(form);
-                form.submit();
+            if (confirm(`确认删除选中的 ${selections.length} 个代理吗？此操作不可撤销。`)) {
+                // Group by proxy type
+                const httpIds = [];
+                const socks5Ids = [];
+                
+                selections.forEach(selection => {
+                    const [type, id] = selection.split('-');
+                    if (type === 'http') {
+                        httpIds.push(id);
+                    } else if (type === 'socks5') {
+                        socks5Ids.push(id);
+                    }
+                });
+                
+                // Submit HTTP deletions
+                if (httpIds.length > 0) {
+                    const form = document.createElement('form');
+                    form.method = 'POST';
+                    form.innerHTML = `
+                        <input type="hidden" name="action" value="batch_delete">
+                        <input type="hidden" name="proxy_type" value="http">
+                        ${httpIds.map(id => `<input type="hidden" name="ids[]" value="${id}">`).join('')}
+                    `;
+                    document.body.appendChild(form);
+                    form.submit();
+                    return;
+                }
+                
+                // Submit SOCKS5 deletions
+                if (socks5Ids.length > 0) {
+                    const form = document.createElement('form');
+                    form.method = 'POST';
+                    form.innerHTML = `
+                        <input type="hidden" name="action" value="batch_delete">
+                        <input type="hidden" name="proxy_type" value="socks5">
+                        ${socks5Ids.map(id => `<input type="hidden" name="ids[]" value="${id}">`).join('')}
+                    `;
+                    document.body.appendChild(form);
+                    form.submit();
+                }
             }
         }
     </script>
