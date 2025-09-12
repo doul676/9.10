@@ -247,14 +247,16 @@ class MailFetcher {
             }
         }
         
-        // 多部分邮件 - 优先查找纯文本，其次HTML
+        // 多部分邮件 - 优先查找纯文本，其次HTML，然后处理其他内容
         $textBody = '';
         $htmlBody = '';
+        $imageCount = 0;
+        $attachmentCount = 0;
+        $otherParts = [];
         
         for ($i = 1; $i <= count($structure->parts); $i++) {
             $part = $structure->parts[$i - 1];
             
-            // 只处理文本类型的内容，跳过附件
             if ($part->type == 0) { // 文本类型
                 $partBody = imap_fetchbody($this->connection, $mailNumber, $i);
                 $decodedBody = $this->decodeBody($partBody, $part);
@@ -269,17 +271,131 @@ class MailFetcher {
                         $textBody = $decodedBody;
                     }
                 }
+            } elseif ($part->type == 5) { // 图片类型
+                $imageCount++;
+                
+                // 获取图片信息
+                $filename = '';
+                if (isset($part->parameters)) {
+                    foreach ($part->parameters as $param) {
+                        if (strtolower($param->attribute) === 'name') {
+                            $filename = $param->value;
+                            break;
+                        }
+                    }
+                }
+                if (empty($filename) && isset($part->dparameters)) {
+                    foreach ($part->dparameters as $param) {
+                        if (strtolower($param->attribute) === 'filename') {
+                            $filename = $param->value;
+                            break;
+                        }
+                    }
+                }
+                
+                $imageInfo = [
+                    'type' => 'image',
+                    'subtype' => isset($part->subtype) ? strtolower($part->subtype) : 'unknown',
+                    'filename' => $filename ?: "图片{$imageCount}",
+                    'size' => isset($part->bytes) ? $part->bytes : 0
+                ];
+                $otherParts[] = $imageInfo;
+            } else {
+                // 其他类型的附件
+                $attachmentCount++;
+                
+                $filename = '';
+                if (isset($part->parameters)) {
+                    foreach ($part->parameters as $param) {
+                        if (strtolower($param->attribute) === 'name') {
+                            $filename = $param->value;
+                            break;
+                        }
+                    }
+                }
+                if (empty($filename) && isset($part->dparameters)) {
+                    foreach ($part->dparameters as $param) {
+                        if (strtolower($param->attribute) === 'filename') {
+                            $filename = $param->value;
+                            break;
+                        }
+                    }
+                }
+                
+                $attachmentInfo = [
+                    'type' => 'attachment',
+                    'mime_type' => $part->type,
+                    'subtype' => isset($part->subtype) ? strtolower($part->subtype) : 'unknown',
+                    'filename' => $filename ?: "附件{$attachmentCount}",
+                    'size' => isset($part->bytes) ? $part->bytes : 0
+                ];
+                $otherParts[] = $attachmentInfo;
             }
         }
         
-        // 优先返回纯文本，如果没有则转换HTML为文本
+        // 构建邮件内容显示
+        $content = '';
+        
+        // 优先显示文本内容
         if (!empty($textBody)) {
-            return $this->formatTextContent($textBody);
+            $content = $this->formatTextContent($textBody);
         } elseif (!empty($htmlBody)) {
-            return $this->htmlToText($htmlBody);
+            $content = $this->htmlToText($htmlBody);
         }
         
-        return '无法读取邮件内容';
+        // 如果有其他内容，添加说明
+        if (!empty($otherParts)) {
+            $contentParts = [];
+            
+            if ($imageCount > 0) {
+                $contentParts[] = "📷 包含 {$imageCount} 张图片";
+                
+                // 列出图片信息
+                $imageDetails = [];
+                foreach ($otherParts as $part) {
+                    if ($part['type'] === 'image') {
+                        $size = $part['size'] > 0 ? ' (' . $this->formatFileSize($part['size']) . ')' : '';
+                        $imageDetails[] = "  • {$part['filename']}{$size}";
+                    }
+                }
+                if (!empty($imageDetails)) {
+                    $contentParts[] = implode("\n", $imageDetails);
+                }
+            }
+            
+            if ($attachmentCount > 0) {
+                $contentParts[] = "📎 包含 {$attachmentCount} 个附件";
+                
+                // 列出附件信息
+                $attachmentDetails = [];
+                foreach ($otherParts as $part) {
+                    if ($part['type'] === 'attachment') {
+                        $size = $part['size'] > 0 ? ' (' . $this->formatFileSize($part['size']) . ')' : '';
+                        $attachmentDetails[] = "  • {$part['filename']}{$size}";
+                    }
+                }
+                if (!empty($attachmentDetails)) {
+                    $contentParts[] = implode("\n", $attachmentDetails);
+                }
+            }
+            
+            $attachmentSummary = implode("\n\n", $contentParts);
+            
+            if (!empty($content)) {
+                // 如果有文本内容，在末尾添加附件信息
+                $content .= "\n\n" . str_repeat('-', 40) . "\n附件信息：\n" . $attachmentSummary;
+            } else {
+                // 如果没有文本内容，只显示附件信息
+                $content = "此邮件包含以下内容：\n\n" . $attachmentSummary;
+            }
+        }
+        
+        // 如果完全没有内容
+        if (empty($content)) {
+            return '邮件内容为空或格式不支持';
+        }
+        
+        return $content;
     }
     
     /**
@@ -431,6 +547,17 @@ class MailFetcher {
             imap_close($this->connection);
             $this->connection = null;
         }
+    }
+    
+    /**
+     * 格式化文件大小
+     */
+    private function formatFileSize($bytes) {
+        if ($bytes === 0) return '0 B';
+        $k = 1024;
+        $sizes = ['B', 'KB', 'MB', 'GB'];
+        $i = floor(log($bytes) / log($k));
+        return round(($bytes / pow($k, $i)), 2) . ' ' . $sizes[$i];
     }
     
     /**

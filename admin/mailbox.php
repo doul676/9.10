@@ -104,60 +104,6 @@ if ($_POST) {
             } else {
                 $error = '请选择要删除的邮箱账号';
             }
-        } elseif ($action === 'add_server') {
-            $serverName = $_POST['server_name'] ?? '';
-            $serverAddress = $_POST['server_address'] ?? '';
-            
-            if ($serverName && $serverAddress) {
-                $beijingTime = new DateTime('now', new DateTimeZone('Asia/Shanghai'));
-                $stmt = $db->prepare('INSERT INTO server_addresses (server_name, server_address, created_at, updated_at) VALUES (?, ?, ?, ?)');
-                $stmt->bindValue(1, $serverName);
-                $stmt->bindValue(2, $serverAddress);
-                $stmt->bindValue(3, $beijingTime->format('Y-m-d H:i:s'));
-                $stmt->bindValue(4, $beijingTime->format('Y-m-d H:i:s'));
-                $stmt->execute();
-                $message = '服务器地址添加成功';
-            } else {
-                $error = '请填写服务器名称和地址';
-            }
-        } elseif ($action === 'update_server') {
-            $id = (int)($_POST['server_id'] ?? 0);
-            $serverName = $_POST['server_name'] ?? '';
-            $serverAddress = $_POST['server_address'] ?? '';
-            
-            if ($id > 0 && $serverName && $serverAddress) {
-                $beijingTime = new DateTime('now', new DateTimeZone('Asia/Shanghai'));
-                $stmt = $db->prepare('UPDATE server_addresses SET server_name=?, server_address=?, updated_at=? WHERE id=?');
-                $stmt->bindValue(1, $serverName);
-                $stmt->bindValue(2, $serverAddress);
-                $stmt->bindValue(3, $beijingTime->format('Y-m-d H:i:s'));
-                $stmt->bindValue(4, $id);
-                $stmt->execute();
-                $message = '服务器地址更新成功';
-            } else {
-                $error = '请填写所有必需字段';
-            }
-        } elseif ($action === 'delete_server') {
-            $id = (int)($_POST['server_id'] ?? 0);
-            if ($id > 0) {
-                $stmt = $db->prepare('DELETE FROM server_addresses WHERE id = ?');
-                $stmt->bindValue(1, $id);
-                $stmt->execute();
-                $message = '服务器地址删除成功';
-            }
-        } elseif ($action === 'batch_delete_servers') {
-            $ids = $_POST['server_ids'] ?? [];
-            if (!empty($ids) && is_array($ids)) {
-                $placeholders = str_repeat('?,', count($ids) - 1) . '?';
-                $stmt = $db->prepare("DELETE FROM server_addresses WHERE id IN ($placeholders)");
-                foreach ($ids as $index => $id) {
-                    $stmt->bindValue($index + 1, (int)$id);
-                }
-                $stmt->execute();
-                $message = '成功删除 ' . count($ids) . ' 个服务器地址';
-            } else {
-                $error = '请选择要删除的服务器地址';
-            }
         } elseif ($action === 'batch_add') {
             $emailsData = $_POST['emails'] ?? '';
             $server = $_POST['batch_server'] ?? '';
@@ -1670,14 +1616,33 @@ try {
         
         function deleteServer(serverId) {
             if (confirm('确认删除这个服务器地址吗？此操作不可撤销。')) {
-                const form = document.createElement('form');
-                form.method = 'POST';
-                form.innerHTML = `
-                    <input type="hidden" name="action" value="delete_server">
-                    <input type="hidden" name="server_id" value="${serverId}">
-                `;
-                document.body.appendChild(form);
-                form.submit();
+                const formData = new FormData();
+                formData.append('action', 'delete_server');
+                formData.append('server_id', serverId);
+                
+                fetch('api.php', {
+                    method: 'POST',
+                    body: formData
+                })
+                .then(response => response.json())
+                .then(result => {
+                    if (result.success) {
+                        showToast(result.message, 'success');
+                        // Remove the row from table
+                        const row = document.getElementById('server-row-' + serverId);
+                        if (row) {
+                            row.remove();
+                        }
+                        // Refresh dropdowns
+                        refreshServerDropdowns();
+                    } else {
+                        showToast(result.message, 'error');
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    showToast('删除失败，请重试', 'error');
+                });
             }
         }
         
@@ -1727,14 +1692,40 @@ try {
             }
             
             if (confirm(`确认删除选中的 ${ids.length} 个服务器地址吗？此操作不可撤销。`)) {
-                const form = document.createElement('form');
-                form.method = 'POST';
-                form.innerHTML = `
-                    <input type="hidden" name="action" value="batch_delete_servers">
-                    ${ids.map(id => `<input type="hidden" name="server_ids[]" value="${id}">`).join('')}
-                `;
-                document.body.appendChild(form);
-                form.submit();
+                const formData = new FormData();
+                formData.append('action', 'batch_delete_servers');
+                ids.forEach(id => {
+                    formData.append('server_ids[]', id);
+                });
+                
+                fetch('api.php', {
+                    method: 'POST',
+                    body: formData
+                })
+                .then(response => response.json())
+                .then(result => {
+                    if (result.success) {
+                        showToast(result.message, 'success');
+                        // Remove selected rows from table
+                        ids.forEach(id => {
+                            const row = document.getElementById('server-row-' + id);
+                            if (row) {
+                                row.remove();
+                            }
+                        });
+                        // Reset selection
+                        document.getElementById('selectAllServers').checked = false;
+                        updateBatchDeleteServersButton();
+                        // Refresh dropdowns
+                        refreshServerDropdowns();
+                    } else {
+                        showToast(result.message, 'error');
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    showToast('批量删除失败，请重试', 'error');
+                });
             }
         }
         
