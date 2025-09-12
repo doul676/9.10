@@ -18,28 +18,42 @@ $message = '';
 $error = '';
 
 /**
- * 生成自动代理名称
+ * 生成自动代理名称（统一编号，不区分HTTP和SOCKS5）
  */
 function generateProxyName($db, $proxyType) {
-    $prefix = $proxyType === 'socks5' ? 'SOCKS5' : 'HTTP';
-    $tableName = $proxyType === 'socks5' ? 'socks5_proxies' : 'http_proxies';
+    // 查找所有代理表中已存在的"未命名"代理的最大编号
+    $httpResult = $db->query("SELECT name FROM http_proxies WHERE name LIKE '未命名%'");
+    $socks5Result = $db->query("SELECT name FROM socks5_proxies WHERE name LIKE '未命名%'");
     
-    // 查找已存在的"未命名"代理的最大编号
-    $result = $db->query("SELECT name FROM {$tableName} WHERE name LIKE '未命名%' ORDER BY name DESC LIMIT 1");
-    $lastUnnamed = $result->fetchArray();
+    $maxNumber = 0;
     
-    $nextNumber = 1;
-    if ($lastUnnamed && preg_match('/未命名(\d+)/', $lastUnnamed['name'], $matches)) {
-        $nextNumber = (int)$matches[1] + 1;
+    // 检查HTTP代理表
+    while ($row = $httpResult->fetchArray()) {
+        if (preg_match('/未命名(\d+)/', $row['name'], $matches)) {
+            $maxNumber = max($maxNumber, (int)$matches[1]);
+        }
     }
     
-    // 检查生成的名称是否已存在，如果存在则递增编号
+    // 检查SOCKS5代理表
+    while ($row = $socks5Result->fetchArray()) {
+        if (preg_match('/未命名(\d+)/', $row['name'], $matches)) {
+            $maxNumber = max($maxNumber, (int)$matches[1]);
+        }
+    }
+    
+    $nextNumber = $maxNumber + 1;
+    
+    // 确保生成的名称在两个表中都不存在
     while (true) {
         $generatedName = "未命名{$nextNumber}";
-        $checkResult = $db->query("SELECT COUNT(*) as count FROM {$tableName} WHERE name = '{$generatedName}'");
-        $count = $checkResult->fetchArray()['count'];
         
-        if ($count == 0) {
+        $httpCheck = $db->query("SELECT COUNT(*) as count FROM http_proxies WHERE name = '{$generatedName}'");
+        $socks5Check = $db->query("SELECT COUNT(*) as count FROM socks5_proxies WHERE name = '{$generatedName}'");
+        
+        $httpCount = $httpCheck->fetchArray()['count'];
+        $socks5Count = $socks5Check->fetchArray()['count'];
+        
+        if ($httpCount == 0 && $socks5Count == 0) {
             return $generatedName;
         }
         $nextNumber++;
