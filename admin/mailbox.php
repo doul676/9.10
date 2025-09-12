@@ -840,15 +840,7 @@ try {
             </a>
         </nav>
         
-        <!-- Quick Actions Panel -->
-        <div style="padding: 20px; border-top: 1px solid rgba(255,255,255,0.1);">
-            <button type="button" class="btn" onclick="openBatchAddModal()" style="width: 100%; margin-bottom: 10px; background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.3);">
-                📦 批量添加邮箱
-            </button>
-            <button type="button" class="btn" onclick="openServerModal()" style="width: 100%; background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.3);">
-                🌐 添加服务器地址
-            </button>
-        </div>
+
     </div>
     
     <!-- Main Content -->
@@ -872,10 +864,18 @@ try {
                     <h2 class="card-title">邮箱管理</h2>
                 </div>
                 <div class="card-body">
-                    <button type="button" class="btn" onclick="openAddModal()">
-                        ➕ 添加邮箱
-                    </button>
-                    <p style="margin-top: 15px; color: #64748b;">点击上方按钮添加新的邮箱账号</p>
+                    <div style="display: flex; gap: 15px; flex-wrap: wrap; margin-bottom: 15px;">
+                        <button type="button" class="btn" onclick="openAddModal()">
+                            ➕ 添加邮箱
+                        </button>
+                        <button type="button" class="btn" onclick="openBatchAddModal()" style="background: linear-gradient(135deg, #059669 0%, #047857 100%);">
+                            📦 批量添加邮箱
+                        </button>
+                        <button type="button" class="btn" onclick="openServerModal()" style="background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);">
+                            🌐 添加服务器地址
+                        </button>
+                    </div>
+                    <p style="color: #64748b;">点击上方按钮进行邮箱管理操作</p>
                 </div>
             </div>
             
