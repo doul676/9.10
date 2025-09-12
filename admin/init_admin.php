@@ -34,6 +34,20 @@ $mailDb->exec('CREATE TABLE IF NOT EXISTS mail_accounts (
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 )');
 
+// 初始化服务器地址数据库
+$mailDb->exec('CREATE TABLE IF NOT EXISTS mail_servers (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    server_address TEXT NOT NULL,
+    imap_port INTEGER DEFAULT 993,
+    pop3_port INTEGER DEFAULT 995,
+    imap_ssl BOOLEAN DEFAULT 1,
+    pop3_ssl BOOLEAN DEFAULT 1,
+    description TEXT DEFAULT "",
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)');
+
 // 检查是否已存在管理员账号
 $stmt = $adminDb->prepare('SELECT COUNT(*) as count FROM admins WHERE username = ?');
 $stmt->bindValue(1, 'admin');

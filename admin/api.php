@@ -29,6 +29,18 @@ switch ($action) {
     case 'test_connection':
         testConnection();
         break;
+    case 'get_servers':
+        getServers();
+        break;
+    case 'add_server':
+        addServer();
+        break;
+    case 'update_server':
+        updateServer();
+        break;
+    case 'delete_server':
+        deleteServer();
+        break;
     default:
         http_response_code(400);
         echo json_encode([
@@ -374,5 +386,232 @@ function checkImapExtension() {
         'message' => '✅ IMAP扩展已正确安装并完全可用',
         'diagnostics' => $diagnostics
     ];
+}
+
+/**
+ * 获取所有服务器配置
+ */
+function getServers() {
+    try {
+        $db = new SQLite3('../db/mail.sqlite');
+        
+        // 确保服务器表存在
+        $db->exec('CREATE TABLE IF NOT EXISTS mail_servers (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            server_address TEXT NOT NULL,
+            imap_port INTEGER DEFAULT 993,
+            pop3_port INTEGER DEFAULT 995,
+            imap_ssl BOOLEAN DEFAULT 1,
+            pop3_ssl BOOLEAN DEFAULT 1,
+            description TEXT DEFAULT "",
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )');
+        
+        $result = $db->query('SELECT * FROM mail_servers ORDER BY created_at DESC');
+        $servers = [];
+        while ($row = $result->fetchArray()) {
+            $servers[] = $row;
+        }
+        
+        echo json_encode([
+            'success' => true,
+            'servers' => $servers
+        ]);
+        
+        $db->close();
+        
+    } catch (Exception $e) {
+        echo json_encode([
+            'success' => false,
+            'message' => '获取服务器列表失败：' . $e->getMessage()
+        ]);
+    }
+}
+
+/**
+ * 添加服务器配置
+ */
+function addServer() {
+    if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+        http_response_code(405);
+        echo json_encode([
+            'success' => false,
+            'message' => '只允许POST请求'
+        ]);
+        exit();
+    }
+    
+    $input = json_decode(file_get_contents('php://input'), true);
+    
+    $name = $input['name'] ?? $_POST['name'] ?? '';
+    $server_address = $input['server_address'] ?? $_POST['server_address'] ?? '';
+    $imap_port = (int)($input['imap_port'] ?? $_POST['imap_port'] ?? 993);
+    $pop3_port = (int)($input['pop3_port'] ?? $_POST['pop3_port'] ?? 995);
+    $imap_ssl = ($input['imap_ssl'] ?? $_POST['imap_ssl'] ?? false) ? 1 : 0;
+    $pop3_ssl = ($input['pop3_ssl'] ?? $_POST['pop3_ssl'] ?? false) ? 1 : 0;
+    $description = $input['description'] ?? $_POST['description'] ?? '';
+    
+    if (empty($name) || empty($server_address)) {
+        echo json_encode([
+            'success' => false,
+            'message' => '请填写服务器名称和地址'
+        ]);
+        exit();
+    }
+    
+    try {
+        $db = new SQLite3('../db/mail.sqlite');
+        
+        // 确保服务器表存在
+        $db->exec('CREATE TABLE IF NOT EXISTS mail_servers (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            server_address TEXT NOT NULL,
+            imap_port INTEGER DEFAULT 993,
+            pop3_port INTEGER DEFAULT 995,
+            imap_ssl BOOLEAN DEFAULT 1,
+            pop3_ssl BOOLEAN DEFAULT 1,
+            description TEXT DEFAULT "",
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )');
+        
+        $beijingTime = new DateTime('now', new DateTimeZone('Asia/Shanghai'));
+        $stmt = $db->prepare('INSERT INTO mail_servers (name, server_address, imap_port, pop3_port, imap_ssl, pop3_ssl, description, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
+        $stmt->bindValue(1, $name);
+        $stmt->bindValue(2, $server_address);
+        $stmt->bindValue(3, $imap_port);
+        $stmt->bindValue(4, $pop3_port);
+        $stmt->bindValue(5, $imap_ssl);
+        $stmt->bindValue(6, $pop3_ssl);
+        $stmt->bindValue(7, $description);
+        $stmt->bindValue(8, $beijingTime->format('Y-m-d H:i:s'));
+        $stmt->bindValue(9, $beijingTime->format('Y-m-d H:i:s'));
+        $stmt->execute();
+        
+        echo json_encode([
+            'success' => true,
+            'message' => '服务器地址添加成功'
+        ]);
+        
+        $db->close();
+        
+    } catch (Exception $e) {
+        echo json_encode([
+            'success' => false,
+            'message' => '添加服务器失败：' . $e->getMessage()
+        ]);
+    }
+}
+
+/**
+ * 更新服务器配置
+ */
+function updateServer() {
+    if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+        http_response_code(405);
+        echo json_encode([
+            'success' => false,
+            'message' => '只允许POST请求'
+        ]);
+        exit();
+    }
+    
+    $input = json_decode(file_get_contents('php://input'), true);
+    
+    $id = (int)($input['id'] ?? $_POST['id'] ?? 0);
+    $name = $input['name'] ?? $_POST['name'] ?? '';
+    $server_address = $input['server_address'] ?? $_POST['server_address'] ?? '';
+    $imap_port = (int)($input['imap_port'] ?? $_POST['imap_port'] ?? 993);
+    $pop3_port = (int)($input['pop3_port'] ?? $_POST['pop3_port'] ?? 995);
+    $imap_ssl = ($input['imap_ssl'] ?? $_POST['imap_ssl'] ?? false) ? 1 : 0;
+    $pop3_ssl = ($input['pop3_ssl'] ?? $_POST['pop3_ssl'] ?? false) ? 1 : 0;
+    $description = $input['description'] ?? $_POST['description'] ?? '';
+    
+    if ($id <= 0 || empty($name) || empty($server_address)) {
+        echo json_encode([
+            'success' => false,
+            'message' => '请填写所有必需字段'
+        ]);
+        exit();
+    }
+    
+    try {
+        $db = new SQLite3('../db/mail.sqlite');
+        
+        $beijingTime = new DateTime('now', new DateTimeZone('Asia/Shanghai'));
+        $stmt = $db->prepare('UPDATE mail_servers SET name=?, server_address=?, imap_port=?, pop3_port=?, imap_ssl=?, pop3_ssl=?, description=?, updated_at=? WHERE id=?');
+        $stmt->bindValue(1, $name);
+        $stmt->bindValue(2, $server_address);
+        $stmt->bindValue(3, $imap_port);
+        $stmt->bindValue(4, $pop3_port);
+        $stmt->bindValue(5, $imap_ssl);
+        $stmt->bindValue(6, $pop3_ssl);
+        $stmt->bindValue(7, $description);
+        $stmt->bindValue(8, $beijingTime->format('Y-m-d H:i:s'));
+        $stmt->bindValue(9, $id);
+        $stmt->execute();
+        
+        echo json_encode([
+            'success' => true,
+            'message' => '服务器地址更新成功'
+        ]);
+        
+        $db->close();
+        
+    } catch (Exception $e) {
+        echo json_encode([
+            'success' => false,
+            'message' => '更新服务器失败：' . $e->getMessage()
+        ]);
+    }
+}
+
+/**
+ * 删除服务器配置
+ */
+function deleteServer() {
+    if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+        http_response_code(405);
+        echo json_encode([
+            'success' => false,
+            'message' => '只允许POST请求'
+        ]);
+        exit();
+    }
+    
+    $input = json_decode(file_get_contents('php://input'), true);
+    $id = (int)($input['id'] ?? $_POST['id'] ?? 0);
+    
+    if ($id <= 0) {
+        echo json_encode([
+            'success' => false,
+            'message' => '无效的服务器ID'
+        ]);
+        exit();
+    }
+    
+    try {
+        $db = new SQLite3('../db/mail.sqlite');
+        
+        $stmt = $db->prepare('DELETE FROM mail_servers WHERE id = ?');
+        $stmt->bindValue(1, $id);
+        $stmt->execute();
+        
+        echo json_encode([
+            'success' => true,
+            'message' => '服务器地址删除成功'
+        ]);
+        
+        $db->close();
+        
+    } catch (Exception $e) {
+        echo json_encode([
+            'success' => false,
+            'message' => '删除服务器失败：' . $e->getMessage()
+        ]);
+    }
 }
 ?>
