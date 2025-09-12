@@ -163,9 +163,16 @@ if ($_POST) {
     }
 }
 
-// 获取所有邮箱账号
+// 分页和搜索参数
+$page = max(1, (int)($_GET['page'] ?? 1));
+$search = trim($_GET['search'] ?? '');
+$perPage = 10;
+
+// 获取所有邮箱账号（支持分页和搜索）
 $accounts = [];
 $serverAddresses = [];
+$totalAccounts = 0;
+$totalPages = 0;
 try {
     $db = new SQLite3('../db/mail.sqlite');
     
@@ -197,12 +204,85 @@ try {
         $db->exec('CREATE INDEX IF NOT EXISTS idx_server_addresses_name ON server_addresses(server_name)');
         $db->exec('CREATE INDEX IF NOT EXISTS idx_server_addresses_address ON server_addresses(server_address)');
         
+        // 创建代理表
+        $db->exec('CREATE TABLE IF NOT EXISTS http_proxies (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            host TEXT NOT NULL,
+            port INTEGER NOT NULL,
+            username TEXT DEFAULT "",
+            password TEXT DEFAULT "",
+            status INTEGER DEFAULT 1,
+            last_check DATETIME DEFAULT NULL,
+            response_time INTEGER DEFAULT 0,
+            success_count INTEGER DEFAULT 0,
+            fail_count INTEGER DEFAULT 0,
+            remarks TEXT DEFAULT "",
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )');
+        
+        $db->exec('CREATE TABLE IF NOT EXISTS socks5_proxies (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            host TEXT NOT NULL,
+            port INTEGER NOT NULL,
+            username TEXT DEFAULT "",
+            password TEXT DEFAULT "",
+            status INTEGER DEFAULT 1,
+            last_check DATETIME DEFAULT NULL,
+            response_time INTEGER DEFAULT 0,
+            success_count INTEGER DEFAULT 0,
+            fail_count INTEGER DEFAULT 0,
+            remarks TEXT DEFAULT "",
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )');
+        
+        $db->exec('CREATE INDEX IF NOT EXISTS idx_http_proxies_host_port ON http_proxies(host, port)');
+        $db->exec('CREATE INDEX IF NOT EXISTS idx_http_proxies_status ON http_proxies(status)');
+        $db->exec('CREATE INDEX IF NOT EXISTS idx_socks5_proxies_host_port ON socks5_proxies(host, port)');
+        $db->exec('CREATE INDEX IF NOT EXISTS idx_socks5_proxies_status ON socks5_proxies(status)');
+        
     } catch (Exception $e) {
         // 忽略字段已存在的错误
         error_log('Database schema check: ' . $e->getMessage());
     }
     
-    $result = $db->query('SELECT * FROM mail_accounts ORDER BY created_at DESC');
+    // 构建搜索条件
+    $whereClause = '';
+    $params = [];
+    if (!empty($search)) {
+        $whereClause = 'WHERE email LIKE ? OR server LIKE ? OR remarks LIKE ?';
+        $searchTerm = '%' . $search . '%';
+        $params = [$searchTerm, $searchTerm, $searchTerm];
+    }
+    
+    // 获取总数
+    $countSql = 'SELECT COUNT(*) as total FROM mail_accounts ' . $whereClause;
+    if (!empty($params)) {
+        $stmt = $db->prepare($countSql);
+        foreach ($params as $index => $param) {
+            $stmt->bindValue($index + 1, $param);
+        }
+        $result = $stmt->execute();
+    } else {
+        $result = $db->query($countSql);
+    }
+    $totalAccounts = $result->fetchArray()['total'];
+    $totalPages = ceil($totalAccounts / $perPage);
+    
+    // 获取分页数据
+    $offset = ($page - 1) * $perPage;
+    $dataSql = 'SELECT * FROM mail_accounts ' . $whereClause . ' ORDER BY created_at DESC LIMIT ? OFFSET ?';
+    $dataParams = array_merge($params, [$perPage, $offset]);
+    
+    $stmt = $db->prepare($dataSql);
+    foreach ($dataParams as $index => $param) {
+        $stmt->bindValue($index + 1, $param);
+    }
+    $result = $stmt->execute();
+    
     while ($row = $result->fetchArray()) {
         $accounts[] = $row;
     }
@@ -854,11 +934,35 @@ try {
             
             <div class="card">
                 <div class="card-header">
-                    <h2 class="card-title">已添加的邮箱账号 (共 <?php echo count($accounts); ?> 个)</h2>
+                    <h2 class="card-title">已添加的邮箱账号 (共 <?php echo $totalAccounts; ?> 个)</h2>
                 </div>
                 <div class="card-body">
+                    <!-- 搜索框 -->
+                    <div style="margin-bottom: 20px;">
+                        <form method="GET" style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+                            <div style="flex: 1; min-width: 300px;">
+                                <input type="text" name="search" value="<?php echo htmlspecialchars($search); ?>" 
+                                       placeholder="🔍 搜索邮箱地址、服务器或备注..." 
+                                       style="width: 100%; padding: 10px 15px; border: 2px solid #e5e7eb; border-radius: 8px; font-size: 14px;">
+                            </div>
+                            <button type="submit" class="btn" style="padding: 10px 20px;">搜索</button>
+                            <?php if (!empty($search)): ?>
+                                <a href="?" class="btn" style="padding: 10px 20px; background: #6b7280;">清除</a>
+                            <?php endif; ?>
+                        </form>
+                        <?php if (!empty($search)): ?>
+                            <p style="margin-top: 10px; color: #64748b; font-size: 14px;">
+                                搜索"<?php echo htmlspecialchars($search); ?>"的结果，共找到 <?php echo $totalAccounts; ?> 个邮箱账号
+                            </p>
+                        <?php endif; ?>
+                    </div>
+                    
                     <?php if (empty($accounts)): ?>
-                        <p>暂无邮箱账号，请添加第一个邮箱账号。</p>
+                        <?php if (!empty($search)): ?>
+                            <p>没有找到符合搜索条件的邮箱账号。</p>
+                        <?php else: ?>
+                            <p>暂无邮箱账号，请添加第一个邮箱账号。</p>
+                        <?php endif; ?>
                     <?php else: ?>
                         <div class="table-container">
                             <div style="margin-bottom: 15px; display: flex; gap: 10px; align-items: center;">
@@ -886,7 +990,7 @@ try {
                                 </thead>
                                 <tbody>
                                     <?php 
-                                    $index = 1;
+                                    $index = ($page - 1) * $perPage + 1;
                                     foreach ($accounts as $account): ?>
                                         <tr>
                                             <td>
@@ -934,6 +1038,45 @@ try {
                                 </tbody>
                             </table>
                         </div>
+                        
+                        <!-- 分页导航 -->
+                        <?php if ($totalPages > 1): ?>
+                            <div style="margin-top: 20px; display: flex; justify-content: center; align-items: center; gap: 10px; flex-wrap: wrap;">
+                                <?php
+                                $searchParam = !empty($search) ? '&search=' . urlencode($search) : '';
+                                $prevPage = max(1, $page - 1);
+                                $nextPage = min($totalPages, $page + 1);
+                                $startPage = max(1, min($page - 2, $totalPages - 4));
+                                $endPage = min($totalPages, max($page + 2, 5));
+                                ?>
+                                
+                                <?php if ($page > 1): ?>
+                                    <a href="?page=1<?php echo $searchParam; ?>" class="btn btn-small">首页</a>
+                                    <a href="?page=<?php echo $prevPage; ?><?php echo $searchParam; ?>" class="btn btn-small">上一页</a>
+                                <?php endif; ?>
+                                
+                                <?php for ($i = $startPage; $i <= $endPage; $i++): ?>
+                                    <?php if ($i == $page): ?>
+                                        <span style="padding: 6px 12px; background: var(--primary-color); color: white; border-radius: 4px; font-size: 12px;">
+                                            <?php echo $i; ?>
+                                        </span>
+                                    <?php else: ?>
+                                        <a href="?page=<?php echo $i; ?><?php echo $searchParam; ?>" class="btn btn-small">
+                                            <?php echo $i; ?>
+                                        </a>
+                                    <?php endif; ?>
+                                <?php endfor; ?>
+                                
+                                <?php if ($page < $totalPages): ?>
+                                    <a href="?page=<?php echo $nextPage; ?><?php echo $searchParam; ?>" class="btn btn-small">下一页</a>
+                                    <a href="?page=<?php echo $totalPages; ?><?php echo $searchParam; ?>" class="btn btn-small">末页</a>
+                                <?php endif; ?>
+                                
+                                <span style="color: #64748b; font-size: 14px; margin-left: 15px;">
+                                    第 <?php echo $page; ?> 页，共 <?php echo $totalPages; ?> 页
+                                </span>
+                            </div>
+                        <?php endif; ?>
                     <?php endif; ?>
                 </div>
             </div>

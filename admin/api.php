@@ -44,6 +44,9 @@ switch ($action) {
     case 'batch_delete_servers':
         batchDeleteServerAddresses();
         break;
+    case 'test_proxy':
+        testProxyConnection();
+        break;
     default:
         http_response_code(400);
         echo json_encode([
@@ -596,5 +599,178 @@ function checkImapExtension() {
         'message' => '✅ IMAP扩展已正确安装并完全可用',
         'diagnostics' => $diagnostics
     ];
+}
+
+/**
+ * 测试代理连接
+ */
+function testProxyConnection() {
+    // 只允许POST请求
+    if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+        http_response_code(405);
+        echo json_encode([
+            'success' => false,
+            'message' => '只允许POST请求'
+        ]);
+        exit();
+    }
+    
+    // 获取请求数据
+    $input = json_decode(file_get_contents('php://input'), true);
+    
+    // 检查是否通过proxy_id测试现有代理
+    $proxyId = $_POST['proxy_id'] ?? null;
+    $proxyType = $_POST['proxy_type'] ?? $input['proxy_type'] ?? 'http';
+    
+    if ($proxyId) {
+        testExistingProxy($proxyId, $proxyType);
+        return;
+    }
+    
+    // 从表单数据或JSON数据中获取参数
+    $name = $input['name'] ?? $_POST['name'] ?? '';
+    $host = $input['host'] ?? $_POST['host'] ?? '';
+    $port = (int)($input['port'] ?? $_POST['port'] ?? 0);
+    $username = $input['username'] ?? $_POST['username'] ?? '';
+    $password = $input['password'] ?? $_POST['password'] ?? '';
+    
+    // 验证必需参数
+    if (empty($name) || empty($host) || $port <= 0) {
+        echo json_encode([
+            'success' => false,
+            'message' => '请填写代理名称、地址和端口'
+        ]);
+        exit();
+    }
+    
+    performProxyTest($name, $host, $port, $username, $password, $proxyType);
+}
+
+/**
+ * 测试现有代理连接
+ */
+function testExistingProxy($proxyId, $proxyType) {
+    try {
+        $db = new SQLite3('../db/mail.sqlite');
+        $tableName = $proxyType === 'socks5' ? 'socks5_proxies' : 'http_proxies';
+        $stmt = $db->prepare("SELECT * FROM {$tableName} WHERE id = ?");
+        $stmt->bindValue(1, $proxyId);
+        $result = $stmt->execute();
+        $proxy = $result->fetchArray();
+        
+        if (!$proxy) {
+            echo json_encode([
+                'success' => false,
+                'message' => '代理不存在'
+            ]);
+            $db->close();
+            return;
+        }
+        
+        performProxyTest(
+            $proxy['name'],
+            $proxy['host'],
+            $proxy['port'],
+            $proxy['username'],
+            $proxy['password'],
+            $proxyType
+        );
+        
+        $db->close();
+        
+    } catch (Exception $e) {
+        echo json_encode([
+            'success' => false,
+            'message' => '获取代理信息失败：' . $e->getMessage()
+        ]);
+    }
+}
+
+/**
+ * 执行代理测试
+ */
+function performProxyTest($name, $host, $port, $username, $password, $proxyType) {
+    try {
+        $startTime = microtime(true);
+        
+        // 尝试连接到代理服务器
+        $socket = @fsockopen($host, $port, $errno, $errstr, 5);
+        
+        if (!$socket) {
+            echo json_encode([
+                'success' => false,
+                'message' => "❌ {$name} 连接失败：无法连接到 {$host}:{$port}",
+                'diagnostics' => [
+                    'proxy_type' => strtoupper($proxyType),
+                    'host_port' => $host . ':' . $port,
+                    'error_code' => $errno,
+                    'error_message' => $errstr,
+                    'suggestion' => '检查代理服务器地址、端口是否正确，防火墙是否允许连接'
+                ]
+            ]);
+            return;
+        }
+        
+        fclose($socket);
+        
+        $endTime = microtime(true);
+        $responseTime = round(($endTime - $startTime) * 1000);
+        
+        // 更新数据库中的测试结果
+        updateProxyTestResult($name, $host, $port, $proxyType, true, $responseTime);
+        
+        echo json_encode([
+            'success' => true,
+            'message' => "✅ {$name} 连接测试成功！代理服务器响应正常",
+            'diagnostics' => [
+                'proxy_type' => strtoupper($proxyType),
+                'host_port' => $host . ':' . $port,
+                'response_time' => $responseTime . 'ms',
+                'status' => '代理服务器可访问'
+            ]
+        ]);
+        
+    } catch (Exception $e) {
+        // 更新数据库中的测试结果
+        updateProxyTestResult($name, $host, $port, $proxyType, false, 0);
+        
+        echo json_encode([
+            'success' => false,
+            'message' => "❌ {$name} 连接测试失败：" . $e->getMessage(),
+            'diagnostics' => [
+                'proxy_type' => strtoupper($proxyType),
+                'host_port' => $host . ':' . $port,
+                'error_type' => 'connection_failed',
+                'suggestion' => '检查代理服务器是否正常运行，网络连接是否正常'
+            ]
+        ]);
+    }
+}
+
+/**
+ * 更新代理测试结果
+ */
+function updateProxyTestResult($name, $host, $port, $proxyType, $success, $responseTime) {
+    try {
+        $db = new SQLite3('../db/mail.sqlite');
+        $tableName = $proxyType === 'socks5' ? 'socks5_proxies' : 'http_proxies';
+        $beijingTime = new DateTime('now', new DateTimeZone('Asia/Shanghai'));
+        
+        if ($success) {
+            $stmt = $db->prepare("UPDATE {$tableName} SET status=1, last_check=?, response_time=?, success_count=success_count+1 WHERE host=? AND port=?");
+        } else {
+            $stmt = $db->prepare("UPDATE {$tableName} SET status=0, last_check=?, response_time=?, fail_count=fail_count+1 WHERE host=? AND port=?");
+        }
+        
+        $stmt->bindValue(1, $beijingTime->format('Y-m-d H:i:s'));
+        $stmt->bindValue(2, $responseTime);
+        $stmt->bindValue(3, $host);
+        $stmt->bindValue(4, $port);
+        $stmt->execute();
+        
+        $db->close();
+    } catch (Exception $e) {
+        error_log('Failed to update proxy test result: ' . $e->getMessage());
+    }
 }
 ?>
