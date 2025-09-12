@@ -935,37 +935,34 @@ $socks5Proxies = array_filter($allProxies, function($proxy) { return $proxy['pro
                     <input type="hidden" name="proxy_type" id="formProxyType" value="http">
                     <input type="hidden" name="id" id="formId" value="">
                     
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label for="modalName">代理名称</label>
-                            <input type="text" id="modalName" name="name" placeholder="留空则自动命名（未命名1、未命名2等）">
-                        </div>
-                        <div class="form-group">
-                            <label for="modalHost">代理地址 *</label>
-                            <input type="text" id="modalHost" name="host" required placeholder="例如：127.0.0.1 或 proxy.example.com">
-                        </div>
+                    <div class="form-group">
+                        <label for="modalName">代理名称</label>
+                        <input type="text" id="modalName" name="name" placeholder="留空则自动命名（未命名1、未命名2等）">
                     </div>
                     
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label for="modalPort">端口 *</label>
-                            <input type="number" id="modalPort" name="port" required min="1" max="65535" placeholder="例如：8080">
-                        </div>
-                        <div class="form-group">
-                            <label for="modalUsername">用户名</label>
-                            <input type="text" id="modalUsername" name="username" placeholder="代理用户名（可选）">
-                        </div>
+                    <div class="form-group">
+                        <label for="modalHost">代理地址 *</label>
+                        <input type="text" id="modalHost" name="host" required placeholder="例如：127.0.0.1 或 proxy.example.com">
                     </div>
                     
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label for="modalPassword">密码</label>
-                            <input type="password" id="modalPassword" name="password" placeholder="代理密码（可选）">
-                        </div>
-                        <div class="form-group">
-                            <label for="modalRemarks">备注</label>
-                            <input type="text" id="modalRemarks" name="remarks" placeholder="代理备注信息（可选）">
-                        </div>
+                    <div class="form-group">
+                        <label for="modalPort">端口 *</label>
+                        <input type="number" id="modalPort" name="port" required min="1" max="65535" placeholder="例如：8080">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="modalUsername">用户名</label>
+                        <input type="text" id="modalUsername" name="username" placeholder="代理用户名（可选）">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="modalPassword">密码</label>
+                        <input type="password" id="modalPassword" name="password" placeholder="代理密码（可选）">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="modalRemarks">备注</label>
+                        <input type="text" id="modalRemarks" name="remarks" placeholder="代理备注信息（可选）">
                     </div>
                 </div>
                 <div class="modal-footer">
@@ -1096,7 +1093,12 @@ $socks5Proxies = array_filter($allProxies, function($proxy) { return $proxy['pro
                 },
                 body: JSON.stringify(data)
             })
-            .then(response => response.json())
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`HTTP错误: ${response.status} ${response.statusText}`);
+                }
+                return response.json();
+            })
             .then(result => {
                 if (result.success) {
                     showToast(result.message, 'success', 5000);
@@ -1106,7 +1108,15 @@ $socks5Proxies = array_filter($allProxies, function($proxy) { return $proxy['pro
             })
             .catch(error => {
                 console.error('Error:', error);
-                showToast('❌ 测试连接时发生错误', 'error');
+                if (error.name === 'TypeError' && error.message.includes('fetch')) {
+                    showToast('❌ 网络连接错误，请检查网络连接', 'error');
+                } else if (error.message.includes('HTTP错误')) {
+                    showToast(`❌ 服务器错误: ${error.message}`, 'error');
+                } else if (error.name === 'SyntaxError') {
+                    showToast('❌ 服务器响应格式错误，请联系管理员', 'error');
+                } else {
+                    showToast(`❌ 测试连接时发生错误: ${error.message}`, 'error');
+                }
             })
             .finally(() => {
                 btn.disabled = false;
@@ -1130,7 +1140,12 @@ $socks5Proxies = array_filter($allProxies, function($proxy) { return $proxy['pro
                 },
                 body: 'proxy_id=' + proxyId + '&proxy_type=' + proxyType
             })
-            .then(response => response.json())
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`HTTP错误: ${response.status} ${response.statusText}`);
+                }
+                return response.json();
+            })
             .then(result => {
                 if (result.success) {
                     showToast(result.message, 'success', 5000);
@@ -1140,7 +1155,15 @@ $socks5Proxies = array_filter($allProxies, function($proxy) { return $proxy['pro
             })
             .catch(error => {
                 console.error('Error:', error);
-                showToast('❌ 测试连接时发生错误', 'error');
+                if (error.name === 'TypeError' && error.message.includes('fetch')) {
+                    showToast('❌ 网络连接错误，请检查网络连接', 'error');
+                } else if (error.message.includes('HTTP错误')) {
+                    showToast(`❌ 服务器错误: ${error.message}`, 'error');
+                } else if (error.name === 'SyntaxError') {
+                    showToast('❌ 服务器响应格式错误，请联系管理员', 'error');
+                } else {
+                    showToast(`❌ 测试连接时发生错误: ${error.message}`, 'error');
+                }
             })
             .finally(() => {
                 btn.disabled = false;
