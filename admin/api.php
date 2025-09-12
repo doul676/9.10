@@ -698,6 +698,10 @@ function performProxyTest($name, $host, $port, $username, $password, $proxyType)
             $name = "代理 {$host}:{$port}";
         }
         
+        // 解析代理服务器IP地址
+        $resolvedIp = gethostbyname($host);
+        $hostInfo = ($resolvedIp !== $host) ? "{$host} ({$resolvedIp})" : $host;
+        
         // 首先测试代理服务器本身的连接
         $socket = @fsockopen($host, $port, $errno, $errstr, 5);
         
@@ -707,10 +711,11 @@ function performProxyTest($name, $host, $port, $username, $password, $proxyType)
             
             echo json_encode([
                 'success' => false,
-                'message' => "❌ {$name} 连接失败：无法连接到 {$host}:{$port}（错误代码：{$errno}，{$errstr}）",
+                'message' => "❌ {$name} 连接失败\n服务器: {$hostInfo}:{$port}\n错误: {$errstr} (代码 {$errno})",
                 'diagnostics' => [
                     'proxy_type' => strtoupper($proxyType),
                     'host_port' => $host . ':' . $port,
+                    'resolved_ip' => $resolvedIp,
                     'error_code' => $errno,
                     'error_message' => $errstr,
                     'suggestion' => '检查代理服务器地址、端口是否正确，防火墙是否允许连接'
@@ -721,23 +726,47 @@ function performProxyTest($name, $host, $port, $username, $password, $proxyType)
         
         fclose($socket);
         
-        $endTime = microtime(true);
-        $responseTime = round(($endTime - $startTime) * 1000);
+        $connectionTime = microtime(true);
+        $basicLatency = round(($connectionTime - $startTime) * 1000);
         
         // 进一步测试代理功能
         $proxyFunctional = testProxyFunctionality($host, $port, $username, $password, $proxyType);
         
+        $endTime = microtime(true);
+        $totalLatency = round(($endTime - $startTime) * 1000);
+        
         if ($proxyFunctional['success']) {
-            // 更新数据库中的测试结果
-            updateProxyTestResult($name, $host, $port, $proxyType, true, $responseTime);
+            // 测试通过代理连接到外部网站
+            $connectivityResults = testProxyConnectivity($host, $port, $username, $password, $proxyType);
             
-            $message = "✅ {$name} 连接测试成功！响应时间：{$responseTime}ms";
+            // 更新数据库中的测试结果
+            updateProxyTestResult($name, $host, $port, $proxyType, true, $totalLatency);
+            
+            // 构建成功消息，包含IP和延迟信息
+            $message = "✅ {$name} 测试成功\n";
+            $message .= "服务器: {$hostInfo}:{$port}\n";
+            $message .= "连接延迟: {$basicLatency}ms\n";
+            $message .= "总响应时间: {$totalLatency}ms";
+            
+            // 添加外部连接测试结果
+            if (!empty($connectivityResults)) {
+                $message .= "\n\n外部连接测试:";
+                foreach ($connectivityResults as $site => $result) {
+                    if ($result['status'] === 'success') {
+                        $message .= "\n✅ {$site}: {$result['ip']} ({$result['latency']})";
+                    }
+                }
+            }
+            
             $diagnostics = [
                 'proxy_type' => strtoupper($proxyType),
                 'host_port' => $host . ':' . $port,
-                'response_time' => $responseTime . 'ms',
-                'status' => '代理服务器连接正常',
-                'proxy_test' => $proxyFunctional['message']
+                'resolved_ip' => $resolvedIp,
+                'basic_latency' => $basicLatency . 'ms',
+                'total_latency' => $totalLatency . 'ms',
+                'status' => '代理服务器功能正常',
+                'proxy_test' => $proxyFunctional['message'],
+                'connectivity_results' => $connectivityResults
             ];
             
             echo json_encode([
@@ -747,15 +776,22 @@ function performProxyTest($name, $host, $port, $username, $password, $proxyType)
             ]);
         } else {
             // 端口通但代理功能异常
-            updateProxyTestResult($name, $host, $port, $proxyType, false, $responseTime);
+            updateProxyTestResult($name, $host, $port, $proxyType, false, $totalLatency);
+            
+            $message = "❌ {$name} 功能测试失败\n";
+            $message .= "服务器: {$hostInfo}:{$port}\n";
+            $message .= "连接延迟: {$basicLatency}ms\n";
+            $message .= "错误: {$proxyFunctional['message']}";
             
             echo json_encode([
                 'success' => false,
-                'message' => "❌ {$name} 连接失败：端口可达但代理功能异常（{$proxyFunctional['message']}）",
+                'message' => $message,
                 'diagnostics' => [
                     'proxy_type' => strtoupper($proxyType),
                     'host_port' => $host . ':' . $port,
-                    'response_time' => $responseTime . 'ms',
+                    'resolved_ip' => $resolvedIp,
+                    'basic_latency' => $basicLatency . 'ms',
+                    'total_latency' => $totalLatency . 'ms',
                     'status' => '端口可达，但代理功能异常',
                     'proxy_test' => $proxyFunctional['message'],
                     'suggestion' => '检查是否为有效的代理服务器，或者代理配置是否正确'
@@ -769,7 +805,7 @@ function performProxyTest($name, $host, $port, $username, $password, $proxyType)
         
         echo json_encode([
             'success' => false,
-            'message' => "❌ {$name} 连接测试失败：" . $e->getMessage(),
+            'message' => "❌ {$name} 连接测试失败\n错误: " . $e->getMessage(),
             'diagnostics' => [
                 'proxy_type' => strtoupper($proxyType),
                 'host_port' => $host . ':' . $port,
@@ -957,7 +993,7 @@ function testSocks5ProxyFunctionality($host, $port, $username, $password) {
 function testProxyConnectivity($host, $port, $username, $password, $proxyType) {
     $testSites = [
         'baidu.com' => ['host' => 'www.baidu.com', 'port' => 80],
-        '163.com' => ['host' => 'www.163.com', 'port' => 80]
+        'httpbin.org' => ['host' => 'httpbin.org', 'port' => 80]
     ];
     
     $results = [];
@@ -1007,6 +1043,11 @@ function testProxyConnectivity($host, $port, $username, $password, $proxyType) {
                 'ip' => null,
                 'latency' => null
             ];
+        }
+        
+        // 限制测试数量以避免超时，只测试前2个
+        if (count($results) >= 2) {
+            break;
         }
     }
     

@@ -29,6 +29,9 @@ switch ($action) {
     case 'test_connection':
         testConnection();
         break;
+    case 'test_proxy':
+        testProxyConnection();
+        break;
     default:
         http_response_code(400);
         echo json_encode([
@@ -374,5 +377,573 @@ function checkImapExtension() {
         'message' => '✅ IMAP扩展已正确安装并完全可用',
         'diagnostics' => $diagnostics
     ];
+}
+
+/**
+ * 测试代理连接
+ */
+function testProxyConnection() {
+    // 只允许POST请求
+    if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+        http_response_code(405);
+        echo json_encode([
+            'success' => false,
+            'message' => '只允许POST请求'
+        ]);
+        exit();
+    }
+    
+    // 获取请求数据
+    $input = json_decode(file_get_contents('php://input'), true);
+    
+    // 检查是否通过proxy_id测试现有代理
+    $proxyId = $_POST['proxy_id'] ?? null;
+    $proxyType = $_POST['proxy_type'] ?? $input['proxy_type'] ?? 'http';
+    
+    if ($proxyId) {
+        testExistingProxy($proxyId, $proxyType);
+        return;
+    }
+    
+    // 从表单数据或JSON数据中获取参数
+    $name = $input['name'] ?? $_POST['name'] ?? '';
+    $host = $input['host'] ?? $_POST['host'] ?? '';
+    $port = (int)($input['port'] ?? $_POST['port'] ?? 0);
+    $username = $input['username'] ?? $_POST['username'] ?? '';
+    $password = $input['password'] ?? $_POST['password'] ?? '';
+    
+    // 验证必需参数（名称可以为空，会自动生成）
+    if (empty($host) || $port <= 0) {
+        echo json_encode([
+            'success' => false,
+            'message' => '请填写代理地址和端口'
+        ]);
+        exit();
+    }
+    
+    performProxyTest($name, $host, $port, $username, $password, $proxyType);
+}
+
+/**
+ * 测试现有代理连接
+ */
+function testExistingProxy($proxyId, $proxyType) {
+    try {
+        $db = new SQLite3(__DIR__ . '/../db/mail.sqlite');
+        $tableName = $proxyType === 'socks5' ? 'socks5_proxies' : 'http_proxies';
+        $stmt = $db->prepare("SELECT * FROM {$tableName} WHERE id = ?");
+        $stmt->bindValue(1, $proxyId);
+        $result = $stmt->execute();
+        $proxy = $result->fetchArray();
+        
+        if (!$proxy) {
+            echo json_encode([
+                'success' => false,
+                'message' => '代理不存在'
+            ]);
+            $db->close();
+            return;
+        }
+        
+        performProxyTest(
+            $proxy['name'],
+            $proxy['host'],
+            $proxy['port'],
+            $proxy['username'],
+            $proxy['password'],
+            $proxyType
+        );
+        
+        $db->close();
+        
+    } catch (Exception $e) {
+        echo json_encode([
+            'success' => false,
+            'message' => '获取代理信息失败：' . $e->getMessage()
+        ]);
+    }
+}
+
+/**
+ * 执行代理测试
+ */
+function performProxyTest($name, $host, $port, $username, $password, $proxyType) {
+    try {
+        $startTime = microtime(true);
+        
+        // 为空名称生成默认名称用于显示
+        if (empty($name)) {
+            $name = "代理 {$host}:{$port}";
+        }
+        
+        // 解析代理服务器IP地址
+        $resolvedIp = gethostbyname($host);
+        $hostInfo = ($resolvedIp !== $host) ? "{$host} ({$resolvedIp})" : $host;
+        
+        // 首先测试代理服务器本身的连接
+        $socket = @fsockopen($host, $port, $errno, $errstr, 5);
+        
+        if (!$socket) {
+            // 更新数据库中的测试结果
+            updateProxyTestResult($name, $host, $port, $proxyType, false, 0);
+            
+            echo json_encode([
+                'success' => false,
+                'message' => "❌ {$name} 连接失败\n服务器: {$hostInfo}:{$port}\n错误: {$errstr} (代码 {$errno})",
+                'diagnostics' => [
+                    'proxy_type' => strtoupper($proxyType),
+                    'host_port' => $host . ':' . $port,
+                    'resolved_ip' => $resolvedIp,
+                    'error_code' => $errno,
+                    'error_message' => $errstr,
+                    'suggestion' => '检查代理服务器地址、端口是否正确，防火墙是否允许连接'
+                ]
+            ]);
+            return;
+        }
+        
+        fclose($socket);
+        
+        $connectionTime = microtime(true);
+        $basicLatency = round(($connectionTime - $startTime) * 1000);
+        
+        // 进一步测试代理功能
+        $proxyFunctional = testProxyFunctionality($host, $port, $username, $password, $proxyType);
+        
+        $endTime = microtime(true);
+        $totalLatency = round(($endTime - $startTime) * 1000);
+        
+        if ($proxyFunctional['success']) {
+            // 测试通过代理连接到外部网站
+            $connectivityResults = testProxyConnectivity($host, $port, $username, $password, $proxyType);
+            
+            // 更新数据库中的测试结果
+            updateProxyTestResult($name, $host, $port, $proxyType, true, $totalLatency);
+            
+            // 构建成功消息，包含IP和延迟信息
+            $message = "✅ {$name} 测试成功\n";
+            $message .= "服务器: {$hostInfo}:{$port}\n";
+            $message .= "连接延迟: {$basicLatency}ms\n";
+            $message .= "总响应时间: {$totalLatency}ms";
+            
+            // 添加外部连接测试结果
+            if (!empty($connectivityResults)) {
+                $message .= "\n\n外部连接测试:";
+                foreach ($connectivityResults as $site => $result) {
+                    if ($result['status'] === 'success') {
+                        $message .= "\n✅ {$site}: {$result['ip']} ({$result['latency']})";
+                    }
+                }
+            }
+            
+            $diagnostics = [
+                'proxy_type' => strtoupper($proxyType),
+                'host_port' => $host . ':' . $port,
+                'resolved_ip' => $resolvedIp,
+                'basic_latency' => $basicLatency . 'ms',
+                'total_latency' => $totalLatency . 'ms',
+                'status' => '代理服务器功能正常',
+                'proxy_test' => $proxyFunctional['message'],
+                'connectivity_results' => $connectivityResults
+            ];
+            
+            echo json_encode([
+                'success' => true,
+                'message' => $message,
+                'diagnostics' => $diagnostics
+            ]);
+        } else {
+            // 端口通但代理功能异常
+            updateProxyTestResult($name, $host, $port, $proxyType, false, $totalLatency);
+            
+            $message = "❌ {$name} 功能测试失败\n";
+            $message .= "服务器: {$hostInfo}:{$port}\n";
+            $message .= "连接延迟: {$basicLatency}ms\n";
+            $message .= "错误: {$proxyFunctional['message']}";
+            
+            echo json_encode([
+                'success' => false,
+                'message' => $message,
+                'diagnostics' => [
+                    'proxy_type' => strtoupper($proxyType),
+                    'host_port' => $host . ':' . $port,
+                    'resolved_ip' => $resolvedIp,
+                    'basic_latency' => $basicLatency . 'ms',
+                    'total_latency' => $totalLatency . 'ms',
+                    'status' => '端口可达，但代理功能异常',
+                    'proxy_test' => $proxyFunctional['message'],
+                    'suggestion' => '检查是否为有效的代理服务器，或者代理配置是否正确'
+                ]
+            ]);
+        }
+        
+    } catch (Exception $e) {
+        // 更新数据库中的测试结果
+        updateProxyTestResult($name, $host, $port, $proxyType, false, 0);
+        
+        echo json_encode([
+            'success' => false,
+            'message' => "❌ {$name} 连接测试失败\n错误: " . $e->getMessage(),
+            'diagnostics' => [
+                'proxy_type' => strtoupper($proxyType),
+                'host_port' => $host . ':' . $port,
+                'error_type' => 'connection_failed',
+                'suggestion' => '检查代理服务器是否正常运行，网络连接是否正常'
+            ]
+        ]);
+    }
+}
+
+/**
+ * 测试代理功能性（而不仅仅是端口连通性）
+ */
+function testProxyFunctionality($host, $port, $username, $password, $proxyType) {
+    try {
+        if ($proxyType === 'http') {
+            return testHttpProxyFunctionality($host, $port, $username, $password);
+        } else {
+            return testSocks5ProxyFunctionality($host, $port, $username, $password);
+        }
+    } catch (Exception $e) {
+        return [
+            'success' => false,
+            'message' => '代理功能测试异常：' . $e->getMessage()
+        ];
+    }
+}
+
+/**
+ * 测试HTTP代理功能
+ */
+function testHttpProxyFunctionality($host, $port, $username, $password) {
+    $socket = @fsockopen($host, $port, $errno, $errstr, 5);
+    if (!$socket) {
+        return [
+            'success' => false,
+            'message' => '无法建立socket连接'
+        ];
+    }
+    
+    // 构建HTTP CONNECT请求测试
+    $testHost = 'httpbin.org';
+    $testPort = 80;
+    
+    $request = "CONNECT {$testHost}:{$testPort} HTTP/1.1\r\n";
+    $request .= "Host: {$testHost}:{$testPort}\r\n";
+    
+    // 如果有认证信息，添加认证头
+    if (!empty($username) && !empty($password)) {
+        $auth = base64_encode($username . ':' . $password);
+        $request .= "Proxy-Authorization: Basic {$auth}\r\n";
+    }
+    
+    $request .= "\r\n";
+    
+    fwrite($socket, $request);
+    
+    // 设置超时
+    stream_set_timeout($socket, 3);
+    
+    // 读取响应
+    $response = fread($socket, 1024);
+    fclose($socket);
+    
+    // 检查HTTP代理响应
+    if (strpos($response, 'HTTP/1') !== false) {
+        if (strpos($response, '200') !== false) {
+            return [
+                'success' => true,
+                'message' => 'HTTP代理功能正常'
+            ];
+        } else if (strpos($response, '407') !== false) {
+            return [
+                'success' => false,
+                'message' => 'HTTP代理需要身份验证'
+            ];
+        } else {
+            return [
+                'success' => false,
+                'message' => 'HTTP代理返回错误响应：' . trim(substr($response, 0, 100))
+            ];
+        }
+    } else {
+        return [
+            'success' => false,
+            'message' => '不是有效的HTTP代理服务器'
+        ];
+    }
+}
+
+/**
+ * 测试SOCKS5代理功能
+ */
+function testSocks5ProxyFunctionality($host, $port, $username, $password) {
+    $socket = @fsockopen($host, $port, $errno, $errstr, 5);
+    if (!$socket) {
+        return [
+            'success' => false,
+            'message' => '无法建立socket连接'
+        ];
+    }
+    
+    // 设置超时
+    stream_set_timeout($socket, 3);
+    
+    // SOCKS5握手 - 无认证方法
+    $request = "\x05\x01\x00";
+    fwrite($socket, $request);
+    
+    $response = fread($socket, 2);
+    if (strlen($response) < 2) {
+        fclose($socket);
+        return [
+            'success' => false,
+            'message' => 'SOCKS5握手失败：无响应'
+        ];
+    }
+    
+    if (ord($response[0]) !== 5) {
+        fclose($socket);
+        return [
+            'success' => false,
+            'message' => '不是有效的SOCKS5代理服务器'
+        ];
+    }
+    
+    $authMethod = ord($response[1]);
+    if ($authMethod === 0) {
+        // 无需认证，测试连接请求
+        $testHost = 'httpbin.org';
+        $testPort = 80;
+        
+        // 解析目标主机IP
+        $targetIp = gethostbyname($testHost);
+        if ($targetIp === $testHost) {
+            fclose($socket);
+            return [
+                'success' => false,
+                'message' => 'SOCKS5测试失败：无法解析测试域名'
+            ];
+        }
+        
+        // 连接请求
+        $request = "\x05\x01\x00\x01" . inet_pton($targetIp) . pack('n', $testPort);
+        fwrite($socket, $request);
+        
+        $response = fread($socket, 10);
+        fclose($socket);
+        
+        if (strlen($response) >= 2 && ord($response[1]) === 0) {
+            return [
+                'success' => true,
+                'message' => 'SOCKS5代理功能正常'
+            ];
+        } else {
+            return [
+                'success' => false,
+                'message' => 'SOCKS5连接测试失败'
+            ];
+        }
+    } else if ($authMethod === 2) {
+        fclose($socket);
+        return [
+            'success' => false,
+            'message' => 'SOCKS5代理需要用户名密码认证'
+        ];
+    } else if ($authMethod === 255) {
+        fclose($socket);
+        return [
+            'success' => false,
+            'message' => 'SOCKS5代理拒绝连接'
+        ];
+    } else {
+        fclose($socket);
+        return [
+            'success' => false,
+            'message' => 'SOCKS5代理返回未知认证方法'
+        ];
+    }
+}
+
+/**
+ * 测试代理连接到外部网站
+ */
+function testProxyConnectivity($host, $port, $username, $password, $proxyType) {
+    $testSites = [
+        'baidu.com' => ['host' => 'www.baidu.com', 'port' => 80],
+        'httpbin.org' => ['host' => 'httpbin.org', 'port' => 80]
+    ];
+    
+    $results = [];
+    
+    foreach ($testSites as $siteName => $siteInfo) {
+        try {
+            $startTime = microtime(true);
+            
+            // 解析目标网站的IP地址
+            $resolvedIp = gethostbyname($siteInfo['host']);
+            if ($resolvedIp === $siteInfo['host']) {
+                $results[$siteName] = [
+                    'status' => 'failed',
+                    'message' => "❌ 无法解析 {$siteName} 的IP地址",
+                    'ip' => null,
+                    'latency' => null
+                ];
+                continue;
+            }
+            
+            // 通过代理测试连接
+            $connected = testProxyToSite($host, $port, $username, $password, $proxyType, $siteInfo['host'], $siteInfo['port']);
+            
+            $endTime = microtime(true);
+            $latency = round(($endTime - $startTime) * 1000);
+            
+            if ($connected) {
+                $results[$siteName] = [
+                    'status' => 'success',
+                    'message' => "✅ {$siteName} 连接成功",
+                    'ip' => $resolvedIp,
+                    'latency' => $latency . 'ms'
+                ];
+            } else {
+                $results[$siteName] = [
+                    'status' => 'failed',
+                    'message' => "❌ 通过代理无法访问 {$siteName}",
+                    'ip' => $resolvedIp,
+                    'latency' => $latency . 'ms'
+                ];
+            }
+            
+        } catch (Exception $e) {
+            $results[$siteName] = [
+                'status' => 'error',
+                'message' => "❌ 测试 {$siteName} 时发生错误：" . $e->getMessage(),
+                'ip' => null,
+                'latency' => null
+            ];
+        }
+        
+        // 限制测试数量以避免超时，只测试前2个
+        if (count($results) >= 2) {
+            break;
+        }
+    }
+    
+    return $results;
+}
+
+/**
+ * 通过代理测试连接到特定网站
+ */
+function testProxyToSite($proxyHost, $proxyPort, $username, $password, $proxyType, $targetHost, $targetPort) {
+    try {
+        if ($proxyType === 'http') {
+            return testHttpProxyToSite($proxyHost, $proxyPort, $username, $password, $targetHost, $targetPort);
+        } else {
+            return testSocks5ProxyToSite($proxyHost, $proxyPort, $username, $password, $targetHost, $targetPort);
+        }
+    } catch (Exception $e) {
+        return false;
+    }
+}
+
+/**
+ * 通过HTTP代理测试连接
+ */
+function testHttpProxyToSite($proxyHost, $proxyPort, $username, $password, $targetHost, $targetPort) {
+    $socket = @fsockopen($proxyHost, $proxyPort, $errno, $errstr, 5);
+    if (!$socket) {
+        return false;
+    }
+    
+    // 构建HTTP CONNECT请求
+    $request = "CONNECT {$targetHost}:{$targetPort} HTTP/1.1\r\n";
+    $request .= "Host: {$targetHost}:{$targetPort}\r\n";
+    
+    // 如果有认证信息，添加认证头
+    if (!empty($username) && !empty($password)) {
+        $auth = base64_encode($username . ':' . $password);
+        $request .= "Proxy-Authorization: Basic {$auth}\r\n";
+    }
+    
+    $request .= "\r\n";
+    
+    fwrite($socket, $request);
+    
+    // 读取响应
+    $response = fread($socket, 1024);
+    fclose($socket);
+    
+    // 检查是否收到200连接成功响应
+    return strpos($response, '200') !== false;
+}
+
+/**
+ * 通过SOCKS5代理测试连接（简化版本）
+ */
+function testSocks5ProxyToSite($proxyHost, $proxyPort, $username, $password, $targetHost, $targetPort) {
+    $socket = @fsockopen($proxyHost, $proxyPort, $errno, $errstr, 5);
+    if (!$socket) {
+        return false;
+    }
+    
+    // SOCKS5握手 - 无认证方法
+    $request = "\x05\x01\x00";
+    fwrite($socket, $request);
+    
+    $response = fread($socket, 2);
+    if (strlen($response) < 2 || ord($response[1]) !== 0) {
+        fclose($socket);
+        return false;
+    }
+    
+    // 连接请求
+    $targetIp = gethostbyname($targetHost);
+    $request = "\x05\x01\x00\x01" . inet_pton($targetIp) . pack('n', $targetPort);
+    fwrite($socket, $request);
+    
+    $response = fread($socket, 10);
+    fclose($socket);
+    
+    // 检查连接是否成功
+    return strlen($response) >= 2 && ord($response[1]) === 0;
+}
+
+/**
+ * 更新代理测试结果
+ */
+function updateProxyTestResult($name, $host, $port, $proxyType, $success, $responseTime) {
+    try {
+        $db = new SQLite3(__DIR__ . '/../db/mail.sqlite');
+        $tableName = $proxyType === 'socks5' ? 'socks5_proxies' : 'http_proxies';
+        $beijingTime = new DateTime('now', new DateTimeZone('Asia/Shanghai'));
+        
+        // 首先检查代理是否存在于数据库中
+        $checkStmt = $db->prepare("SELECT id FROM {$tableName} WHERE host=? AND port=?");
+        $checkStmt->bindValue(1, $host);
+        $checkStmt->bindValue(2, $port);
+        $checkResult = $checkStmt->execute();
+        $exists = $checkResult->fetchArray();
+        
+        if ($exists) {
+            // 代理存在，更新测试结果
+            if ($success) {
+                $stmt = $db->prepare("UPDATE {$tableName} SET status=1, last_check=?, response_time=?, success_count=success_count+1 WHERE host=? AND port=?");
+            } else {
+                $stmt = $db->prepare("UPDATE {$tableName} SET status=0, last_check=?, response_time=?, fail_count=fail_count+1 WHERE host=? AND port=?");
+            }
+            
+            $stmt->bindValue(1, $beijingTime->format('Y-m-d H:i:s'));
+            $stmt->bindValue(2, $responseTime);
+            $stmt->bindValue(3, $host);
+            $stmt->bindValue(4, $port);
+            $stmt->execute();
+        }
+        // 如果代理不存在于数据库中（如新添加时测试），不进行数据库更新
+        
+        $db->close();
+    } catch (Exception $e) {
+        error_log('Failed to update proxy test result: ' . $e->getMessage());
+    }
 }
 ?>
