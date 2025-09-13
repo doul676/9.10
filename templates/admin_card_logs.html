@@ -1,0 +1,730 @@
+{% extends "admin_base.html" %}
+
+{% block title %}卡密日志 - 邮件查看系统{% endblock %}
+{% block page_title %}卡密日志{% endblock %}
+{% block breadcrumb %}邮件查看系统 / 管理后台 / 卡密日志{% endblock %}
+
+{% block extra_styles %}
+/* Additional styles specific to card logs page */
+.log-filters {
+    background: #f8f9fa;
+    padding: 20px;
+    border-radius: 8px;
+    margin-bottom: 20px;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 15px;
+    align-items: end;
+}
+
+.log-entry {
+    border-left: 4px solid transparent;
+    padding: 15px;
+    margin-bottom: 10px;
+    background: white;
+    border-radius: 5px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    transition: all 0.3s ease;
+}
+
+.log-entry:hover {
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    transform: translateY(-2px);
+}
+
+.log-entry.log-success {
+    border-left-color: #28a745;
+}
+
+.log-entry.log-warning {
+    border-left-color: #ffc107;
+}
+
+.log-entry.log-error {
+    border-left-color: #dc3545;
+}
+
+.log-entry.log-info {
+    border-left-color: #17a2b8;
+}
+
+.log-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+}
+
+.log-title {
+    font-weight: 600;
+    color: #333;
+}
+
+.log-time {
+    font-size: 12px;
+    color: #666;
+}
+
+.log-details {
+    color: #555;
+    line-height: 1.5;
+}
+
+.log-meta {
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px solid #e9ecef;
+    font-size: 12px;
+    color: #666;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 10px;
+}
+
+.action-badge {
+    padding: 2px 6px;
+    border-radius: 10px;
+    font-size: 11px;
+    font-weight: 500;
+}
+
+.action-generate {
+    background: #d1ecf1;
+    color: #0c5460;
+}
+
+.action-use {
+    background: #d4edda;
+    color: #155724;
+}
+
+.action-expire {
+    background: #f8d7da;
+    color: #721c24;
+}
+
+.action-revoke {
+    background: #e2e3e5;
+    color: #6c757d;
+}
+
+.action-renew {
+    background: #fff3cd;
+    color: #856404;
+}
+
+.stats-summary {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 15px;
+    margin-bottom: 20px;
+}
+
+.summary-card {
+    background: white;
+    padding: 20px;
+    border-radius: 8px;
+    text-align: center;
+    border: 1px solid #e9ecef;
+}
+
+.summary-number {
+    font-size: 24px;
+    font-weight: bold;
+    margin-bottom: 5px;
+}
+
+.summary-label {
+    color: #666;
+    font-size: 14px;
+}
+
+.export-options {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    margin-bottom: 20px;
+}
+
+.timeline-view {
+    position: relative;
+    padding-left: 30px;
+}
+
+.timeline-view::before {
+    content: '';
+    position: absolute;
+    left: 15px;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background: #e9ecef;
+}
+
+.timeline-item {
+    position: relative;
+    margin-bottom: 20px;
+}
+
+.timeline-item::before {
+    content: '';
+    position: absolute;
+    left: -37px;
+    top: 20px;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #007bff;
+}
+
+.pagination {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 10px;
+    margin-top: 20px;
+}
+
+.pagination button {
+    padding: 8px 12px;
+    border: 1px solid #ddd;
+    background: white;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+.pagination button:hover {
+    background: #f8f9fa;
+}
+
+.pagination button.active {
+    background: #007bff;
+    color: white;
+    border-color: #007bff;
+}
+
+.pagination button:disabled {
+    background: #f8f9fa;
+    color: #6c757d;
+    cursor: not-allowed;
+}
+{% endblock %}
+
+{% block content %}
+<!-- Statistics Summary -->
+<div class="stats-summary">
+    <div class="summary-card">
+        <div class="summary-number" style="color: #28a745;">{{ today_logs or 0 }}</div>
+        <div class="summary-label">今日操作</div>
+    </div>
+    <div class="summary-card">
+        <div class="summary-number" style="color: #007bff;">{{ week_logs or 0 }}</div>
+        <div class="summary-label">本周操作</div>
+    </div>
+    <div class="summary-card">
+        <div class="summary-number" style="color: #ffc107;">{{ month_logs or 0 }}</div>
+        <div class="summary-label">本月操作</div>
+    </div>
+    <div class="summary-card">
+        <div class="summary-number" style="color: #dc3545;">{{ total_logs or 0 }}</div>
+        <div class="summary-label">总操作数</div>
+    </div>
+</div>
+
+<!-- Filters and Search -->
+<div class="card">
+    <h2>日志筛选</h2>
+    <div class="log-filters">
+        <div class="form-group">
+            <label for="dateFrom">开始日期</label>
+            <input type="datetime-local" id="dateFrom" class="form-control">
+        </div>
+        
+        <div class="form-group">
+            <label for="dateTo">结束日期</label>
+            <input type="datetime-local" id="dateTo" class="form-control">
+        </div>
+        
+        <div class="form-group">
+            <label for="actionFilter">操作类型</label>
+            <select id="actionFilter" class="form-control">
+                <option value="">所有操作</option>
+                <option value="generate">生成卡密</option>
+                <option value="use">使用卡密</option>
+                <option value="expire">卡密过期</option>
+                <option value="revoke">撤销卡密</option>
+                <option value="renew">续期卡密</option>
+            </select>
+        </div>
+        
+        <div class="form-group">
+            <label for="userFilter">用户筛选</label>
+            <input type="text" id="userFilter" placeholder="用户邮箱或IP" class="form-control">
+        </div>
+        
+        <div class="form-group">
+            <label for="cardFilter">卡密筛选</label>
+            <input type="text" id="cardFilter" placeholder="卡密代码" class="form-control">
+        </div>
+        
+        <div class="form-group">
+            <button class="btn btn-primary" onclick="filterLogs()">筛选</button>
+            <button class="btn btn-secondary" onclick="resetFilters()">重置</button>
+        </div>
+    </div>
+</div>
+
+<!-- Export Options -->
+<div class="card">
+    <div class="export-options">
+        <span>导出选项:</span>
+        <button class="btn btn-success" onclick="exportLogs('csv')">导出CSV</button>
+        <button class="btn btn-info" onclick="exportLogs('json')">导出JSON</button>
+        <button class="btn btn-warning" onclick="exportLogs('excel')">导出Excel</button>
+        <div style="margin-left: auto;">
+            <label>
+                <input type="checkbox" id="timelineView" onchange="toggleTimelineView()">
+                时间线视图
+            </label>
+        </div>
+    </div>
+</div>
+
+<!-- Logs Display -->
+<div class="card">
+    <h2>操作日志</h2>
+    <div id="logsContainer">
+        <!-- Demo log entries -->
+        <div class="log-entry log-success">
+            <div class="log-header">
+                <div class="log-title">
+                    <span class="action-badge action-generate">生成</span>
+                    批量生成卡密
+                </div>
+                <div class="log-time">2024-01-15 14:30:25</div>
+            </div>
+            <div class="log-details">
+                管理员生成了 10 个月卡类型的卡密，有效期至 2024-02-15
+            </div>
+            <div class="log-meta">
+                <div><strong>操作者:</strong> admin@system.com</div>
+                <div><strong>IP地址:</strong> 192.168.1.100</div>
+                <div><strong>卡密类型:</strong> 月卡</div>
+                <div><strong>数量:</strong> 10个</div>
+            </div>
+        </div>
+        
+        <div class="log-entry log-info">
+            <div class="log-header">
+                <div class="log-title">
+                    <span class="action-badge action-use">使用</span>
+                    卡密激活成功
+                </div>
+                <div class="log-time">2024-01-15 12:15:42</div>
+            </div>
+            <div class="log-details">
+                用户 user@example.com 成功使用卡密 MONTH-ABCD-1234，账户已激活
+            </div>
+            <div class="log-meta">
+                <div><strong>用户:</strong> user@example.com</div>
+                <div><strong>IP地址:</strong> 203.0.113.45</div>
+                <div><strong>卡密:</strong> MONTH-ABCD-1234</div>
+                <div><strong>有效期至:</strong> 2024-02-15 12:15:42</div>
+            </div>
+        </div>
+        
+        <div class="log-entry log-warning">
+            <div class="log-header">
+                <div class="log-title">
+                    <span class="action-badge action-expire">过期</span>
+                    卡密自动过期
+                </div>
+                <div class="log-time">2024-01-15 10:00:00</div>
+            </div>
+            <div class="log-details">
+                卡密 TRIAL-EFGH-5678 已达到过期时间，自动设置为过期状态
+            </div>
+            <div class="log-meta">
+                <div><strong>卡密:</strong> TRIAL-EFGH-5678</div>
+                <div><strong>原用户:</strong> test@example.com</div>
+                <div><strong>使用时长:</strong> 7天</div>
+                <div><strong>使用次数:</strong> 45次</div>
+            </div>
+        </div>
+        
+        <div class="log-entry log-error">
+            <div class="log-header">
+                <div class="log-title">
+                    <span class="action-badge action-revoke">撤销</span>
+                    管理员撤销卡密
+                </div>
+                <div class="log-time">2024-01-15 09:30:15</div>
+            </div>
+            <div class="log-details">
+                管理员撤销了卡密 YEAR-IJKL-9012，原因：违规使用
+            </div>
+            <div class="log-meta">
+                <div><strong>操作者:</strong> admin@system.com</div>
+                <div><strong>IP地址:</strong> 192.168.1.100</div>
+                <div><strong>卡密:</strong> YEAR-IJKL-9012</div>
+                <div><strong>撤销原因:</strong> 违规使用</div>
+            </div>
+        </div>
+        
+        <div class="log-entry log-success">
+            <div class="log-header">
+                <div class="log-title">
+                    <span class="action-badge action-renew">续期</span>
+                    卡密续期成功
+                </div>
+                <div class="log-time">2024-01-14 16:45:30</div>
+            </div>
+            <div class="log-details">
+                管理员为卡密 MONTH-MNOP-3456 续期 30 天，新的过期时间为 2024-03-15
+            </div>
+            <div class="log-meta">
+                <div><strong>操作者:</strong> admin@system.com</div>
+                <div><strong>IP地址:</strong> 192.168.1.100</div>
+                <div><strong>卡密:</strong> MONTH-MNOP-3456</div>
+                <div><strong>续期时长:</strong> 30天</div>
+            </div>
+        </div>
+        
+        <div class="log-entry log-warning">
+            <div class="log-header">
+                <div class="log-title">
+                    <span class="action-badge action-use">尝试</span>
+                    无效卡密使用尝试
+                </div>
+                <div class="log-time">2024-01-14 14:20:18</div>
+            </div>
+            <div class="log-details">
+                用户尝试使用无效卡密 INVALID-CARD-CODE，操作被拒绝
+            </div>
+            <div class="log-meta">
+                <div><strong>IP地址:</strong> 198.51.100.42</div>
+                <div><strong>尝试卡密:</strong> INVALID-CARD-CODE</div>
+                <div><strong>错误类型:</strong> 卡密不存在</div>
+                <div><strong>风险级别:</strong> 低</div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Pagination -->
+    <div class="pagination">
+        <button onclick="changePage(-1)" disabled>上一页</button>
+        <button class="active">1</button>
+        <button onclick="changePage(2)">2</button>
+        <button onclick="changePage(3)">3</button>
+        <span>...</span>
+        <button onclick="changePage(10)">10</button>
+        <button onclick="changePage(1)">下一页</button>
+    </div>
+</div>
+
+<!-- Log Details Modal -->
+<div id="logModal" class="modal">
+    <div class="modal-content">
+        <span class="close" onclick="closeLogModal()">&times;</span>
+        <h2>日志详情</h2>
+        <div id="logDetails">
+            <!-- Detailed log information will be loaded here -->
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+let currentPage = 1;
+let logsPerPage = 10;
+let isTimelineView = false;
+
+// Initialize date filters with current date
+document.addEventListener('DOMContentLoaded', function() {
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    
+    document.getElementById('dateFrom').value = today.toISOString().slice(0, 16);
+    document.getElementById('dateTo').value = tomorrow.toISOString().slice(0, 16);
+    
+    // Set demo statistics
+    window.today_logs = 6;
+    window.week_logs = 45;
+    window.month_logs = 156;
+    window.total_logs = 1247;
+});
+
+function filterLogs() {
+    const dateFrom = document.getElementById('dateFrom').value;
+    const dateTo = document.getElementById('dateTo').value;
+    const actionFilter = document.getElementById('actionFilter').value;
+    const userFilter = document.getElementById('userFilter').value.toLowerCase();
+    const cardFilter = document.getElementById('cardFilter').value.toLowerCase();
+    
+    const logEntries = document.querySelectorAll('.log-entry');
+    let visibleCount = 0;
+    
+    logEntries.forEach(entry => {
+        let show = true;
+        
+        // Date filter
+        if (dateFrom || dateTo) {
+            const logTime = entry.querySelector('.log-time').textContent;
+            const logDate = new Date(logTime);
+            
+            if (dateFrom && logDate < new Date(dateFrom)) {
+                show = false;
+            }
+            if (dateTo && logDate > new Date(dateTo)) {
+                show = false;
+            }
+        }
+        
+        // Action filter
+        if (actionFilter) {
+            const actionBadge = entry.querySelector('.action-badge');
+            if (!actionBadge || !actionBadge.className.includes(`action-${actionFilter}`)) {
+                show = false;
+            }
+        }
+        
+        // User filter
+        if (userFilter) {
+            const logMeta = entry.querySelector('.log-meta').textContent.toLowerCase();
+            if (!logMeta.includes(userFilter)) {
+                show = false;
+            }
+        }
+        
+        // Card filter
+        if (cardFilter) {
+            const logDetails = entry.querySelector('.log-details').textContent.toLowerCase();
+            const logMeta = entry.querySelector('.log-meta').textContent.toLowerCase();
+            if (!logDetails.includes(cardFilter) && !logMeta.includes(cardFilter)) {
+                show = false;
+            }
+        }
+        
+        entry.style.display = show ? 'block' : 'none';
+        if (show) visibleCount++;
+    });
+    
+    showToast(`筛选完成，显示 ${visibleCount} 条日志`, 'info');
+}
+
+function resetFilters() {
+    // Reset all filter inputs
+    document.getElementById('actionFilter').value = '';
+    document.getElementById('userFilter').value = '';
+    document.getElementById('cardFilter').value = '';
+    
+    // Reset date filters to today
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    
+    document.getElementById('dateFrom').value = today.toISOString().slice(0, 16);
+    document.getElementById('dateTo').value = tomorrow.toISOString().slice(0, 16);
+    
+    // Show all logs
+    const logEntries = document.querySelectorAll('.log-entry');
+    logEntries.forEach(entry => {
+        entry.style.display = 'block';
+    });
+    
+    showToast('筛选条件已重置', 'info');
+}
+
+function toggleTimelineView() {
+    const isChecked = document.getElementById('timelineView').checked;
+    const container = document.getElementById('logsContainer');
+    
+    if (isChecked) {
+        container.classList.add('timeline-view');
+        container.querySelectorAll('.log-entry').forEach(entry => {
+            entry.classList.add('timeline-item');
+        });
+        isTimelineView = true;
+    } else {
+        container.classList.remove('timeline-view');
+        container.querySelectorAll('.log-entry').forEach(entry => {
+            entry.classList.remove('timeline-item');
+        });
+        isTimelineView = false;
+    }
+}
+
+function exportLogs(format) {
+    const visibleLogs = document.querySelectorAll('.log-entry[style="display: block"], .log-entry:not([style*="display: none"])');
+    
+    if (visibleLogs.length === 0) {
+        showToast('没有可导出的日志数据', 'warning');
+        return;
+    }
+    
+    const exportData = [];
+    
+    visibleLogs.forEach(entry => {
+        const title = entry.querySelector('.log-title').textContent.trim();
+        const time = entry.querySelector('.log-time').textContent;
+        const details = entry.querySelector('.log-details').textContent;
+        const meta = entry.querySelector('.log-meta').textContent;
+        
+        exportData.push({
+            time: time,
+            action: title,
+            details: details,
+            metadata: meta
+        });
+    });
+    
+    let blob, filename;
+    
+    switch (format) {
+        case 'csv':
+            const csvContent = [
+                ['时间', '操作', '详情', '元数据'].join(','),
+                ...exportData.map(log => [
+                    `"${log.time}"`,
+                    `"${log.action}"`,
+                    `"${log.details}"`,
+                    `"${log.metadata.replace(/\n/g, ' ')}"`
+                ].join(','))
+            ].join('\n');
+            
+            blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8' });
+            filename = `card_logs_${new Date().getTime()}.csv`;
+            break;
+            
+        case 'json':
+            blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+            filename = `card_logs_${new Date().getTime()}.json`;
+            break;
+            
+        case 'excel':
+            // For a simple Excel export, we'll use CSV format with .xlsx extension
+            // In a real implementation, you might use a library like SheetJS
+            const excelContent = [
+                ['时间', '操作', '详情', '元数据'].join('\t'),
+                ...exportData.map(log => [
+                    log.time,
+                    log.action,
+                    log.details,
+                    log.metadata.replace(/\n/g, ' ')
+                ].join('\t'))
+            ].join('\n');
+            
+            blob = new Blob(['\ufeff' + excelContent], { type: 'application/vnd.ms-excel' });
+            filename = `card_logs_${new Date().getTime()}.xlsx`;
+            break;
+    }
+    
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    
+    showToast(`已导出 ${exportData.length} 条日志记录`, 'success');
+}
+
+function changePage(page) {
+    // In a real implementation, this would fetch new data from the server
+    if (typeof page === 'number') {
+        currentPage = page;
+    } else if (page === -1) {
+        currentPage = Math.max(1, currentPage - 1);
+    } else if (page === 1) {
+        currentPage = currentPage + 1;
+    }
+    
+    // Update pagination buttons
+    const buttons = document.querySelectorAll('.pagination button');
+    buttons.forEach(btn => btn.classList.remove('active'));
+    
+    const activeBtn = document.querySelector(`.pagination button:nth-child(${currentPage + 1})`);
+    if (activeBtn) {
+        activeBtn.classList.add('active');
+    }
+    
+    showToast(`切换到第 ${currentPage} 页`, 'info');
+}
+
+function viewLogDetails(logData) {
+    document.getElementById('logDetails').innerHTML = `
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+            <div><strong>时间:</strong> ${logData.time}</div>
+            <div><strong>操作类型:</strong> ${logData.action}</div>
+            <div><strong>操作者:</strong> ${logData.operator || '系统'}</div>
+            <div><strong>IP地址:</strong> ${logData.ip || '未知'}</div>
+            <div><strong>用户代理:</strong> ${logData.userAgent || '未知'}</div>
+            <div><strong>会话ID:</strong> ${logData.sessionId || '未知'}</div>
+        </div>
+        <div style="margin-top: 15px;">
+            <strong>详细描述:</strong><br>
+            ${logData.details}
+        </div>
+        <div style="margin-top: 15px;">
+            <strong>相关数据:</strong><br>
+            <pre style="background: #f8f9fa; padding: 10px; border-radius: 4px; font-size: 12px;">${JSON.stringify(logData.metadata || {}, null, 2)}</pre>
+        </div>
+    `;
+    
+    document.getElementById('logModal').style.display = 'block';
+}
+
+function closeLogModal() {
+    document.getElementById('logModal').style.display = 'none';
+}
+
+// Add click handlers to log entries for detailed view
+document.addEventListener('DOMContentLoaded', function() {
+    const logEntries = document.querySelectorAll('.log-entry');
+    
+    logEntries.forEach((entry, index) => {
+        entry.style.cursor = 'pointer';
+        entry.addEventListener('click', function() {
+            const logData = {
+                time: this.querySelector('.log-time').textContent,
+                action: this.querySelector('.log-title').textContent.trim(),
+                details: this.querySelector('.log-details').textContent,
+                operator: 'admin@system.com',
+                ip: '192.168.1.100',
+                userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                sessionId: `sess_${Math.random().toString(36).substr(2, 9)}`,
+                metadata: {
+                    logId: `log_${index + 1}`,
+                    severity: 'normal',
+                    source: 'card_management',
+                    version: '1.0.0'
+                }
+            };
+            
+            viewLogDetails(logData);
+        });
+    });
+});
+
+// Close modal when clicking outside
+window.addEventListener('click', (e) => {
+    const modal = document.getElementById('logModal');
+    if (e.target === modal) {
+        closeLogModal();
+    }
+});
+
+// Real-time log updates (demo)
+setInterval(() => {
+    // In a real implementation, this would check for new logs from the server
+    // For demo purposes, we'll just show a notification occasionally
+    if (Math.random() < 0.1) { // 10% chance every 10 seconds
+        showToast('检测到新的日志记录', 'info');
+    }
+}, 10000);
+{% endblock %}

@@ -1,0 +1,710 @@
+{% extends "admin_base.html" %}
+
+{% block title %}卡密管理 - 邮件查看系统{% endblock %}
+{% block page_title %}卡密管理{% endblock %}
+{% block breadcrumb %}邮件查看系统 / 管理后台 / 卡密管理{% endblock %}
+
+{% block extra_styles %}
+/* Additional styles specific to cards page */
+.card-generator {
+    background: linear-gradient(135deg, #e3f2fd, #bbdefb);
+    padding: 20px;
+    border-radius: 10px;
+    margin-bottom: 20px;
+}
+
+.generator-form {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 15px;
+    align-items: end;
+}
+
+.card-status {
+    padding: 4px 8px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 500;
+}
+
+.status-unused {
+    background: #d4edda;
+    color: #155724;
+}
+
+.status-used {
+    background: #f8d7da;
+    color: #721c24;
+}
+
+.status-expired {
+    background: #e2e3e5;
+    color: #6c757d;
+}
+
+.card-code {
+    font-family: 'Courier New', monospace;
+    font-weight: bold;
+    font-size: 14px;
+    color: #007bff;
+    cursor: pointer;
+}
+
+.card-code:hover {
+    background: #e7f3ff;
+    padding: 2px 4px;
+    border-radius: 3px;
+}
+
+.batch-operations {
+    background: #f8f9fa;
+    padding: 15px;
+    border-radius: 8px;
+    margin-bottom: 20px;
+    display: flex;
+    gap: 10px;
+    align-items: center;
+}
+
+.stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 15px;
+    margin-bottom: 20px;
+}
+
+.stat-item {
+    background: white;
+    padding: 20px;
+    border-radius: 8px;
+    text-align: center;
+    border: 1px solid #e9ecef;
+}
+
+.stat-number {
+    font-size: 24px;
+    font-weight: bold;
+    margin-bottom: 5px;
+}
+
+.stat-label {
+    color: #666;
+    font-size: 14px;
+}
+
+.usage-chart {
+    background: white;
+    padding: 20px;
+    border-radius: 8px;
+    text-align: center;
+    border: 1px solid #e9ecef;
+}
+
+.progress-bar {
+    width: 100%;
+    height: 20px;
+    background: #e9ecef;
+    border-radius: 10px;
+    overflow: hidden;
+    margin: 10px 0;
+}
+
+.progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #28a745, #20c997);
+    transition: width 0.3s ease;
+}
+
+.card-details {
+    background: #f8f9fa;
+    padding: 15px;
+    border-radius: 5px;
+    margin-top: 10px;
+    font-size: 13px;
+    display: none;
+}
+{% endblock %}
+
+{% block content %}
+<!-- Statistics Overview -->
+<div class="stats-grid">
+    <div class="stat-item">
+        <div class="stat-number" style="color: #007bff;">{{ total_cards or 0 }}</div>
+        <div class="stat-label">总卡密数</div>
+    </div>
+    <div class="stat-item">
+        <div class="stat-number" style="color: #28a745;">{{ unused_cards or 0 }}</div>
+        <div class="stat-label">未使用</div>
+    </div>
+    <div class="stat-item">
+        <div class="stat-number" style="color: #dc3545;">{{ used_cards or 0 }}</div>
+        <div class="stat-label">已使用</div>
+    </div>
+    <div class="stat-item">
+        <div class="stat-number" style="color: #6c757d;">{{ expired_cards or 0 }}</div>
+        <div class="stat-label">已过期</div>
+    </div>
+</div>
+
+<!-- Usage Chart -->
+<div class="card">
+    <h2>使用情况统计</h2>
+    <div class="usage-chart">
+        <div>使用率: {{ usage_rate or 0 }}%</div>
+        <div class="progress-bar">
+            <div class="progress-fill" style="width: {{ usage_rate or 0 }}%;"></div>
+        </div>
+        <div style="display: flex; justify-content: space-between; font-size: 12px; color: #666;">
+            <span>已使用: {{ used_cards or 0 }}</span>
+            <span>总计: {{ total_cards or 0 }}</span>
+        </div>
+    </div>
+</div>
+
+<!-- Card Generator -->
+<div class="card">
+    <h2>生成卡密</h2>
+    <div class="card-generator">
+        <form id="generateForm" class="generator-form">
+            <div class="form-group">
+                <label for="cardType">卡密类型</label>
+                <select id="cardType" name="card_type" required>
+                    <option value="trial">试用卡 (7天)</option>
+                    <option value="monthly">月卡 (30天)</option>
+                    <option value="quarterly">季卡 (90天)</option>
+                    <option value="yearly">年卡 (365天)</option>
+                    <option value="permanent">永久卡</option>
+                </select>
+            </div>
+            
+            <div class="form-group">
+                <label for="quantity">生成数量</label>
+                <input type="number" id="quantity" name="quantity" value="1" min="1" max="100" required>
+            </div>
+            
+            <div class="form-group">
+                <label for="expireDate">过期时间</label>
+                <input type="datetime-local" id="expireDate" name="expire_date">
+            </div>
+            
+            <div class="form-group">
+                <label for="remarks">备注说明</label>
+                <input type="text" id="remarks" name="remarks" placeholder="可选">
+            </div>
+            
+            <div class="form-group">
+                <button type="submit" class="btn btn-primary">生成卡密</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Batch Operations -->
+<div class="card">
+    <h2>卡密管理</h2>
+    
+    <div class="batch-operations">
+        <span>批量操作:</span>
+        <button class="btn btn-info" onclick="selectAll()">全选</button>
+        <button class="btn btn-warning" onclick="exportSelected()">导出选中</button>
+        <button class="btn btn-danger" onclick="deleteSelected()">删除选中</button>
+        <div style="margin-left: auto;">
+            <input type="text" placeholder="搜索卡密..." id="searchCards" style="padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+            <select id="statusFilter" style="padding: 8px; border: 1px solid #ddd; border-radius: 4px; margin-left: 10px;">
+                <option value="">所有状态</option>
+                <option value="unused">未使用</option>
+                <option value="used">已使用</option>
+                <option value="expired">已过期</option>
+            </select>
+        </div>
+    </div>
+    
+    <!-- Cards Table -->
+    <div style="overflow-x: auto;">
+        <table class="table" id="cardsTable">
+            <thead>
+                <tr>
+                    <th style="width: 40px;">
+                        <input type="checkbox" id="selectAllCards" onchange="toggleSelectAll()">
+                    </th>
+                    <th>卡密代码</th>
+                    <th>类型</th>
+                    <th>状态</th>
+                    <th>创建时间</th>
+                    <th>使用时间</th>
+                    <th>过期时间</th>
+                    <th>使用者</th>
+                    <th>操作</th>
+                </tr>
+            </thead>
+            <tbody>
+                <!-- Demo data - in real implementation this would come from database -->
+                <tr data-id="1">
+                    <td><input type="checkbox" class="card-checkbox" value="1"></td>
+                    <td>
+                        <span class="card-code" onclick="copyToClipboard('TRIAL-ABCD-1234')">TRIAL-ABCD-1234</span>
+                    </td>
+                    <td>试用卡</td>
+                    <td><span class="card-status status-unused">未使用</span></td>
+                    <td>2024-01-15 10:30</td>
+                    <td>-</td>
+                    <td>2024-01-22 10:30</td>
+                    <td>-</td>
+                    <td>
+                        <button class="btn btn-info btn-sm" onclick="viewDetails(1)">详情</button>
+                        <button class="btn btn-warning btn-sm" onclick="editCard(1)">编辑</button>
+                        <button class="btn btn-danger btn-sm" onclick="deleteCard(1)">删除</button>
+                    </td>
+                </tr>
+                <tr data-id="2">
+                    <td><input type="checkbox" class="card-checkbox" value="2"></td>
+                    <td>
+                        <span class="card-code" onclick="copyToClipboard('MONTH-EFGH-5678')">MONTH-EFGH-5678</span>
+                    </td>
+                    <td>月卡</td>
+                    <td><span class="card-status status-used">已使用</span></td>
+                    <td>2024-01-10 15:20</td>
+                    <td>2024-01-12 09:15</td>
+                    <td>2024-02-12 09:15</td>
+                    <td>user@example.com</td>
+                    <td>
+                        <button class="btn btn-info btn-sm" onclick="viewDetails(2)">详情</button>
+                        <button class="btn btn-secondary btn-sm" onclick="revokeCard(2)">撤销</button>
+                        <button class="btn btn-danger btn-sm" onclick="deleteCard(2)">删除</button>
+                    </td>
+                </tr>
+                <tr data-id="3">
+                    <td><input type="checkbox" class="card-checkbox" value="3"></td>
+                    <td>
+                        <span class="card-code" onclick="copyToClipboard('YEAR-IJKL-9012')">YEAR-IJKL-9012</span>
+                    </td>
+                    <td>年卡</td>
+                    <td><span class="card-status status-expired">已过期</span></td>
+                    <td>2023-12-01 12:00</td>
+                    <td>2023-12-05 16:30</td>
+                    <td>2024-01-01 00:00</td>
+                    <td>admin@test.com</td>
+                    <td>
+                        <button class="btn btn-info btn-sm" onclick="viewDetails(3)">详情</button>
+                        <button class="btn btn-success btn-sm" onclick="renewCard(3)">续期</button>
+                        <button class="btn btn-danger btn-sm" onclick="deleteCard(3)">删除</button>
+                    </td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Card Details Modal -->
+<div id="cardModal" class="modal">
+    <div class="modal-content">
+        <span class="close" onclick="closeCardModal()">&times;</span>
+        <h2 id="cardModalTitle">卡密详情</h2>
+        <div id="cardDetails">
+            <!-- Card details will be loaded here -->
+        </div>
+    </div>
+</div>
+
+<!-- Generate Results Modal -->
+<div id="generateModal" class="modal">
+    <div class="modal-content">
+        <span class="close" onclick="closeGenerateModal()">&times;</span>
+        <h2>生成结果</h2>
+        <div id="generateResults">
+            <!-- Generated cards will be shown here -->
+        </div>
+        <div style="margin-top: 20px; text-align: center;">
+            <button class="btn btn-primary" onclick="downloadGenerated()">下载卡密</button>
+            <button class="btn btn-secondary" onclick="closeGenerateModal()">关闭</button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+let selectedCards = new Set();
+let generatedCards = [];
+
+// Search and filter functionality
+document.getElementById('searchCards').addEventListener('input', filterCards);
+document.getElementById('statusFilter').addEventListener('change', filterCards);
+
+function filterCards() {
+    const searchTerm = document.getElementById('searchCards').value.toLowerCase();
+    const statusFilter = document.getElementById('statusFilter').value;
+    
+    const rows = document.querySelectorAll('#cardsTable tbody tr');
+    
+    rows.forEach(row => {
+        const code = row.querySelector('.card-code').textContent.toLowerCase();
+        const status = row.querySelector('.card-status').className;
+        
+        let show = true;
+        
+        if (searchTerm && !code.includes(searchTerm)) {
+            show = false;
+        }
+        
+        if (statusFilter && !status.includes(`status-${statusFilter}`)) {
+            show = false;
+        }
+        
+        row.style.display = show ? '' : 'none';
+    });
+}
+
+function toggleSelectAll() {
+    const selectAll = document.getElementById('selectAllCards');
+    const checkboxes = document.querySelectorAll('.card-checkbox');
+    
+    checkboxes.forEach(checkbox => {
+        if (checkbox.closest('tr').style.display !== 'none') {
+            checkbox.checked = selectAll.checked;
+            if (selectAll.checked) {
+                selectedCards.add(checkbox.value);
+            } else {
+                selectedCards.delete(checkbox.value);
+            }
+        }
+    });
+}
+
+function selectAll() {
+    document.getElementById('selectAllCards').checked = true;
+    toggleSelectAll();
+    showToast('已选择所有可见卡密', 'info');
+}
+
+function copyToClipboard(text) {
+    navigator.clipboard.writeText(text).then(() => {
+        showToast('卡密已复制到剪贴板', 'success');
+    }).catch(() => {
+        // Fallback for older browsers
+        const textArea = document.createElement('textarea');
+        textArea.value = text;
+        document.body.appendChild(textArea);
+        textArea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textArea);
+        showToast('卡密已复制到剪贴板', 'success');
+    });
+}
+
+function viewDetails(cardId) {
+    // In real implementation, fetch card details from server
+    const cardDetails = {
+        1: {
+            code: 'TRIAL-ABCD-1234',
+            type: '试用卡',
+            status: '未使用',
+            created: '2024-01-15 10:30:25',
+            expires: '2024-01-22 10:30:25',
+            usage_limit: '1次',
+            ip_limit: '无限制',
+            remarks: '测试卡密'
+        },
+        2: {
+            code: 'MONTH-EFGH-5678',
+            type: '月卡',
+            status: '已使用',
+            created: '2024-01-10 15:20:10',
+            used: '2024-01-12 09:15:30',
+            expires: '2024-02-12 09:15:30',
+            user: 'user@example.com',
+            ip: '192.168.1.100',
+            usage_count: '15次',
+            remarks: '正常使用'
+        },
+        3: {
+            code: 'YEAR-IJKL-9012',
+            type: '年卡',
+            status: '已过期',
+            created: '2023-12-01 12:00:00',
+            used: '2023-12-05 16:30:45',
+            expires: '2024-01-01 00:00:00',
+            user: 'admin@test.com',
+            ip: '10.0.0.1',
+            usage_count: '102次',
+            remarks: '管理员测试卡'
+        }
+    };
+    
+    const card = cardDetails[cardId];
+    if (!card) return;
+    
+    document.getElementById('cardModalTitle').textContent = `卡密详情 - ${card.code}`;
+    document.getElementById('cardDetails').innerHTML = `
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+            <div><strong>卡密代码:</strong> ${card.code}</div>
+            <div><strong>类型:</strong> ${card.type}</div>
+            <div><strong>状态:</strong> ${card.status}</div>
+            <div><strong>创建时间:</strong> ${card.created}</div>
+            ${card.used ? `<div><strong>使用时间:</strong> ${card.used}</div>` : ''}
+            <div><strong>过期时间:</strong> ${card.expires}</div>
+            ${card.user ? `<div><strong>使用者:</strong> ${card.user}</div>` : ''}
+            ${card.ip ? `<div><strong>使用IP:</strong> ${card.ip}</div>` : ''}
+            ${card.usage_count ? `<div><strong>使用次数:</strong> ${card.usage_count}</div>` : ''}
+            ${card.usage_limit ? `<div><strong>使用限制:</strong> ${card.usage_limit}</div>` : ''}
+            ${card.ip_limit ? `<div><strong>IP限制:</strong> ${card.ip_limit}</div>` : ''}
+        </div>
+        ${card.remarks ? `<div style="margin-top: 15px;"><strong>备注:</strong> ${card.remarks}</div>` : ''}
+    `;
+    
+    document.getElementById('cardModal').style.display = 'block';
+}
+
+function closeCardModal() {
+    document.getElementById('cardModal').style.display = 'none';
+}
+
+function editCard(cardId) {
+    showToast('编辑功能开发中...', 'info');
+}
+
+function deleteCard(cardId) {
+    if (!confirm('确定要删除这个卡密吗？此操作不可撤销！')) {
+        return;
+    }
+    
+    // In real implementation, send delete request to server
+    showToast('卡密删除成功', 'success');
+    
+    // Remove from UI
+    const row = document.querySelector(`tr[data-id="${cardId}"]`);
+    if (row) {
+        row.remove();
+    }
+}
+
+function revokeCard(cardId) {
+    if (!confirm('确定要撤销这个卡密吗？撤销后卡密将立即失效！')) {
+        return;
+    }
+    
+    // In real implementation, send revoke request to server
+    showToast('卡密已撤销', 'success');
+    
+    // Update status in UI
+    const row = document.querySelector(`tr[data-id="${cardId}"]`);
+    if (row) {
+        const statusElement = row.querySelector('.card-status');
+        statusElement.textContent = '已撤销';
+        statusElement.className = 'card-status status-expired';
+    }
+}
+
+function renewCard(cardId) {
+    const newExpiry = prompt('请输入新的过期时间 (格式: YYYY-MM-DD HH:MM):');
+    if (!newExpiry) return;
+    
+    // In real implementation, send renew request to server
+    showToast('卡密续期成功', 'success');
+    
+    // Update expiry in UI
+    const row = document.querySelector(`tr[data-id="${cardId}"]`);
+    if (row) {
+        const expiryCell = row.cells[6];
+        expiryCell.textContent = newExpiry;
+        
+        const statusElement = row.querySelector('.card-status');
+        statusElement.textContent = '未使用';
+        statusElement.className = 'card-status status-unused';
+    }
+}
+
+function exportSelected() {
+    const selectedCheckboxes = document.querySelectorAll('.card-checkbox:checked');
+    if (selectedCheckboxes.length === 0) {
+        showToast('请先选择要导出的卡密', 'warning');
+        return;
+    }
+    
+    const exportData = [];
+    selectedCheckboxes.forEach(checkbox => {
+        const row = checkbox.closest('tr');
+        const code = row.querySelector('.card-code').textContent;
+        const type = row.cells[2].textContent;
+        const status = row.querySelector('.card-status').textContent;
+        
+        exportData.push({
+            code: code,
+            type: type,
+            status: status,
+            exported_at: new Date().toLocaleString()
+        });
+    });
+    
+    const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `cards_export_${new Date().getTime()}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    
+    showToast(`已导出 ${exportData.length} 个卡密`, 'success');
+}
+
+function deleteSelected() {
+    const selectedCheckboxes = document.querySelectorAll('.card-checkbox:checked');
+    if (selectedCheckboxes.length === 0) {
+        showToast('请先选择要删除的卡密', 'warning');
+        return;
+    }
+    
+    if (!confirm(`确定要删除这 ${selectedCheckboxes.length} 个卡密吗？此操作不可撤销！`)) {
+        return;
+    }
+    
+    // In real implementation, send batch delete request to server
+    selectedCheckboxes.forEach(checkbox => {
+        const row = checkbox.closest('tr');
+        row.remove();
+    });
+    
+    showToast(`已删除 ${selectedCheckboxes.length} 个卡密`, 'success');
+}
+
+document.getElementById('generateForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    
+    const formData = new FormData(e.target);
+    const data = {
+        card_type: formData.get('card_type'),
+        quantity: parseInt(formData.get('quantity')),
+        expire_date: formData.get('expire_date'),
+        remarks: formData.get('remarks')
+    };
+    
+    // Show loading
+    const submitBtn = e.target.querySelector('button[type="submit"]');
+    const originalText = submitBtn.textContent;
+    submitBtn.textContent = '生成中...';
+    submitBtn.disabled = true;
+    
+    try {
+        // In real implementation, send to server
+        await new Promise(resolve => setTimeout(resolve, 1000)); // Simulate API call
+        
+        // Generate demo cards
+        generatedCards = [];
+        for (let i = 0; i < data.quantity; i++) {
+            const typePrefix = {
+                trial: 'TRIAL',
+                monthly: 'MONTH',
+                quarterly: 'QUART',
+                yearly: 'YEAR',
+                permanent: 'PERM'
+            }[data.card_type];
+            
+            const randomId = Math.random().toString(36).substr(2, 8).toUpperCase();
+            const randomCode = Math.random().toString(36).substr(2, 4).toUpperCase();
+            
+            generatedCards.push({
+                code: `${typePrefix}-${randomId}-${randomCode}`,
+                type: data.card_type,
+                expires: data.expire_date || 'Never',
+                remarks: data.remarks || ''
+            });
+        }
+        
+        // Show results
+        showGenerateResults();
+        showToast(`成功生成 ${data.quantity} 个卡密`, 'success');
+        
+    } catch (error) {
+        showToast('生成卡密失败', 'error');
+    } finally {
+        submitBtn.textContent = originalText;
+        submitBtn.disabled = false;
+    }
+});
+
+function showGenerateResults() {
+    const resultsHtml = generatedCards.map(card => `
+        <div style="display: flex; justify-content: space-between; align-items: center; padding: 10px; border: 1px solid #ddd; border-radius: 5px; margin-bottom: 10px;">
+            <div>
+                <strong>${card.code}</strong><br>
+                <small>类型: ${card.type} | 过期: ${card.expires}</small>
+            </div>
+            <button class="btn btn-info btn-sm" onclick="copyToClipboard('${card.code}')">复制</button>
+        </div>
+    `).join('');
+    
+    document.getElementById('generateResults').innerHTML = resultsHtml;
+    document.getElementById('generateModal').style.display = 'block';
+}
+
+function closeGenerateModal() {
+    document.getElementById('generateModal').style.display = 'none';
+}
+
+function downloadGenerated() {
+    if (generatedCards.length === 0) return;
+    
+    const text = generatedCards.map(card => card.code).join('\n');
+    const blob = new Blob([text], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `generated_cards_${new Date().getTime()}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    
+    showToast('卡密文件已下载', 'success');
+}
+
+// Auto-set expiry date based on card type
+document.getElementById('cardType').addEventListener('change', function() {
+    const expireInput = document.getElementById('expireDate');
+    const now = new Date();
+    
+    switch (this.value) {
+        case 'trial':
+            now.setDate(now.getDate() + 7);
+            break;
+        case 'monthly':
+            now.setMonth(now.getMonth() + 1);
+            break;
+        case 'quarterly':
+            now.setMonth(now.getMonth() + 3);
+            break;
+        case 'yearly':
+            now.setFullYear(now.getFullYear() + 1);
+            break;
+        case 'permanent':
+            expireInput.value = '';
+            return;
+    }
+    
+    expireInput.value = now.toISOString().slice(0, 16);
+});
+
+// Close modals when clicking outside
+window.addEventListener('click', (e) => {
+    const cardModal = document.getElementById('cardModal');
+    const generateModal = document.getElementById('generateModal');
+    
+    if (e.target === cardModal) {
+        closeCardModal();
+    }
+    if (e.target === generateModal) {
+        closeGenerateModal();
+    }
+});
+
+// Initialize with demo data
+document.addEventListener('DOMContentLoaded', function() {
+    // Set demo statistics
+    window.total_cards = 3;
+    window.unused_cards = 1;
+    window.used_cards = 1;
+    window.expired_cards = 1;
+    window.usage_rate = Math.round((window.used_cards / window.total_cards) * 100);
+});
+{% endblock %}
