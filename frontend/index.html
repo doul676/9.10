@@ -660,7 +660,7 @@
             mailDisplay.style.display = 'none';
             
             try {
-                const response = await fetch('../backend/api/get_mail.php', {
+                const response = await fetch('/backend/api/get_mail', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
