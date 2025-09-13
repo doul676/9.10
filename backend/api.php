@@ -21,7 +21,7 @@ header('Access-Control-Allow-Origin: *');
 header('Access-Control-Allow-Methods: GET, POST');
 header('Access-Control-Allow-Headers: Content-Type');
 
-require_once 'utils/mail_fetcher.php';
+require_once 'utils/python_mail_bridge.php';
 
 $action = $_GET['action'] ?? $_POST['action'] ?? '';
 
@@ -29,8 +29,35 @@ switch ($action) {
     case 'test_connection':
         testConnection();
         break;
+    case 'get_servers':
+        getServerAddresses();
+        break;
+    case 'add_server':
+        addServerAddress();
+        break;
+    case 'update_server':
+        updateServerAddress();
+        break;
+    case 'delete_server':
+        deleteServerAddress();
+        break;
+    case 'batch_delete_servers':
+        batchDeleteServerAddresses();
+        break;
     case 'test_proxy':
         testProxyConnection();
+        break;
+    case 'refresh_proxies':
+        refreshProxies();
+        break;
+    case 'toggle_proxy':
+        toggleGlobalProxy();
+        break;
+    case 'get_proxy_status':
+        getGlobalProxyStatus();
+        break;
+    case 'check_data_consistency':
+        checkDataConsistency();
         break;
     default:
         http_response_code(400);
@@ -91,7 +118,7 @@ function testConnection() {
  */
 function testExistingAccount($accountId) {
     try {
-        $db = new SQLite3(__DIR__ . '/../db/mail.sqlite');
+        $db = new SQLite3('../db/mail.sqlite');
         $stmt = $db->prepare('SELECT * FROM mail_accounts WHERE id = ?');
         $stmt->bindValue(1, $accountId);
         $result = $stmt->execute();
@@ -130,115 +157,348 @@ function testExistingAccount($accountId) {
  */
 function performConnectionTest($server, $port, $username, $password, $protocol, $ssl) {
     try {
-        // 详细检查IMAP扩展状态
-        $imapInfo = checkImapExtension();
-        if (!$imapInfo['available']) {
+        // Create a Python-based connection test
+        $pythonScript = __DIR__ . '/../python/mail_fetcher.py';
+        
+        if (!file_exists($pythonScript)) {
             echo json_encode([
                 'success' => false,
-                'message' => $imapInfo['message'],
-                'diagnostics' => $imapInfo['diagnostics'],
-                'error_type' => 'extension_issue'
+                'message' => 'Python邮件服务未找到，请检查系统配置',
+                'error_type' => 'service_missing'
             ]);
             exit();
         }
         
-        // 创建邮件获取器实例（会自动检查并使用代理）
-        $fetcher = new MailFetcher($server, $port, $username, $password, $protocol, $ssl);
+        // Create a temporary test script for connection testing
+        $testData = [
+            'server' => $server,
+            'port' => $port,
+            'username' => $username,
+            'password' => $password,
+            'protocol' => $protocol,
+            'ssl' => $ssl
+        ];
         
-        // 获取代理信息用于显示
-        $proxyInfo = $fetcher->getProxyInfo();
+        $testScript = __DIR__ . '/../python/test_connection.py';
+        $testCode = '#!/usr/bin/env python3
+import json
+import sys
+import imaplib
+import logging
+
+# Disable logging for test
+logging.disable(logging.CRITICAL)
+
+def test_connection(server, port, username, password, protocol, use_ssl):
+    try:
+        if protocol.lower() == "imap":
+            if use_ssl:
+                conn = imaplib.IMAP4_SSL(server, port)
+            else:
+                conn = imaplib.IMAP4(server, port)
+            
+            conn.login(username, password)
+            conn.select("INBOX")
+            conn.close()
+            conn.logout()
+            
+            return {
+                "success": True,
+                "message": "✅ 邮箱连接测试成功！",
+                "diagnostics": {
+                    "connection_test": "✅ 服务器连接成功",
+                    "protocol_info": f"{protocol.upper()} with {"SSL" if use_ssl else "no SSL"}",
+                    "server_info": f"{server}:{port}",
+                    "auth_status": "✅ 身份验证成功"
+                }
+            }
+        else:
+            return {
+                "success": False,
+                "message": "❌ 不支持的协议类型",
+                "error_type": "unsupported_protocol"
+            }
+    except Exception as e:
+        error_msg = str(e).lower()
+        if "authentication" in error_msg or "login" in error_msg:
+            error_type = "auth_failed"
+            message = "❌ 身份验证失败：用户名或密码错误"
+        elif "certificate" in error_msg or "ssl" in error_msg:
+            error_type = "ssl_error"
+            message = "❌ SSL连接失败：证书验证错误"
+        elif "connection" in error_msg or "refused" in error_msg:
+            error_type = "connection_refused"
+            message = "❌ 连接被拒绝：请检查服务器地址和端口"
+        elif "timeout" in error_msg:
+            error_type = "timeout"
+            message = "❌ 连接超时：请检查网络连接"
+        else:
+            error_type = "unknown"
+            message = f"❌ 连接失败：{str(e)}"
         
-        // 尝试连接
-        if ($fetcher->connect()) {
-            $fetcher->close();
-            
-            $diagnostics = [
-                'imap_extension' => '✅ IMAP扩展已正确安装并可用',
-                'connection_protocol' => strtoupper($protocol) . ($ssl ? ' with SSL' : ' without SSL'),
-                'server_info' => $server . ':' . $port
-            ];
-            
-            // 添加代理状态信息到诊断中
-            if ($proxyInfo['enabled'] && $proxyInfo['info']) {
-                $proxy = $proxyInfo['info'];
-                $diagnostics['proxy_status'] = "✅ 使用代理连接：{$proxy['name']} ({$proxy['type']}) - {$proxy['host']}:{$proxy['port']}";
-            } else {
-                $diagnostics['proxy_status'] = "🌐 直接连接（未使用代理）";
-            }
-            
-            echo json_encode([
-                'success' => true,
-                'message' => '✅ 邮箱连接测试成功！服务器响应正常',
-                'diagnostics' => $diagnostics,
-                'proxy' => $proxyInfo
-            ]);
-        } else {
-            $diagnostics = [
-                'imap_extension' => '✅ IMAP扩展可用',
-                'connection_issue' => '服务器连接失败，请检查服务器地址、端口和凭据'
-            ];
-            
-            // 添加代理状态信息到诊断中
-            if ($proxyInfo['enabled'] && $proxyInfo['info']) {
-                $proxy = $proxyInfo['info'];
-                $diagnostics['proxy_status'] = "⚠️ 使用代理连接：{$proxy['name']} ({$proxy['type']}) - {$proxy['host']}:{$proxy['port']}";
-                $diagnostics['proxy_note'] = "连接失败可能与代理配置有关，建议检查代理设置";
-            } else {
-                $diagnostics['proxy_status'] = "🌐 直接连接（未使用代理）";
-            }
-            
+        return {
+            "success": False,
+            "message": message,
+            "error_type": error_type
+        }
+
+if __name__ == "__main__":
+    data = json.loads(sys.argv[1])
+    result = test_connection(
+        data["server"],
+        data["port"], 
+        data["username"],
+        data["password"],
+        data["protocol"],
+        data["ssl"]
+    )
+    print(json.dumps(result, ensure_ascii=False))
+';
+        
+        file_put_contents($testScript, $testCode);
+        
+        // Execute the test
+        $command = "python3 " . escapeshellarg($testScript) . " " . escapeshellarg(json_encode($testData)) . " 2>/dev/null";
+        $output = shell_exec($command);
+        
+        // Clean up temporary file
+        unlink($testScript);
+        
+        if ($output === null) {
             echo json_encode([
                 'success' => false,
-                'message' => '❌ 邮箱连接失败，请检查配置信息',
-                'diagnostics' => $diagnostics,
-                'proxy' => $proxyInfo,
-                'error_type' => 'connection_failed'
+                'message' => '无法执行Python邮件测试服务',
+                'error_type' => 'execution_failed'
             ]);
+            exit();
         }
+        
+        // Parse JSON output
+        $result = json_decode(trim($output), true);
+        
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            echo json_encode([
+                'success' => false,
+                'message' => 'Python邮件测试服务返回格式错误',
+                'error_type' => 'json_error'
+            ]);
+            exit();
+        }
+        
+        echo json_encode($result);
         
     } catch (Exception $e) {
-        // 创建邮件获取器以获取代理信息
-        $fetcher = new MailFetcher($server, $port, $username, $password, $protocol, $ssl);
-        $proxyInfo = $fetcher->getProxyInfo();
-        
-        // 根据错误类型提供更具体的提示
-        $errorMessage = $e->getMessage();
-        $errorType = 'unknown';
-        $diagnostics = ['imap_extension' => '✅ IMAP扩展可用'];
-        
-        // 添加代理状态信息到诊断中
-        if ($proxyInfo['enabled'] && $proxyInfo['info']) {
-            $proxy = $proxyInfo['info'];
-            $diagnostics['proxy_status'] = "⚠️ 使用代理连接：{$proxy['name']} ({$proxy['type']}) - {$proxy['host']}:{$proxy['port']}";
-            $diagnostics['proxy_note'] = "连接失败可能与代理配置有关，建议检查代理设置";
-        } else {
-            $diagnostics['proxy_status'] = "🌐 直接连接（未使用代理）";
-        }
-        
-        if (strpos($errorMessage, 'SSL证书') !== false) {
-            $errorType = 'ssl_error';
-            $diagnostics['ssl_issue'] = '❌ SSL证书验证失败';
-            $diagnostics['suggestion'] = '尝试关闭SSL选项或检查服务器SSL配置';
-        } elseif (strpos($errorMessage, '连接被拒绝') !== false) {
-            $errorType = 'connection_refused';
-            $diagnostics['connection_issue'] = '❌ 服务器拒绝连接';
-            $diagnostics['suggestion'] = '检查服务器地址和端口是否正确，防火墙是否允许连接';
-        } elseif (strpos($errorMessage, '用户名或密码') !== false) {
-            $errorType = 'auth_failed';
-            $diagnostics['auth_issue'] = '❌ 身份验证失败';
-            $diagnostics['suggestion'] = '检查邮箱地址和密码是否正确，某些邮箱需要应用专用密码';
-        } elseif (strpos($errorMessage, '服务器地址') !== false) {
-            $errorType = 'host_not_found';
-            $diagnostics['dns_issue'] = '❌ 无法解析服务器地址';
-            $diagnostics['suggestion'] = '检查服务器地址拼写是否正确，网络连接是否正常';
-        }
-        
         echo json_encode([
             'success' => false,
-            'message' => '❌ 连接测试失败：' . $errorMessage,
-            'diagnostics' => $diagnostics,
-            'proxy' => $proxyInfo,
-            'error_type' => $errorType
+            'message' => '测试过程中发生错误: ' . $e->getMessage(),
+            'error_type' => 'test_exception'
+        ]);
+    }
+}
+
+/**
+ * 获取服务器地址列表
+ */
+function getServerAddresses() {
+    try {
+        $db = new SQLite3('../db/mail.sqlite');
+        $result = $db->query('SELECT * FROM server_addresses ORDER BY server_name ASC');
+        $servers = [];
+        while ($row = $result->fetchArray()) {
+            $servers[] = $row;
+        }
+        $db->close();
+        
+        echo json_encode([
+            'success' => true,
+            'servers' => $servers
+        ]);
+    } catch (Exception $e) {
+        echo json_encode([
+            'success' => false,
+            'message' => '获取服务器地址失败：' . $e->getMessage()
+        ]);
+    }
+}
+
+/**
+ * 添加服务器地址
+ */
+function addServerAddress() {
+    if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+        http_response_code(405);
+        echo json_encode([
+            'success' => false,
+            'message' => '只允许POST请求'
+        ]);
+        exit();
+    }
+    
+    $serverName = $_POST['server_name'] ?? '';
+    $serverAddress = $_POST['server_address'] ?? '';
+    
+    if (empty($serverName) || empty($serverAddress)) {
+        echo json_encode([
+            'success' => false,
+            'message' => '请填写服务器名称和地址'
+        ]);
+        exit();
+    }
+    
+    try {
+        $db = new SQLite3('../db/mail.sqlite');
+        $beijingTime = new DateTime('now', new DateTimeZone('Asia/Shanghai'));
+        $stmt = $db->prepare('INSERT INTO server_addresses (server_name, server_address, created_at, updated_at) VALUES (?, ?, ?, ?)');
+        $stmt->bindValue(1, $serverName);
+        $stmt->bindValue(2, $serverAddress);
+        $stmt->bindValue(3, $beijingTime->format('Y-m-d H:i:s'));
+        $stmt->bindValue(4, $beijingTime->format('Y-m-d H:i:s'));
+        $stmt->execute();
+        $db->close();
+        
+        echo json_encode([
+            'success' => true,
+            'message' => '服务器地址添加成功'
+        ]);
+    } catch (Exception $e) {
+        echo json_encode([
+            'success' => false,
+            'message' => '添加失败：' . $e->getMessage()
+        ]);
+    }
+}
+
+/**
+ * 更新服务器地址
+ */
+function updateServerAddress() {
+    if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+        http_response_code(405);
+        echo json_encode([
+            'success' => false,
+            'message' => '只允许POST请求'
+        ]);
+        exit();
+    }
+    
+    $id = (int)($_POST['server_id'] ?? 0);
+    $serverName = $_POST['server_name'] ?? '';
+    $serverAddress = $_POST['server_address'] ?? '';
+    
+    if ($id <= 0 || empty($serverName) || empty($serverAddress)) {
+        echo json_encode([
+            'success' => false,
+            'message' => '请填写所有必需字段'
+        ]);
+        exit();
+    }
+    
+    try {
+        $db = new SQLite3('../db/mail.sqlite');
+        $beijingTime = new DateTime('now', new DateTimeZone('Asia/Shanghai'));
+        $stmt = $db->prepare('UPDATE server_addresses SET server_name=?, server_address=?, updated_at=? WHERE id=?');
+        $stmt->bindValue(1, $serverName);
+        $stmt->bindValue(2, $serverAddress);
+        $stmt->bindValue(3, $beijingTime->format('Y-m-d H:i:s'));
+        $stmt->bindValue(4, $id);
+        $stmt->execute();
+        $db->close();
+        
+        echo json_encode([
+            'success' => true,
+            'message' => '服务器地址更新成功'
+        ]);
+    } catch (Exception $e) {
+        echo json_encode([
+            'success' => false,
+            'message' => '更新失败：' . $e->getMessage()
+        ]);
+    }
+}
+
+/**
+ * 删除服务器地址
+ */
+function deleteServerAddress() {
+    if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+        http_response_code(405);
+        echo json_encode([
+            'success' => false,
+            'message' => '只允许POST请求'
+        ]);
+        exit();
+    }
+    
+    $id = (int)($_POST['server_id'] ?? 0);
+    
+    if ($id <= 0) {
+        echo json_encode([
+            'success' => false,
+            'message' => '无效的服务器ID'
+        ]);
+        exit();
+    }
+    
+    try {
+        $db = new SQLite3('../db/mail.sqlite');
+        $stmt = $db->prepare('DELETE FROM server_addresses WHERE id = ?');
+        $stmt->bindValue(1, $id);
+        $stmt->execute();
+        $db->close();
+        
+        echo json_encode([
+            'success' => true,
+            'message' => '服务器地址删除成功'
+        ]);
+    } catch (Exception $e) {
+        echo json_encode([
+            'success' => false,
+            'message' => '删除失败：' . $e->getMessage()
+        ]);
+    }
+}
+
+/**
+ * 批量删除服务器地址
+ */
+function batchDeleteServerAddresses() {
+    if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+        http_response_code(405);
+        echo json_encode([
+            'success' => false,
+            'message' => '只允许POST请求'
+        ]);
+        exit();
+    }
+    
+    $ids = $_POST['server_ids'] ?? [];
+    
+    if (empty($ids) || !is_array($ids)) {
+        echo json_encode([
+            'success' => false,
+            'message' => '请选择要删除的服务器地址'
+        ]);
+        exit();
+    }
+    
+    try {
+        $db = new SQLite3('../db/mail.sqlite');
+        $placeholders = str_repeat('?,', count($ids) - 1) . '?';
+        $stmt = $db->prepare("DELETE FROM server_addresses WHERE id IN ($placeholders)");
+        foreach ($ids as $index => $id) {
+            $stmt->bindValue($index + 1, (int)$id);
+        }
+        $stmt->execute();
+        $db->close();
+        
+        echo json_encode([
+            'success' => true,
+            'message' => '成功删除 ' . count($ids) . ' 个服务器地址'
+        ]);
+    } catch (Exception $e) {
+        echo json_encode([
+            'success' => false,
+            'message' => '批量删除失败：' . $e->getMessage()
         ]);
     }
 }
@@ -481,7 +741,7 @@ function testProxyConnection() {
             exit();
         }
         
-        performProxyTest($name, $host, $port, $username, $password, $proxyType);
+        performProxyTest($name, $host, $port, $username, $password, $proxyType, null, true); // Add modal test flag
         
     } catch (Exception $e) {
         echo json_encode([
@@ -496,7 +756,7 @@ function testProxyConnection() {
  */
 function testExistingProxy($proxyId, $proxyType) {
     try {
-        $db = new SQLite3(__DIR__ . '/../db/mail.sqlite');
+        $db = new SQLite3('../db/mail.sqlite');
         
         // 验证代理类型
         $tableName = $proxyType === 'socks5' ? 'socks5_proxies' : 'http_proxies';
@@ -528,7 +788,8 @@ function testExistingProxy($proxyId, $proxyType) {
             $proxy['username'] ?? '',
             $proxy['password'] ?? '',
             $proxyType,
-            $proxyId  // 传递代理ID用于更新数据库
+            $proxyId,  // 传递代理ID用于更新数据库
+            false      // 现有代理测试，不是模态测试
         );
         
     } catch (Exception $e) {
@@ -542,7 +803,7 @@ function testExistingProxy($proxyId, $proxyType) {
 /**
  * 执行代理测试
  */
-function performProxyTest($name, $host, $port, $username, $password, $proxyType, $proxyId = null) {
+function performProxyTest($name, $host, $port, $username, $password, $proxyType, $proxyId = null, $isModalTest = false) {
     try {
         $startTime = microtime(true);
         
@@ -559,8 +820,10 @@ function performProxyTest($name, $host, $port, $username, $password, $proxyType,
         $socket = @fsockopen($host, $port, $errno, $errstr, 5);
         
         if (!$socket) {
-            // 更新数据库中的测试结果
-            updateProxyTestResult($name, $host, $port, $proxyType, false, 0, $proxyId);
+            // 只有在非模态测试时才更新数据库
+            if (!$isModalTest) {
+                updateProxyTestResult($name, $host, $port, $proxyType, false, 0, $proxyId);
+            }
             
             echo json_encode([
                 'success' => false,
@@ -592,8 +855,10 @@ function performProxyTest($name, $host, $port, $username, $password, $proxyType,
             // 测试通过代理连接到外部网站
             $connectivityResults = testProxyConnectivity($host, $port, $username, $password, $proxyType);
             
-            // 更新数据库中的测试结果
-            updateProxyTestResult($name, $host, $port, $proxyType, true, $totalLatency, $proxyId);
+            // 只有在非模态测试时才更新数据库
+            if (!$isModalTest) {
+                updateProxyTestResult($name, $host, $port, $proxyType, true, $totalLatency, $proxyId);
+            }
             
             // 构建成功消息，包含IP和延迟信息
             $message = "✅ {$name} 测试成功\n";
@@ -631,8 +896,10 @@ function performProxyTest($name, $host, $port, $username, $password, $proxyType,
                 'diagnostics' => $diagnostics
             ]);
         } else {
-            // 端口通但代理功能异常
-            updateProxyTestResult($name, $host, $port, $proxyType, false, $totalLatency, $proxyId);
+            // 只有在非模态测试时才更新数据库
+            if (!$isModalTest) {
+                updateProxyTestResult($name, $host, $port, $proxyType, false, $totalLatency, $proxyId);
+            }
             
             $message = "❌ {$name} 功能测试失败\n";
             $message .= "服务器: {$hostInfo}:{$port}\n";
@@ -657,8 +924,10 @@ function performProxyTest($name, $host, $port, $username, $password, $proxyType,
         }
         
     } catch (Exception $e) {
-        // 更新数据库中的测试结果
-        updateProxyTestResult($name, $host, $port, $proxyType, false, 0, $proxyId);
+        // 只有在非模态测试时才更新数据库
+        if (!$isModalTest) {
+            updateProxyTestResult($name, $host, $port, $proxyType, false, 0, $proxyId);
+        }
         
         echo json_encode([
             'success' => false,
@@ -1054,7 +1323,7 @@ function testSocks5ProxyToSite($proxyHost, $proxyPort, $username, $password, $ta
  */
 function updateProxyTestResult($name, $host, $port, $proxyType, $success, $responseTime, $proxyId = null) {
     try {
-        $db = new SQLite3(__DIR__ . '/../db/mail.sqlite');
+        $db = new SQLite3('../db/mail.sqlite');
         $tableName = $proxyType === 'socks5' ? 'socks5_proxies' : 'http_proxies';
         $beijingTime = new DateTime('now', new DateTimeZone('Asia/Shanghai'));
         
@@ -1103,5 +1372,463 @@ function updateProxyTestResult($name, $host, $port, $proxyType, $success, $respo
         $db->close();
     } catch (Exception $e) {
         error_log('Failed to update proxy test result: ' . $e->getMessage());
+    }
+}
+
+/**
+ * 刷新代理列表
+ */
+function refreshProxies() {
+    try {
+        $db = new SQLite3('../db/mail.sqlite');
+        
+        // 确保代理表存在
+        $db->exec('CREATE TABLE IF NOT EXISTS http_proxies (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            host TEXT NOT NULL,
+            port INTEGER NOT NULL,
+            username TEXT DEFAULT "",
+            password TEXT DEFAULT "",
+            status INTEGER DEFAULT 1,
+            last_check DATETIME DEFAULT NULL,
+            response_time INTEGER DEFAULT 0,
+            success_count INTEGER DEFAULT 0,
+            fail_count INTEGER DEFAULT 0,
+            remarks TEXT DEFAULT "",
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )');
+        
+        $db->exec('CREATE TABLE IF NOT EXISTS socks5_proxies (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            host TEXT NOT NULL,
+            port INTEGER NOT NULL,
+            username TEXT DEFAULT "",
+            password TEXT DEFAULT "",
+            status INTEGER DEFAULT 1,
+            last_check DATETIME DEFAULT NULL,
+            response_time INTEGER DEFAULT 0,
+            success_count INTEGER DEFAULT 0,
+            fail_count INTEGER DEFAULT 0,
+            remarks TEXT DEFAULT "",
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )');
+        
+        // 确保全局代理配置表存在
+        $db->exec('CREATE TABLE IF NOT EXISTS proxy_config (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            config_key TEXT NOT NULL UNIQUE,
+            config_value TEXT NOT NULL,
+            description TEXT DEFAULT "",
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )');
+        
+        // 插入默认代理配置（如果不存在）
+        $db->exec("INSERT OR IGNORE INTO proxy_config (config_key, config_value, description) VALUES 
+            ('proxy_enabled', '0', '全局代理启用状态'),
+            ('active_proxy_type', '', '当前激活的代理类型 (http/socks5)'),
+            ('active_proxy_id', '0', '当前激活的代理ID'),
+            ('proxy_timeout', '30', '代理连接超时时间（秒）')");
+        
+        $allProxies = [];
+        
+        // 获取HTTP代理并添加类型标识
+        $result = $db->query('SELECT *, "http" as proxy_type FROM http_proxies ORDER BY created_at DESC');
+        while ($row = $result->fetchArray(SQLITE3_ASSOC)) {
+            $allProxies[] = $row;
+        }
+        
+        // 获取SOCKS5代理并添加类型标识
+        $result = $db->query('SELECT *, "socks5" as proxy_type FROM socks5_proxies ORDER BY created_at DESC');
+        while ($row = $result->fetchArray(SQLITE3_ASSOC)) {
+            $allProxies[] = $row;
+        }
+        
+        // 按创建时间排序所有代理
+        usort($allProxies, function($a, $b) {
+            return strtotime($b['created_at']) - strtotime($a['created_at']);
+        });
+        
+        // 获取全局代理状态
+        $proxyStatus = [];
+        $statusResult = $db->query("SELECT config_key, config_value FROM proxy_config WHERE config_key IN ('proxy_enabled', 'active_proxy_type', 'active_proxy_id')");
+        while ($row = $statusResult->fetchArray(SQLITE3_ASSOC)) {
+            $proxyStatus[$row['config_key']] = $row['config_value'];
+        }
+        
+        $db->close();
+        
+        // 统计信息
+        $httpCount = count(array_filter($allProxies, function($proxy) { return $proxy['proxy_type'] === 'http'; }));
+        $socks5Count = count(array_filter($allProxies, function($proxy) { return $proxy['proxy_type'] === 'socks5'; }));
+        
+        echo json_encode([
+            'success' => true,
+            'proxies' => $allProxies,
+            'counts' => [
+                'total' => count($allProxies),
+                'http' => $httpCount,
+                'socks5' => $socks5Count
+            ],
+            'globalStatus' => $proxyStatus,
+            'timestamp' => date('Y-m-d H:i:s')
+        ]);
+        
+    } catch (Exception $e) {
+        echo json_encode([
+            'success' => false,
+            'message' => '刷新代理列表失败：' . $e->getMessage()
+        ]);
+    }
+}
+
+/**
+ * 切换全局代理状态
+ */
+function toggleGlobalProxy() {
+    if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+        http_response_code(405);
+        echo json_encode([
+            'success' => false,
+            'message' => '只允许POST请求'
+        ]);
+        exit();
+    }
+    
+    try {
+        $db = new SQLite3('../db/mail.sqlite');
+        
+        // 确保全局代理配置表存在
+        $db->exec('CREATE TABLE IF NOT EXISTS proxy_config (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            config_key TEXT NOT NULL UNIQUE,
+            config_value TEXT NOT NULL,
+            description TEXT DEFAULT "",
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )');
+        
+        // 插入默认代理配置（如果不存在）
+        $db->exec("INSERT OR IGNORE INTO proxy_config (config_key, config_value, description) VALUES 
+            ('proxy_enabled', '0', '全局代理启用状态'),
+            ('active_proxy_type', '', '当前激活的代理类型 (http/socks5)'),
+            ('active_proxy_id', '0', '当前激活的代理ID'),
+            ('proxy_timeout', '30', '代理连接超时时间（秒）')");
+        
+        // 获取当前状态
+        $currentStatus = $db->query("SELECT config_value FROM proxy_config WHERE config_key = 'proxy_enabled'");
+        $currentRow = $currentStatus->fetchArray(SQLITE3_ASSOC);
+        $isEnabled = $currentRow ? (int)$currentRow['config_value'] : 0;
+        
+        $action = $_POST['action'] ?? 'toggle';
+        $proxyType = $_POST['proxy_type'] ?? '';
+        $proxyId = (int)($_POST['proxy_id'] ?? 0);
+        
+        $beijingTime = new DateTime('now', new DateTimeZone('Asia/Shanghai'));
+        
+        if ($action === 'enable' && !$isEnabled) {
+            // 启用代理
+            if (empty($proxyType) || $proxyId <= 0) {
+                echo json_encode([
+                    'success' => false,
+                    'message' => '启用代理需要指定代理类型和ID'
+                ]);
+                $db->close();
+                return;
+            }
+            
+            // 验证代理是否存在且状态正常
+            $tableName = $proxyType === 'socks5' ? 'socks5_proxies' : 'http_proxies';
+            $checkProxy = $db->prepare("SELECT id, name, host, port, status FROM {$tableName} WHERE id = ?");
+            $checkProxy->bindValue(1, $proxyId);
+            $proxyResult = $checkProxy->execute();
+            $proxy = $proxyResult->fetchArray(SQLITE3_ASSOC);
+            
+            if (!$proxy) {
+                echo json_encode([
+                    'success' => false,
+                    'message' => '指定的代理不存在'
+                ]);
+                $db->close();
+                return;
+            }
+            
+            if (!$proxy['status']) {
+                echo json_encode([
+                    'success' => false,
+                    'message' => '无法启用状态异常的代理，请先测试代理连接'
+                ]);
+                $db->close();
+                return;
+            }
+            
+            // 更新配置
+            $stmt = $db->prepare("UPDATE proxy_config SET config_value = ?, updated_at = ? WHERE config_key = ?");
+            $stmt->bindValue(1, '1');
+            $stmt->bindValue(2, $beijingTime->format('Y-m-d H:i:s'));
+            $stmt->bindValue(3, 'proxy_enabled');
+            $stmt->execute();
+            
+            $stmt = $db->prepare("UPDATE proxy_config SET config_value = ?, updated_at = ? WHERE config_key = ?");
+            $stmt->bindValue(1, $proxyType);
+            $stmt->bindValue(2, $beijingTime->format('Y-m-d H:i:s'));
+            $stmt->bindValue(3, 'active_proxy_type');
+            $stmt->execute();
+            
+            $stmt = $db->prepare("UPDATE proxy_config SET config_value = ?, updated_at = ? WHERE config_key = ?");
+            $stmt->bindValue(1, (string)$proxyId);
+            $stmt->bindValue(2, $beijingTime->format('Y-m-d H:i:s'));
+            $stmt->bindValue(3, 'active_proxy_id');
+            $stmt->execute();
+            
+            echo json_encode([
+                'success' => true,
+                'message' => "已启用 {$proxy['name']} ({$proxy['host']}:{$proxy['port']}) 代理",
+                'enabled' => true,
+                'activeProxy' => [
+                    'type' => $proxyType,
+                    'id' => $proxyId,
+                    'name' => $proxy['name'],
+                    'host' => $proxy['host'],
+                    'port' => $proxy['port']
+                ]
+            ]);
+            
+        } else if ($action === 'disable' && $isEnabled) {
+            // 禁用代理
+            $stmt = $db->prepare("UPDATE proxy_config SET config_value = ?, updated_at = ? WHERE config_key = ?");
+            $stmt->bindValue(1, '0');
+            $stmt->bindValue(2, $beijingTime->format('Y-m-d H:i:s'));
+            $stmt->bindValue(3, 'proxy_enabled');
+            $stmt->execute();
+            
+            $stmt = $db->prepare("UPDATE proxy_config SET config_value = ?, updated_at = ? WHERE config_key = ?");
+            $stmt->bindValue(1, '');
+            $stmt->bindValue(2, $beijingTime->format('Y-m-d H:i:s'));
+            $stmt->bindValue(3, 'active_proxy_type');
+            $stmt->execute();
+            
+            $stmt = $db->prepare("UPDATE proxy_config SET config_value = ?, updated_at = ? WHERE config_key = ?");
+            $stmt->bindValue(1, '0');
+            $stmt->bindValue(2, $beijingTime->format('Y-m-d H:i:s'));
+            $stmt->bindValue(3, 'active_proxy_id');
+            $stmt->execute();
+            
+            echo json_encode([
+                'success' => true,
+                'message' => '已禁用全局代理',
+                'enabled' => false
+            ]);
+            
+        } else {
+            // 切换状态
+            $newStatus = $isEnabled ? 0 : 1;
+            
+            if ($newStatus === 1) {
+                // 要启用代理，需要指定代理
+                if (empty($proxyType) || $proxyId <= 0) {
+                    echo json_encode([
+                        'success' => false,
+                        'message' => '启用代理需要指定代理类型和ID'
+                    ]);
+                    $db->close();
+                    return;
+                }
+            }
+            
+            $stmt = $db->prepare("UPDATE proxy_config SET config_value = ?, updated_at = ? WHERE config_key = ?");
+            $stmt->bindValue(1, (string)$newStatus);
+            $stmt->bindValue(2, $beijingTime->format('Y-m-d H:i:s'));
+            $stmt->bindValue(3, 'proxy_enabled');
+            $stmt->execute();
+            
+            if ($newStatus === 1) {
+                $stmt = $db->prepare("UPDATE proxy_config SET config_value = ?, updated_at = ? WHERE config_key = ?");
+                $stmt->bindValue(1, $proxyType);
+                $stmt->bindValue(2, $beijingTime->format('Y-m-d H:i:s'));
+                $stmt->bindValue(3, 'active_proxy_type');
+                $stmt->execute();
+                
+                $stmt = $db->prepare("UPDATE proxy_config SET config_value = ?, updated_at = ? WHERE config_key = ?");
+                $stmt->bindValue(1, (string)$proxyId);
+                $stmt->bindValue(2, $beijingTime->format('Y-m-d H:i:s'));
+                $stmt->bindValue(3, 'active_proxy_id');
+                $stmt->execute();
+            }
+            
+            echo json_encode([
+                'success' => true,
+                'message' => $newStatus ? '代理已启用' : '代理已禁用',
+                'enabled' => (bool)$newStatus
+            ]);
+        }
+        
+        $db->close();
+        
+    } catch (Exception $e) {
+        echo json_encode([
+            'success' => false,
+            'message' => '切换代理状态失败：' . $e->getMessage()
+        ]);
+    }
+}
+
+/**
+ * 获取全局代理状态
+ */
+function getGlobalProxyStatus() {
+    try {
+        $db = new SQLite3('../db/mail.sqlite');
+        
+        // 确保全局代理配置表存在
+        $db->exec('CREATE TABLE IF NOT EXISTS proxy_config (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            config_key TEXT NOT NULL UNIQUE,
+            config_value TEXT NOT NULL,
+            description TEXT DEFAULT "",
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )');
+        
+        // 插入默认代理配置（如果不存在）
+        $db->exec("INSERT OR IGNORE INTO proxy_config (config_key, config_value, description) VALUES 
+            ('proxy_enabled', '0', '全局代理启用状态'),
+            ('active_proxy_type', '', '当前激活的代理类型 (http/socks5)'),
+            ('active_proxy_id', '0', '当前激活的代理ID'),
+            ('proxy_timeout', '30', '代理连接超时时间（秒）')");
+        
+        // 获取代理配置
+        $config = [];
+        $result = $db->query("SELECT config_key, config_value FROM proxy_config");
+        while ($row = $result->fetchArray(SQLITE3_ASSOC)) {
+            $config[$row['config_key']] = $row['config_value'];
+        }
+        
+        $activeProxy = null;
+        
+        // 如果代理已启用，获取活动代理详情
+        if (isset($config['proxy_enabled']) && $config['proxy_enabled'] === '1') {
+            $proxyType = $config['active_proxy_type'] ?? '';
+            $proxyId = (int)($config['active_proxy_id'] ?? 0);
+            
+            if (!empty($proxyType) && $proxyId > 0) {
+                $tableName = $proxyType === 'socks5' ? 'socks5_proxies' : 'http_proxies';
+                $stmt = $db->prepare("SELECT id, name, host, port, status, response_time FROM {$tableName} WHERE id = ?");
+                $stmt->bindValue(1, $proxyId);
+                $proxyResult = $stmt->execute();
+                $activeProxy = $proxyResult->fetchArray(SQLITE3_ASSOC);
+                
+                if ($activeProxy) {
+                    $activeProxy['proxy_type'] = $proxyType;
+                }
+            }
+        }
+        
+        $db->close();
+        
+        echo json_encode([
+            'success' => true,
+            'enabled' => isset($config['proxy_enabled']) && $config['proxy_enabled'] === '1',
+            'config' => $config,
+            'activeProxy' => $activeProxy
+        ]);
+        
+    } catch (Exception $e) {
+        echo json_encode([
+            'success' => false,
+            'message' => '获取代理状态失败：' . $e->getMessage()
+        ]);
+    }
+}
+
+/**
+ * 检查数据一致性
+ */
+function checkDataConsistency() {
+    try {
+        $db = new SQLite3('../db/mail.sqlite');
+        $issues = [];
+        $checks = [];
+        
+        // 检查代理配置一致性
+        $configResult = $db->query("SELECT config_key, config_value FROM proxy_config");
+        $config = [];
+        while ($row = $configResult->fetchArray(SQLITE3_ASSOC)) {
+            $config[$row['config_key']] = $row['config_value'];
+        }
+        
+        $checks['proxy_config_loaded'] = count($config) > 0;
+        
+        // 检查活动代理是否存在
+        if (isset($config['proxy_enabled']) && $config['proxy_enabled'] === '1') {
+            $proxyType = $config['active_proxy_type'] ?? '';
+            $proxyId = (int)($config['active_proxy_id'] ?? 0);
+            
+            if (!empty($proxyType) && $proxyId > 0) {
+                $tableName = $proxyType === 'socks5' ? 'socks5_proxies' : 'http_proxies';
+                $stmt = $db->prepare("SELECT id, name, status FROM {$tableName} WHERE id = ?");
+                $stmt->bindValue(1, $proxyId);
+                $proxyResult = $stmt->execute();
+                $activeProxy = $proxyResult->fetchArray(SQLITE3_ASSOC);
+                
+                if ($activeProxy) {
+                    $checks['active_proxy_exists'] = true;
+                    $checks['active_proxy_status'] = $activeProxy['status'] == 1;
+                    if ($activeProxy['status'] != 1) {
+                        $issues[] = "活动代理状态为异常，建议重新测试代理";
+                    }
+                } else {
+                    $issues[] = "配置中的活动代理ID不存在于数据库中";
+                    $checks['active_proxy_exists'] = false;
+                }
+            } else {
+                $issues[] = "代理已启用但未指定有效的代理ID或类型";
+                $checks['active_proxy_configured'] = false;
+            }
+        } else {
+            $checks['proxy_disabled_properly'] = true;
+        }
+        
+        // 检查代理数据完整性
+        $httpCount = $db->querySingle("SELECT COUNT(*) FROM http_proxies");
+        $socks5Count = $db->querySingle("SELECT COUNT(*) FROM socks5_proxies");
+        $checks['total_proxies'] = $httpCount + $socks5Count;
+        
+        // 检查是否有响应时间为0的正常状态代理
+        $invalidHttpProxies = $db->querySingle("SELECT COUNT(*) FROM http_proxies WHERE status = 1 AND (response_time = 0 OR response_time IS NULL)");
+        $invalidSocks5Proxies = $db->querySingle("SELECT COUNT(*) FROM socks5_proxies WHERE status = 1 AND (response_time = 0 OR response_time IS NULL)");
+        
+        if ($invalidHttpProxies > 0 || $invalidSocks5Proxies > 0) {
+            $issues[] = "存在状态为正常但响应时间为0的代理，建议重新测试";
+        }
+        
+        // 检查邮箱账号数量
+        $mailAccountCount = $db->querySingle("SELECT COUNT(*) FROM mail_accounts");
+        $checks['mail_accounts_count'] = $mailAccountCount;
+        
+        $db->close();
+        
+        echo json_encode([
+            'success' => true,
+            'message' => count($issues) === 0 ? '数据一致性检查通过' : '发现 ' . count($issues) . ' 个问题',
+            'issues' => $issues,
+            'checks' => $checks,
+            'summary' => [
+                'total_issues' => count($issues),
+                'proxy_enabled' => isset($config['proxy_enabled']) && $config['proxy_enabled'] === '1',
+                'total_proxies' => $checks['total_proxies'],
+                'mail_accounts' => $checks['mail_accounts_count']
+            ]
+        ]);
+        
+    } catch (Exception $e) {
+        echo json_encode([
+            'success' => false,
+            'message' => '数据一致性检查失败：' . $e->getMessage()
+        ]);
     }
 }

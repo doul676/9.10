@@ -666,11 +666,6 @@
                 
                 const data = await response.json();
                 
-                // 显示代理状态信息（使用toast通知）
-                if (data.proxy) {
-                    displayProxyStatusToast(data.proxy);
-                }
-                
                 if (data.success) {
                     if (data.mail) {
                         displayMail(data.mail);
