@@ -1114,6 +1114,289 @@ def api_test_socks5_proxy_by_id(proxy_id):
             'message': f'代理测试失败: {str(e)}'
         })
 
+@app.route('/admin/api/cards', methods=['GET', 'POST', 'DELETE'])
+@admin_required
+def api_admin_cards():
+    """卡密管理 API"""
+    db = get_db()
+    
+    if request.method == 'GET':
+        # 获取卡密列表
+        cards = db.execute('''
+            SELECT * FROM cards 
+            ORDER BY created_at DESC
+        ''').fetchall()
+        
+        return jsonify({
+            'success': True,
+            'data': [dict(card) for card in cards]
+        })
+    
+    elif request.method == 'DELETE':
+        # 删除卡密
+        data = request.get_json()
+        card_id = data.get('id')
+        
+        if not card_id:
+            return jsonify({
+                'success': False,
+                'message': '缺少卡密ID'
+            })
+        
+        try:
+            db.execute('DELETE FROM cards WHERE id = ?', (card_id,))
+            db.commit()
+            
+            return jsonify({
+                'success': True,
+                'message': '卡密删除成功'
+            })
+            
+        except Exception as e:
+            return jsonify({
+                'success': False,
+                'message': f'删除失败: {str(e)}'
+            })
+
+@app.route('/admin/api/cards/generate', methods=['POST'])
+@admin_required  
+def api_generate_card():
+    """生成单个卡密"""
+    import secrets
+    import string
+    
+    data = request.get_json()
+    card_type = data.get('cardType', 'standard')
+    max_usage = int(data.get('maxUsage', 1))
+    valid_days = int(data.get('validDays', 30))
+    remarks = data.get('remarks', '').strip()
+    
+    try:
+        db = get_db()
+        
+        # 生成唯一卡密代码
+        while True:
+            card_code = ''.join(secrets.choice(string.ascii_uppercase + string.digits) for _ in range(16))
+            existing = db.execute('SELECT id FROM cards WHERE card_code = ?', (card_code,)).fetchone()
+            if not existing:
+                break
+        
+        # 计算过期时间
+        from datetime import timedelta
+        expires_at = (datetime.now() + timedelta(days=valid_days)).strftime('%Y-%m-%d %H:%M:%S')
+        now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        
+        # 插入卡密
+        db.execute('''
+            INSERT INTO cards (card_code, card_type, max_usage, valid_days, expires_at, remarks, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (card_code, card_type, max_usage, valid_days, expires_at, remarks, now, now))
+        
+        db.commit()
+        
+        return jsonify({
+            'success': True,
+            'message': '卡密生成成功',
+            'card_code': card_code
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': f'生成失败: {str(e)}'
+        })
+
+@app.route('/admin/api/cards/batch-generate', methods=['POST'])
+@admin_required
+def api_batch_generate_cards():
+    """批量生成卡密"""
+    import secrets
+    import string
+    from datetime import timedelta
+    
+    data = request.get_json()
+    count = int(data.get('count', 10))
+    card_type = data.get('cardType', 'standard')
+    max_usage = int(data.get('maxUsage', 1))
+    valid_days = int(data.get('validDays', 30))
+    remarks = data.get('remarks', '').strip()
+    
+    if count > 1000:
+        return jsonify({
+            'success': False,
+            'message': '单次生成数量不能超过1000个'
+        })
+    
+    try:
+        db = get_db()
+        generated_cards = []
+        
+        # 计算过期时间
+        expires_at = (datetime.now() + timedelta(days=valid_days)).strftime('%Y-%m-%d %H:%M:%S')
+        now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        
+        for i in range(count):
+            # 生成唯一卡密代码
+            while True:
+                card_code = ''.join(secrets.choice(string.ascii_uppercase + string.digits) for _ in range(16))
+                existing = db.execute('SELECT id FROM cards WHERE card_code = ?', (card_code,)).fetchone()
+                if not existing:
+                    break
+            
+            # 插入卡密
+            db.execute('''
+                INSERT INTO cards (card_code, card_type, max_usage, valid_days, expires_at, remarks, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (card_code, card_type, max_usage, valid_days, expires_at, remarks, now, now))
+            
+            generated_cards.append(card_code)
+        
+        db.commit()
+        
+        return jsonify({
+            'success': True,
+            'message': f'批量生成成功',
+            'generated': count,
+            'cards': generated_cards
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': f'批量生成失败: {str(e)}'
+        })
+
+@app.route('/admin/api/cards/cleanup', methods=['POST'])
+@admin_required
+def api_cleanup_cards():
+    """清理过期和无效卡密"""
+    try:
+        db = get_db()
+        now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        
+        # 删除过期的卡密
+        result = db.execute('''
+            DELETE FROM cards 
+            WHERE expires_at < ? OR status = 0 OR used_times >= max_usage
+        ''', (now,))
+        
+        deleted_count = result.rowcount
+        db.commit()
+        
+        return jsonify({
+            'success': True,
+            'message': '清理完成',
+            'deleted': deleted_count
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': f'清理失败: {str(e)}'
+        })
+
+@app.route('/admin/api/card-logs', methods=['GET'])
+@admin_required
+def api_admin_card_logs():
+    """卡密使用日志 API"""
+    db = get_db()
+    
+    try:
+        # 获取卡密使用日志
+        logs = db.execute('''
+            SELECT l.*, c.card_type 
+            FROM card_usage_logs l
+            LEFT JOIN cards c ON l.card_id = c.id
+            ORDER BY l.used_at DESC
+            LIMIT 1000
+        ''').fetchall()
+        
+        return jsonify({
+            'success': True,
+            'data': [dict(log) for log in logs]
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': f'获取日志失败: {str(e)}'
+        })
+
+@app.route('/admin/api/mail-logs', methods=['GET'])
+@admin_required
+def api_admin_mail_logs():
+    """收件日志 API"""
+    db = get_db()
+    
+    try:
+        # 获取收件日志
+        logs = db.execute('''
+            SELECT * FROM mail_logs 
+            ORDER BY created_at DESC
+            LIMIT 1000
+        ''').fetchall()
+        
+        return jsonify({
+            'success': True,
+            'data': [dict(log) for log in logs]
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': f'获取日志失败: {str(e)}'
+        })
+
+@app.route('/admin/api/system-config', methods=['GET', 'POST'])
+@admin_required
+def api_admin_system_config():
+    """系统配置 API"""
+    db = get_db()
+    
+    if request.method == 'GET':
+        # 获取系统配置
+        configs = db.execute('''
+            SELECT * FROM system_config 
+            ORDER BY config_key
+        ''').fetchall()
+        
+        return jsonify({
+            'success': True,
+            'data': [dict(config) for config in configs]
+        })
+    
+    elif request.method == 'POST':
+        # 更新系统配置
+        data = request.get_json()
+        configs = data.get('configs', [])
+        
+        try:
+            now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            
+            for config in configs:
+                config_key = config.get('config_key')
+                config_value = config.get('config_value')
+                
+                if config_key and config_value is not None:
+                    db.execute('''
+                        UPDATE system_config 
+                        SET config_value = ?, updated_at = ?
+                        WHERE config_key = ?
+                    ''', (str(config_value), now, config_key))
+            
+            db.commit()
+            
+            return jsonify({
+                'success': True,
+                'message': '系统配置更新成功'
+            })
+            
+        except Exception as e:
+            return jsonify({
+                'success': False,
+                'message': f'更新失败: {str(e)}'
+            })
+
 if __name__ == '__main__':
     # 初始化数据库
     with app.app_context():
