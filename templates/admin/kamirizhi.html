@@ -4,11 +4,276 @@
 
 {% block head %}
 <style>
-    /* 基础样式将在完善时添加 */
+    * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+    }
+    
+    :root {
+        --primary-color: #667eea;
+        --secondary-color: #764ba2;
+        --sidebar-width: 280px;
+        --header-height: 70px;
+        --transition: all 0.3s ease;
+    }
+    
+    body {
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        background: #f8fafc;
+        line-height: 1.6;
+        color: #334155;
+        transition: var(--transition);
+    }
+    
+    /* Sidebar Styles */
+    .sidebar {
+        position: fixed;
+        left: 0;
+        top: 0;
+        width: var(--sidebar-width);
+        height: 100vh;
+        background: linear-gradient(135deg, var(--primary-color) 0%, var(--secondary-color) 100%);
+        z-index: 1000;
+        transition: var(--transition);
+        box-shadow: 4px 0 15px rgba(0,0,0,0.1);
+    }
+    
+    .sidebar-header {
+        padding: 20px;
+        border-bottom: 1px solid rgba(255,255,255,0.1);
+    }
+    
+    .sidebar-logo {
+        color: white;
+        font-size: 20px;
+        font-weight: 700;
+        text-align: center;
+        text-shadow: 0 2px 4px rgba(0,0,0,0.3);
+    }
+    
+    .sidebar-nav {
+        padding: 20px 0;
+    }
+    
+    .nav-item {
+        display: block;
+        color: rgba(255,255,255,0.8);
+        text-decoration: none;
+        padding: 15px 25px;
+        transition: var(--transition);
+        border-left: 3px solid transparent;
+        position: relative;
+        overflow: hidden;
+    }
+    
+    .nav-item::before {
+        content: '';
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(255,255,255,0.1);
+        transform: translateX(-100%);
+        transition: var(--transition);
+    }
+    
+    .nav-item:hover::before {
+        transform: translateX(0);
+    }
+    
+    .nav-item:hover,
+    .nav-item.active {
+        color: white;
+        background: rgba(255,255,255,0.15);
+        border-left-color: white;
+        transform: translateX(5px);
+    }
+    
+    .nav-item i {
+        margin-right: 10px;
+        width: 20px;
+        text-align: center;
+    }
+    
+    /* Main Content */
+    .main-content {
+        margin-left: var(--sidebar-width);
+        min-height: 100vh;
+        transition: var(--transition);
+    }
+    
+    .header {
+        background: white;
+        height: var(--header-height);
+        box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 30px;
+        position: sticky;
+        top: 0;
+        z-index: 999;
+    }
+    
+    .header-title {
+        font-size: 24px;
+        font-weight: 600;
+        color: #1e293b;
+    }
+    
+    .header-actions {
+        display: flex;
+        align-items: center;
+        gap: 20px;
+    }
+    
+    .user-info {
+        display: flex;
+        align-items: center;
+        gap: 15px;
+        color: #64748b;
+    }
+    
+    .logout-btn {
+        background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+        color: white;
+        text-decoration: none;
+        padding: 8px 16px;
+        border-radius: 8px;
+        font-size: 14px;
+        font-weight: 500;
+        transition: var(--transition);
+    }
+    
+    .logout-btn:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 5px 15px rgba(239, 68, 68, 0.3);
+    }
+    
+    /* Content Area */
+    .content {
+        padding: 30px;
+    }
+    
+    /* Cards */
+    .card {
+        background: white;
+        border-radius: 15px;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.05), 0 1px 3px rgba(0,0,0,0.1);
+        overflow: hidden;
+        margin-bottom: 25px;
+        transition: var(--transition);
+    }
+    
+    .card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 25px rgba(0,0,0,0.1), 0 4px 10px rgba(0,0,0,0.06);
+    }
+    
+    .card-header {
+        padding: 20px 25px;
+        border-bottom: 1px solid #f1f5f9;
+        background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+    
+    .card-title {
+        font-size: 18px;
+        font-weight: 600;
+        color: #1e293b;
+        margin: 0;
+    }
+    
+    .card-body {
+        padding: 25px;
+    }
+    
+    .btn {
+        padding: 10px 20px;
+        border: none;
+        border-radius: 8px;
+        font-size: 14px;
+        font-weight: 500;
+        cursor: pointer;
+        transition: var(--transition);
+        text-decoration: none;
+        display: inline-block;
+    }
+    
+    .btn-primary {
+        background: linear-gradient(135deg, var(--primary-color) 0%, var(--secondary-color) 100%);
+        color: white;
+    }
+    
+    .btn-primary:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 5px 15px rgba(102, 126, 234, 0.3);
+    }
+    
+    .btn-warning {
+        background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+        color: white;
+    }
+    
+    .btn-warning:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 5px 15px rgba(245, 158, 11, 0.3);
+    }
+    
+    /* Table Styles */
+    .table-container {
+        overflow-x: auto;
+    }
+    
+    table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 20px;
+    }
+    
+    table th,
+    table td {
+        padding: 12px 16px;
+        text-align: left;
+        border-bottom: 1px solid #e5e7eb;
+    }
+    
+    table th {
+        background: #f8fafc;
+        font-weight: 600;
+        color: #374151;
+    }
+    
+    table tr:hover {
+        background: #f8fafc;
+    }
+    
+    /* Status indicators */
+    .status {
+        padding: 4px 8px;
+        border-radius: 12px;
+        font-size: 12px;
+        font-weight: 500;
+    }
+    
+    .status.success {
+        background: #dcfce7;
+        color: #166534;
+    }
+    
+    .status.error {
+        background: #fef2f2;
+        color: #991b1b;
+    }
 </style>
 {% endblock %}
 
 {% block body %}
+<!-- Sidebar -->
 <div class="sidebar">
     <div class="sidebar-header">
         <div class="sidebar-logo">📧 邮件管理系统</div>
@@ -38,6 +303,7 @@
     </nav>
 </div>
 
+<!-- Main Content -->
 <div class="main-content">
     <div class="header">
         <h1 class="header-title">卡密日志</h1>
@@ -50,15 +316,125 @@
     </div>
     
     <div class="content">
+        <!-- 卡密使用日志 -->
         <div class="card">
             <div class="card-header">
-                <h2 class="card-title">卡密使用日志</h2>
+                <h2 class="card-title">卡密使用记录</h2>
+                <button class="btn btn-warning" onclick="clearOldLogs()">
+                    🧹 清理旧日志
+                </button>
             </div>
             <div class="card-body">
-                <p>卡密使用日志功能正在开发中...</p>
-                <p>将显示卡密的使用记录和统计信息。</p>
+                <div class="table-container">
+                    <table id="cardLogsTable">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>卡密代码</th>
+                                <th>卡密类型</th>
+                                <th>操作</th>
+                                <th>结果</th>
+                                <th>用户IP</th>
+                                <th>用户代理</th>
+                                <th>消息</th>
+                                <th>使用时间</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <!-- 日志列表将通过JavaScript加载 -->
+                        </tbody>
+                    </table>
+                </div>
             </div>
         </div>
     </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // 页面加载时获取日志列表
+    document.addEventListener('DOMContentLoaded', function() {
+        loadCardLogs();
+    });
+    
+    // 加载卡密使用日志
+    async function loadCardLogs() {
+        try {
+            const response = await fetch('/admin/api/card-logs', {
+                method: 'GET',
+                headers: {
+                    'Content-Type': 'application/json',
+                }
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                renderCardLogsTable(data.data);
+            } else {
+                console.error('加载卡密日志失败');
+            }
+        } catch (error) {
+            console.error('加载卡密日志失败:', error);
+        }
+    }
+    
+    // 渲染卡密日志表格
+    function renderCardLogsTable(logs) {
+        const tbody = document.querySelector('#cardLogsTable tbody');
+        tbody.innerHTML = '';
+        
+        if (logs.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="9" style="text-align: center; color: #6b7280;">暂无使用记录</td></tr>';
+            return;
+        }
+        
+        logs.forEach(log => {
+            const row = document.createElement('tr');
+            const statusClass = log.result === 'success' ? 'success' : 'error';
+            const statusText = log.result === 'success' ? '成功' : '失败';
+            
+            row.innerHTML = `
+                <td>${log.id}</td>
+                <td><code>${escapeHtml(log.card_code)}</code></td>
+                <td>${escapeHtml(log.card_type || '-')}</td>
+                <td>${escapeHtml(log.action)}</td>
+                <td><span class="status ${statusClass}">${statusText}</span></td>
+                <td>${escapeHtml(log.user_ip || '-')}</td>
+                <td title="${escapeHtml(log.user_agent || '')}">${truncateText(log.user_agent || '-', 30)}</td>
+                <td>${escapeHtml(log.message || '-')}</td>
+                <td>${formatDateTime(log.used_at)}</td>
+            `;
+            tbody.appendChild(row);
+        });
+    }
+    
+    // 清理旧日志
+    async function clearOldLogs() {
+        if (!confirm('确定要清理30天前的日志记录吗？此操作不可撤销。')) {
+            return;
+        }
+        
+        alert('清理功能开发中...');
+    }
+    
+    // 工具函数
+    function escapeHtml(text) {
+        if (!text) return '';
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+    
+    function formatDateTime(dateString) {
+        if (!dateString) return '-';
+        return new Date(dateString).toLocaleString('zh-CN');
+    }
+    
+    function truncateText(text, maxLength) {
+        if (!text || text.length <= maxLength) return text;
+        return text.substring(0, maxLength) + '...';
+    }
+</script>
 {% endblock %}
