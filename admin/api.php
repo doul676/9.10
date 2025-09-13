@@ -169,30 +169,52 @@ function performConnectionTest($server, $port, $username, $password, $protocol, 
             exit();
         }
         
-        // 创建邮件获取器实例
+        // 创建邮件获取器实例（会自动检查并使用代理）
         $fetcher = new MailFetcher($server, $port, $username, $password, $protocol, $ssl);
         
-        // 尝试连接
-        if ($fetcher->connect()) {
-            $fetcher->close();
+        // 使用MailFetcher的testConnection方法（包含代理支持）
+        $testResult = $fetcher->testConnection();
+        
+        // 获取代理信息用于显示
+        $proxyInfo = $fetcher->getProxyInfo();
+        
+        if ($testResult['success']) {
+            $message = $testResult['message'];
+            $diagnostics = $testResult['diagnostics'];
+            
+            // 添加代理状态信息到诊断中
+            if ($proxyInfo['enabled'] && $proxyInfo['info']) {
+                $proxy = $proxyInfo['info'];
+                $diagnostics['proxy_status'] = "✅ 使用代理连接：{$proxy['name']} ({$proxy['type']}) - {$proxy['host']}:{$proxy['port']}";
+            } else {
+                $diagnostics['proxy_status'] = "🌐 直接连接（未使用代理）";
+            }
+            
             echo json_encode([
                 'success' => true,
-                'message' => '✅ 邮箱连接测试成功！服务器响应正常',
-                'diagnostics' => [
-                    'imap_extension' => '✅ IMAP扩展已正确安装并可用',
-                    'connection_protocol' => strtoupper($protocol) . ($ssl ? ' with SSL' : ' without SSL'),
-                    'server_info' => $server . ':' . $port
-                ]
+                'message' => $message,
+                'diagnostics' => $diagnostics,
+                'proxy' => $proxyInfo
             ]);
         } else {
+            $message = $testResult['message'];
+            $diagnostics = $testResult['diagnostics'];
+            
+            // 添加代理状态信息到诊断中
+            if ($proxyInfo['enabled'] && $proxyInfo['info']) {
+                $proxy = $proxyInfo['info'];
+                $diagnostics['proxy_status'] = "⚠️ 使用代理连接：{$proxy['name']} ({$proxy['type']}) - {$proxy['host']}:{$proxy['port']}";
+                $diagnostics['proxy_note'] = "连接失败可能与代理配置有关，建议检查代理设置";
+            } else {
+                $diagnostics['proxy_status'] = "🌐 直接连接（未使用代理）";
+            }
+            
             echo json_encode([
                 'success' => false,
-                'message' => '❌ 邮箱连接失败，请检查配置信息',
-                'diagnostics' => [
-                    'imap_extension' => '✅ IMAP扩展可用',
-                    'connection_issue' => '服务器连接失败，请检查服务器地址、端口和凭据'
-                ],
-                'error_type' => 'connection_failed'
+                'message' => $message,
+                'diagnostics' => $diagnostics,
+                'proxy' => $proxyInfo,
+                'error_type' => $testResult['error_type'] ?? 'connection_failed'
             ]);
         }
         

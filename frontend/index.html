@@ -666,9 +666,9 @@
                 
                 const data = await response.json();
                 
-                // 显示代理状态信息
+                // 显示代理状态信息（使用toast通知）
                 if (data.proxy) {
-                    displayProxyStatus(data.proxy);
+                    displayProxyStatusToast(data.proxy);
                 }
                 
                 if (data.success) {
@@ -915,6 +915,21 @@
             return re.test(email);
         }
         
+        function displayProxyStatusToast(proxyData) {
+            if (!proxyData) {
+                return;
+            }
+            
+            if (proxyData.enabled && proxyData.info) {
+                const info = proxyData.info;
+                const message = `🔒 连接状态：通过代理连接\n代理名称：${info.name}\n代理类型：${info.type.toUpperCase()}\n服务器：${info.host}:${info.port}`;
+                showToast(message, 'info', 4000);
+            } else {
+                showToast('🌐 连接状态：直接连接（未使用代理）', 'info', 3000);
+            }
+        }
+        
+        // 保留原有函数用于兼容性（但隐藏静态显示）
         function displayProxyStatus(proxyData) {
             const proxyStatusDiv = document.getElementById('proxyStatus');
             
@@ -922,6 +937,9 @@
                 proxyStatusDiv.style.display = 'none';
                 return;
             }
+            
+            // 隐藏静态显示，改为使用toast
+            proxyStatusDiv.style.display = 'none';
             
             if (proxyData.enabled && proxyData.info) {
                 const info = proxyData.info;
@@ -949,7 +967,8 @@
                 proxyStatusDiv.className = 'proxy-status disabled';
             }
             
-            proxyStatusDiv.style.display = 'block';
+            // 不显示静态状态
+            // proxyStatusDiv.style.display = 'block';
         }
     </script>
 </body>

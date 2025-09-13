@@ -130,7 +130,12 @@ if ($_POST) {
                 $stmt->bindValue(7, $beijingTime->format('Y-m-d H:i:s'));
                 $stmt->bindValue(8, $beijingTime->format('Y-m-d H:i:s'));
                 $stmt->execute();
-                $message = strtoupper($proxyType) . '代理添加成功';
+                
+                // 使用JavaScript重定向避免重复通知
+                echo "<script>
+                    window.location.href = '?success=" . urlencode(strtoupper($proxyType) . '代理添加成功') . "';
+                </script>";
+                exit();
             } else {
                 $error = '请填写所有必需字段';
             }
@@ -140,7 +145,12 @@ if ($_POST) {
                 $stmt = $db->prepare("DELETE FROM {$tableName} WHERE id = ?");
                 $stmt->bindValue(1, $id);
                 $stmt->execute();
-                $message = strtoupper($proxyType) . '代理删除成功';
+                
+                // 使用JavaScript重定向避免重复通知
+                echo "<script>
+                    window.location.href = '?success=" . urlencode(strtoupper($proxyType) . '代理删除成功') . "';
+                </script>";
+                exit();
             }
         } elseif ($action === 'update') {
             $id = (int)($_POST['id'] ?? 0);
@@ -168,7 +178,12 @@ if ($_POST) {
                 $stmt->bindValue(7, $beijingTime->format('Y-m-d H:i:s'));
                 $stmt->bindValue(8, $id);
                 $stmt->execute();
-                $message = strtoupper($proxyType) . '代理更新成功';
+                
+                // 使用JavaScript重定向避免重复通知
+                echo "<script>
+                    window.location.href = '?success=" . urlencode(strtoupper($proxyType) . '代理更新成功') . "';
+                </script>";
+                exit();
             } else {
                 $error = '请填写所有必需字段';
             }
@@ -181,7 +196,12 @@ if ($_POST) {
                     $stmt->bindValue($index + 1, (int)$id);
                 }
                 $stmt->execute();
-                $message = '成功删除 ' . count($ids) . ' 个' . strtoupper($proxyType) . '代理';
+                
+                // 使用JavaScript重定向避免重复通知
+                echo "<script>
+                    window.location.href = '?success=" . urlencode('成功删除 ' . count($ids) . ' 个' . strtoupper($proxyType) . '代理') . "';
+                </script>";
+                exit();
             } else {
                 $error = '请选择要删除的代理';
             }
@@ -1060,6 +1080,15 @@ $socks5Proxies = array_filter($allProxies, function($proxy) { return $proxy['pro
         
         // 页面加载时获取全局代理状态
         document.addEventListener('DOMContentLoaded', function() {
+            // 检查URL参数中的成功消息
+            const urlParams = new URLSearchParams(window.location.search);
+            const successMessage = urlParams.get('success');
+            if (successMessage) {
+                showToast(decodeURIComponent(successMessage), 'success');
+                // 清除URL参数，避免刷新时重复显示
+                window.history.replaceState({}, document.title, window.location.pathname);
+            }
+            
             <?php if ($message): ?>
                 showToast('<?php echo addslashes(htmlspecialchars($message)); ?>', 'success');
             <?php endif; ?>
