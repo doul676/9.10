@@ -835,9 +835,6 @@ $socks5Proxies = array_filter($allProxies, function($proxy) { return $proxy['pro
                         <button type="button" class="btn" onclick="openAddModal('socks5')">
                             ➕ 添加SOCKS5代理
                         </button>
-                        <button type="button" class="btn btn-success" onclick="testAllProxies()">
-                            🔍 测试所有代理
-                        </button>
                     </div>
                     <p style="margin-top: 15px; color: #64748b;">管理HTTP和SOCKS5代理服务器配置，统一展示所有代理类型</p>
                 </div>
@@ -1149,8 +1146,16 @@ $socks5Proxies = array_filter($allProxies, function($proxy) { return $proxy['pro
             .then(result => {
                 if (result.success) {
                     showToast(result.message, 'success', 5000);
+                    // 刷新页面以显示更新后的测试结果
+                    setTimeout(() => {
+                        window.location.reload();
+                    }, 2000);
                 } else {
                     showToast(result.message, 'error', 8000);
+                    // 即使测试失败也要刷新页面以显示更新后的失败计数
+                    setTimeout(() => {
+                        window.location.reload();
+                    }, 3000);
                 }
             })
             .catch(error => {
@@ -1171,16 +1176,7 @@ $socks5Proxies = array_filter($allProxies, function($proxy) { return $proxy['pro
             });
         }
         
-        // Test all proxies
-        function testAllProxies() {
-            showToast('开始测试所有代理...', 'info');
-            
-            // This would be implemented as a batch operation
-            // For now, just show a placeholder
-            setTimeout(() => {
-                showToast('批量测试功能正在开发中', 'info');
-            }, 1000);
-        }
+
         
         // Delete proxy with confirmation
         function deleteProxy(proxyType, proxyId) {
