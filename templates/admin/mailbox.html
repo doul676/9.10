@@ -972,11 +972,12 @@
             return;
         }
         
-        mailboxes.forEach(mailbox => {
+        mailboxes.forEach((mailbox, index) => {
             const row = document.createElement('tr');
+            const rowNumber = (currentPage - 1) * perPage + index + 1;
             row.innerHTML = `
                 <td><input type="checkbox" class="mailbox-checkbox" value="${mailbox.id}" onchange="toggleMailboxSelection(${mailbox.id})"></td>
-                <td>${mailbox.id}</td>
+                <td>${rowNumber}</td>
                 <td>${escapeHtml(mailbox.email)}</td>
                 <td>******</td>
                 <td>${escapeHtml(mailbox.server)}</td>
@@ -1583,13 +1584,14 @@
             return;
         }
         
-        serverList.forEach(server => {
+        serverList.forEach((server, index) => {
             const item = document.createElement('div');
             item.className = 'server-item';
+            const rowNumber = index + 1;
             item.innerHTML = `
                 <input type="checkbox" class="server-checkbox" value="${server.id}" onchange="toggleServerSelection(${server.id})" style="margin-right: 10px;">
                 <div class="server-info">
-                    <div class="server-id">ID: ${server.id}</div>
+                    <div class="server-id">序号: ${rowNumber}</div>
                     <div class="server-name">${escapeHtml(server.server_name)}</div>
                     <div class="server-address">${escapeHtml(server.server_address)}</div>
                 </div>
