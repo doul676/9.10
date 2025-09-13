@@ -130,6 +130,24 @@ CREATE TABLE IF NOT EXISTS system_config (
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
+-- 代理配置表（用于全局代理设置）
+CREATE TABLE IF NOT EXISTS proxy_config (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    config_key TEXT NOT NULL UNIQUE,
+    config_value TEXT NOT NULL,
+    description TEXT DEFAULT '',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 插入默认代理配置
+INSERT OR IGNORE INTO proxy_config (config_key, config_value, description) VALUES 
+('proxy_enabled', '0', '代理是否开启'),
+('active_proxy_type', '', '当前激活的代理类型(http/socks5)'),
+('active_proxy_id', '0', '当前激活的代理ID'),
+('auto_select_proxy', '1', '自动选择可用代理'),
+('proxy_test_timeout', '10', '代理测试超时时间(秒)');
+
 -- 插入默认系统配置
 INSERT OR IGNORE INTO system_config (config_key, config_value, config_type, description, is_system) VALUES 
 ('system_name', '邮件查看系统', 'string', '系统名称', 1),
@@ -161,3 +179,4 @@ CREATE INDEX IF NOT EXISTS idx_card_logs_created_at ON card_logs(created_at);
 CREATE INDEX IF NOT EXISTS idx_mail_logs_email ON mail_logs(email);
 CREATE INDEX IF NOT EXISTS idx_mail_logs_created_at ON mail_logs(created_at);
 CREATE INDEX IF NOT EXISTS idx_system_config_key ON system_config(config_key);
+CREATE INDEX IF NOT EXISTS idx_proxy_config_key ON proxy_config(config_key);
