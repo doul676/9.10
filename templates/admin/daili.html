@@ -576,6 +576,44 @@
         color: #92400e;
     }
     
+    /* 代理状态显示样式 */
+    .proxy-status {
+        background: #f8fafc;
+        border: 1px solid #e5e7eb;
+        border-radius: 8px;
+        padding: 12px 16px;
+    }
+    
+    .status-card {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        font-size: 14px;
+    }
+    
+    .status-indicator {
+        font-size: 12px;
+    }
+    
+    .status-text {
+        font-weight: 500;
+        color: #374151;
+    }
+    
+    .status-details {
+        color: #6b7280;
+        font-size: 12px;
+    }
+    
+    .proxy-status.enabled {
+        background: #dcfce7;
+        border-color: #86efac;
+    }
+    
+    .proxy-status.enabled .status-text {
+        color: #166534;
+    }
+    
     /* 响应式设计 */
     @media (max-width: 768px) {
         .sidebar {
@@ -700,9 +738,21 @@
                     <button class="btn btn-primary" onclick="showAddProxyModal('socks5')">
                         ➕ 添加SOCKS5代理
                     </button>
+                    <button class="btn btn-success" onclick="toggleProxy()" id="toggleProxyBtn">
+                        🌐 开启代理
+                    </button>
                     <button class="btn btn-danger" onclick="batchDeleteProxies()" id="batchDeleteBtn" style="display: none;">
                         🗑️ 批量删除
                     </button>
+                </div>
+                
+                <!-- 代理状态显示 -->
+                <div id="proxyStatus" class="proxy-status" style="margin-top: 15px; display: none;">
+                    <div class="status-card">
+                        <span class="status-indicator" id="proxyIndicator">🔴</span>
+                        <span class="status-text" id="proxyStatusText">代理未启用</span>
+                        <span class="status-details" id="proxyDetails"></span>
+                    </div>
                 </div>
             </div>
         </div>
@@ -835,11 +885,117 @@
     let totalPages = 1;
     let selectedProxies = new Set();
     let allProxies = [];
+    let currentProxyStatus = {
+        enabled: false,
+        type: '',
+        id: 0,
+        info: null
+    };
 
     // 页面加载时初始化
     document.addEventListener('DOMContentLoaded', function() {
         loadAllProxies();
+        loadProxyStatus();
     });
+    
+    // ========== 代理控制功能 ==========
+    
+    // 加载代理状态
+    async function loadProxyStatus() {
+        try {
+            const response = await fetch('/admin/api/proxy-control', {
+                method: 'GET',
+                headers: {
+                    'Content-Type': 'application/json',
+                }
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                currentProxyStatus = data.data;
+                updateProxyStatusDisplay();
+            } else {
+                console.error('Failed to load proxy status:', data.message);
+            }
+        } catch (error) {
+            console.error('Error loading proxy status:', error);
+        }
+    }
+    
+    // 更新代理状态显示
+    function updateProxyStatusDisplay() {
+        const statusContainer = document.getElementById('proxyStatus');
+        const toggleBtn = document.getElementById('toggleProxyBtn');
+        const indicator = document.getElementById('proxyIndicator');
+        const statusText = document.getElementById('proxyStatusText');
+        const details = document.getElementById('proxyDetails');
+        
+        if (currentProxyStatus.proxy_enabled) {
+            // 代理已启用
+            statusContainer.style.display = 'block';
+            statusContainer.classList.add('enabled');
+            toggleBtn.textContent = '🔴 关闭代理';
+            toggleBtn.className = 'btn btn-danger';
+            indicator.textContent = '🟢';
+            statusText.textContent = '代理已启用';
+            
+            if (currentProxyStatus.active_proxy_info) {
+                const proxy = currentProxyStatus.active_proxy_info;
+                details.textContent = `${proxy.name} (${currentProxyStatus.active_proxy_type.toUpperCase()}) - ${proxy.host}:${proxy.port}`;
+            } else {
+                details.textContent = `${currentProxyStatus.active_proxy_type.toUpperCase()} 代理 ID: ${currentProxyStatus.active_proxy_id}`;
+            }
+        } else {
+            // 代理未启用
+            statusContainer.style.display = 'block';
+            statusContainer.classList.remove('enabled');
+            toggleBtn.textContent = '🌐 开启代理';
+            toggleBtn.className = 'btn btn-success';
+            indicator.textContent = '🔴';
+            statusText.textContent = '代理未启用';
+            details.textContent = '点击"开启代理"按钮自动选择第一个可用代理';
+        }
+    }
+    
+    // 切换代理状态
+    async function toggleProxy() {
+        const toggleBtn = document.getElementById('toggleProxyBtn');
+        const originalText = toggleBtn.textContent;
+        
+        try {
+            toggleBtn.disabled = true;
+            toggleBtn.textContent = currentProxyStatus.proxy_enabled ? '正在关闭...' : '正在启用...';
+            
+            const action = currentProxyStatus.proxy_enabled ? 'disable_proxy' : 'enable_proxy';
+            
+            const response = await fetch('/admin/api/proxy-control', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ action: action })
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                showToast(data.message, 'success');
+                currentProxyStatus = data.data;
+                updateProxyStatusDisplay();
+            } else {
+                showToast(data.message || '操作失败', 'error');
+            }
+        } catch (error) {
+            console.error('Toggle proxy error:', error);
+            showToast('网络错误，请稍后重试', 'error');
+        } finally {
+            toggleBtn.disabled = false;
+            if (toggleBtn.textContent.includes('正在')) {
+                toggleBtn.textContent = originalText;
+            }
+        }
+    }
     
     // ========== 统一代理管理功能 ==========
     
