@@ -220,6 +220,12 @@ def admin_required(f):
     """管理员权限装饰器"""
     def decorated_function(*args, **kwargs):
         if not session.get('admin_logged_in'):
+            # Check if this is an AJAX request
+            if request.headers.get('Content-Type') == 'application/json' or request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                return jsonify({
+                    'success': False,
+                    'message': '会话已过期，请重新登录'
+                }), 401
             return redirect(url_for('admin_login'))
         return f(*args, **kwargs)
     decorated_function.__name__ = f.__name__
@@ -995,8 +1001,15 @@ def api_admin_proxies(proxy_type):
             return _edit_proxy(db, table_name, data)
         elif action == 'test':
             return _test_proxy(db, table_name, data, proxy_type)
+        elif action == 'test_new':
+            return _test_new_proxy(data, proxy_type)
         elif action == 'batch_delete':
             return _batch_delete_proxy(db, table_name, data)
+        else:
+            return jsonify({
+                'success': False,
+                'message': f'未知操作: {action}'
+            })
     
     elif request.method == 'DELETE':
         data = request.get_json()
@@ -1182,6 +1195,45 @@ def _test_proxy(db, table_name, data, proxy_type):
             'message': f'测试失败: {str(e)}'
         })
 
+def _test_new_proxy(data, proxy_type):
+    """测试新代理连接（无需保存到数据库）"""
+    host = data.get('host', '').strip()
+    port = data.get('port', 0)
+    username = data.get('username', '').strip()
+    password = data.get('password', '').strip()
+    name = data.get('name', '').strip()
+    
+    if not host or not port:
+        return jsonify({
+            'success': False,
+            'message': '请填写代理地址和端口'
+        })
+    
+    try:
+        # 构造代理对象用于测试
+        proxy_data = {
+            'host': host,
+            'port': int(port),
+            'username': username or None,
+            'password': password or None,
+            'name': name or f'{host}:{port}'
+        }
+        
+        # 测试代理连接
+        test_results = _perform_proxy_test(proxy_data, proxy_type)
+        
+        return jsonify({
+            'success': test_results['success'],
+            'message': test_results['message'],
+            'details': test_results
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': f'测试失败: {str(e)}'
+        })
+
 def _perform_proxy_test(proxy, proxy_type):
     """执行代理测试"""
     try:
@@ -1351,12 +1403,110 @@ def api_admin_card_logs():
 @app.route('/admin/api/mail-logs')
 @admin_required
 def api_admin_mail_logs():
-    """收件日志 API（Stub实现）"""
-    return jsonify({
-        'success': True,
-        'message': '收件日志功能正在开发中',
-        'data': []
-    })
+    """收件日志 API"""
+    try:
+        page = int(request.args.get('page', 1))
+        per_page = int(request.args.get('per_page', 10))
+        search = request.args.get('search', '').strip()
+        
+        db = get_db()
+        db_type = app.config['DATABASE_TYPE']
+        
+        offset = (page - 1) * per_page
+        
+        # 构建查询条件
+        where_clause = ""
+        params = []
+        if search:
+            where_clause = "WHERE email LIKE ? OR mail_subject LIKE ? OR mail_from LIKE ?"
+            search_param = f"%{search}%"
+            params = [search_param, search_param, search_param]
+        
+        # 获取总数
+        if db_type == 'sqlite':
+            count_sql = f"SELECT COUNT(*) as count FROM mail_logs {where_clause}"
+            count_result = db.execute(count_sql, params).fetchone()
+            total = count_result['count'] if count_result else 0
+            
+            # 获取分页数据
+            sql = f"""
+                SELECT * FROM mail_logs {where_clause}
+                ORDER BY created_at DESC 
+                LIMIT ? OFFSET ?
+            """
+            logs = db.execute(sql, params + [per_page, offset]).fetchall()
+        else:
+            cursor = db.cursor()
+            placeholder = '%s'
+            where_mysql = where_clause.replace('?', placeholder) if where_clause else ""
+            
+            count_sql = f"SELECT COUNT(*) as count FROM mail_logs {where_mysql}"
+            cursor.execute(count_sql, params)
+            total = cursor.fetchone()['count'] if db_type == 'postgresql' else cursor.fetchone()[0]
+            
+            sql = f"""
+                SELECT * FROM mail_logs {where_mysql}
+                ORDER BY created_at DESC 
+                LIMIT {per_page} OFFSET {offset}
+            """
+            cursor.execute(sql, params)
+            logs = cursor.fetchall()
+        
+        # 处理发件人显示格式（实现需求2）
+        processed_logs = []
+        for log in logs:
+            log_dict = dict(log)
+            # 解析发件人信息，实现"发件人昵称 <发件人邮箱>"格式
+            mail_from = log_dict.get('mail_from', '')
+            if mail_from:
+                log_dict['formatted_sender'] = format_sender_display(mail_from)
+            else:
+                log_dict['formatted_sender'] = '未知发件人'
+            processed_logs.append(log_dict)
+        
+        return jsonify({
+            'success': True,
+            'data': processed_logs,
+            'pagination': {
+                'page': page,
+                'per_page': per_page,
+                'total': total,
+                'pages': (total + per_page - 1) // per_page if total > 0 else 0
+            }
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': f'获取收件日志失败: {str(e)}',
+            'data': []
+        })
+
+def format_sender_display(mail_from):
+    """
+    格式化发件人显示格式
+    需求2：显示"发件人昵称 <发件人邮箱>"格式
+    """
+    import re
+    
+    if not mail_from:
+        return '未知发件人'
+    
+    # 如果已经是"昵称 <邮箱>"格式，直接返回
+    if '<' in mail_from and '>' in mail_from:
+        return mail_from
+    
+    # 如果只是邮箱地址，尝试提取用户名作为昵称
+    email_pattern = r'^([^@\s]+)@([^@\s]+\.[^@\s]+)$'
+    match = re.match(email_pattern, mail_from.strip())
+    
+    if match:
+        username = match.group(1)
+        email = mail_from.strip()
+        return f"{username} <{email}>"
+    
+    # 其他情况，直接返回原始内容
+    return mail_from
 
 @app.route('/admin/api/system-config', methods=['GET', 'POST'])
 @admin_required
