@@ -143,6 +143,21 @@ INSERT OR IGNORE INTO system_config (config_key, config_value, config_type, desc
 ('site_url', 'http://localhost:8005', 'string', '站点URL', 0),
 ('admin_email', 'admin@example.com', 'string', '管理员邮箱', 0);
 
+-- 代理配置表
+CREATE TABLE IF NOT EXISTS proxy_config (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    config_key TEXT NOT NULL UNIQUE,
+    config_value TEXT NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 插入默认代理配置
+INSERT OR IGNORE INTO proxy_config (config_key, config_value) VALUES 
+('proxy_enabled', '0'),  -- 0: 关闭, 1: 开启
+('active_proxy_type', ''),  -- 'http' 或 'socks5'
+('active_proxy_id', '0');  -- 当前使用的代理ID
+
 -- 创建索引（增强版）
 CREATE INDEX IF NOT EXISTS idx_mail_accounts_email ON mail_accounts(email);
 CREATE INDEX IF NOT EXISTS idx_mail_accounts_created_at ON mail_accounts(created_at);
