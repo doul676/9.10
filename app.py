@@ -278,7 +278,7 @@ def api_admin_mailbox():
         })
     
     elif request.method == 'POST':
-        # 添加或编辑邮箱
+        # 添加、编辑或批量添加邮箱
         data = request.get_json()
         action = data.get('action')
         
@@ -327,6 +327,67 @@ def api_admin_mailbox():
                     'message': f'添加失败: {str(e)}'
                 })
         
+        elif action == 'batch_add':
+            # 批量添加邮箱
+            mailboxes = data.get('mailboxes', [])
+            server = data.get('server', '').strip()
+            port = int(data.get('port', 0))
+            protocol = data.get('protocol', 'imap')
+            ssl = 1 if data.get('ssl') else 0
+            remarks = data.get('remarks', '').strip()
+            
+            if not mailboxes or not server or not port:
+                return jsonify({
+                    'success': False,
+                    'message': '请填写所有必需字段'
+                })
+            
+            try:
+                now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                success_count = 0
+                error_count = 0
+                
+                for mailbox in mailboxes:
+                    email = mailbox.get('email', '').strip()
+                    password = mailbox.get('password', '').strip()
+                    
+                    if not email or not password:
+                        error_count += 1
+                        continue
+                    
+                    # 检查邮箱是否已存在
+                    existing = db.execute('SELECT id FROM mail_accounts WHERE email = ?', (email,)).fetchone()
+                    if existing:
+                        error_count += 1
+                        continue
+                    
+                    # 插入新邮箱
+                    try:
+                        db.execute('''
+                            INSERT INTO mail_accounts (email, username, password, server, port, protocol, ssl, remarks, created_at, updated_at)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        ''', (email, email, password, server, port, protocol, ssl, remarks, now, now))
+                        success_count += 1
+                    except:
+                        error_count += 1
+                
+                db.commit()
+                
+                message = f'批量添加完成：成功 {success_count} 个'
+                if error_count > 0:
+                    message += f'，失败 {error_count} 个'
+                
+                return jsonify({
+                    'success': True,
+                    'message': message
+                })
+                
+            except Exception as e:
+                return jsonify({
+                    'success': False,
+                    'message': f'批量添加失败: {str(e)}'
+                })
+        
         elif action == 'edit':
             # 编辑邮箱逻辑
             account_id = data.get('id')
@@ -365,6 +426,38 @@ def api_admin_mailbox():
                     'success': False,
                     'message': f'更新失败: {str(e)}'
                 })
+        
+        elif action == 'quick_remark':
+            # 快捷备注
+            account_id = data.get('id')
+            remarks = data.get('remarks', '').strip()
+            
+            if not account_id:
+                return jsonify({
+                    'success': False,
+                    'message': '缺少邮箱ID'
+                })
+            
+            try:
+                now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                db.execute('''
+                    UPDATE mail_accounts 
+                    SET remarks=?, updated_at=?
+                    WHERE id=?
+                ''', (remarks, now, account_id))
+                
+                db.commit()
+                
+                return jsonify({
+                    'success': True,
+                    'message': '备注更新成功'
+                })
+                
+            except Exception as e:
+                return jsonify({
+                    'success': False,
+                    'message': f'更新失败: {str(e)}'
+                })
     
     elif request.method == 'DELETE':
         # 删除邮箱
@@ -384,6 +477,194 @@ def api_admin_mailbox():
             return jsonify({
                 'success': True,
                 'message': '邮箱删除成功'
+            })
+            
+        except Exception as e:
+            return jsonify({
+                'success': False,
+                'message': f'删除失败: {str(e)}'
+            })
+
+@app.route('/admin/api/mailbox/test', methods=['POST'])
+@admin_required
+def api_test_mailbox():
+    """测试邮箱连接"""
+    data = request.get_json()
+    account_id = data.get('id')
+    
+    if not account_id:
+        return jsonify({
+            'success': False,
+            'message': '缺少邮箱ID'
+        })
+    
+    try:
+        db = get_db()
+        account = db.execute('SELECT * FROM mail_accounts WHERE id = ?', (account_id,)).fetchone()
+        
+        if not account:
+            return jsonify({
+                'success': False,
+                'message': '邮箱账号不存在'
+            })
+        
+        # 调用Python邮件测试脚本
+        try:
+            result = subprocess.run([
+                sys.executable, 
+                os.path.join(os.path.dirname(__file__), 'python', 'mail_fetcher.py'),
+                account['email'],
+                '--test-connection'
+            ], capture_output=True, text=True, timeout=30)
+            
+            if result.returncode == 0:
+                # 解析JSON输出
+                response_data = json.loads(result.stdout)
+                return jsonify(response_data)
+            else:
+                return jsonify({
+                    'success': False,
+                    'message': f'邮箱测试失败: {result.stderr or "未知错误"}'
+                })
+                
+        except subprocess.TimeoutExpired:
+            return jsonify({
+                'success': False,
+                'message': '邮箱测试超时，请稍后重试'
+            })
+        except json.JSONDecodeError:
+            return jsonify({
+                'success': False,
+                'message': '邮箱服务响应格式错误'
+            })
+        except Exception as e:
+            return jsonify({
+                'success': False,
+                'message': f'邮箱测试错误: {str(e)}'
+            })
+            
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': f'服务器错误: {str(e)}'
+        })
+
+@app.route('/admin/api/servers', methods=['GET', 'POST', 'DELETE'])
+@admin_required
+def api_admin_servers():
+    """服务器地址管理 API"""
+    db = get_db()
+    
+    if request.method == 'GET':
+        # 获取服务器列表
+        servers = db.execute('''
+            SELECT * FROM server_addresses 
+            ORDER BY created_at DESC
+        ''').fetchall()
+        
+        return jsonify({
+            'success': True,
+            'data': [dict(server) for server in servers]
+        })
+    
+    elif request.method == 'POST':
+        # 添加或编辑服务器
+        data = request.get_json()
+        action = data.get('action')
+        
+        if action == 'add':
+            server_name = data.get('server_name', '').strip()
+            server_address = data.get('server_address', '').strip()
+            default_port_imap = data.get('default_port_imap', 993)
+            default_port_pop3 = data.get('default_port_pop3', 995)
+            ssl_enabled = data.get('ssl_enabled', 1)
+            
+            if not all([server_name, server_address]):
+                return jsonify({
+                    'success': False,
+                    'message': '请填写服务器名称和地址'
+                })
+            
+            try:
+                # 检查服务器是否已存在
+                existing = db.execute('SELECT id FROM server_addresses WHERE server_address = ?', (server_address,)).fetchone()
+                if existing:
+                    return jsonify({
+                        'success': False,
+                        'message': '服务器地址已存在'
+                    })
+                
+                # 插入新服务器
+                now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                db.execute('''
+                    INSERT INTO server_addresses (server_name, server_address, default_port_imap, default_port_pop3, ssl_enabled, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                ''', (server_name, server_address, default_port_imap, default_port_pop3, ssl_enabled, now, now))
+                
+                db.commit()
+                
+                return jsonify({
+                    'success': True,
+                    'message': '服务器添加成功'
+                })
+                
+            except Exception as e:
+                return jsonify({
+                    'success': False,
+                    'message': f'添加失败: {str(e)}'
+                })
+        
+        elif action == 'edit':
+            # 编辑服务器逻辑
+            server_id = data.get('id')
+            if not server_id:
+                return jsonify({
+                    'success': False,
+                    'message': '缺少服务器ID'
+                })
+            
+            server_name = data.get('server_name', '').strip()
+            server_address = data.get('server_address', '').strip()
+            
+            try:
+                now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                db.execute('''
+                    UPDATE server_addresses 
+                    SET server_name=?, server_address=?, updated_at=?
+                    WHERE id=?
+                ''', (server_name, server_address, now, server_id))
+                
+                db.commit()
+                
+                return jsonify({
+                    'success': True,
+                    'message': '服务器更新成功'
+                })
+                
+            except Exception as e:
+                return jsonify({
+                    'success': False,
+                    'message': f'更新失败: {str(e)}'
+                })
+    
+    elif request.method == 'DELETE':
+        # 删除服务器
+        data = request.get_json()
+        server_id = data.get('id')
+        
+        if not server_id:
+            return jsonify({
+                'success': False,
+                'message': '缺少服务器ID'
+            })
+        
+        try:
+            db.execute('DELETE FROM server_addresses WHERE id = ?', (server_id,))
+            db.commit()
+            
+            return jsonify({
+                'success': True,
+                'message': '服务器删除成功'
             })
             
         except Exception as e:
