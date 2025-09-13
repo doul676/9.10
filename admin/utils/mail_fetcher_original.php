@@ -2,14 +2,9 @@
 /**
  * 邮件获取工具类
  * 支持IMAP和POP3协议，支持SSL连接
- * 现在优先使用Python实现以获得更好的代理支持
  */
 
-// 引入Python实现 - 从backend目录获取
-require_once __DIR__ . '/../../backend/utils/python_mail_fetcher.php';
-
-// 重命名原有类以避免冲突
-class OriginalMailFetcher {
+class MailFetcher {
     private $server;
     private $port;
     private $username;
