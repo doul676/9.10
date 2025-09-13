@@ -32,10 +32,30 @@ class MailFetcher {
      */
     private function checkProxyStatus() {
         try {
-            $db = new SQLite3(__DIR__ . '/../../db/mail.sqlite');
+            $dbPath = __DIR__ . '/../../db/mail.sqlite';
+            
+            // 如果数据库不存在，跳过代理检查
+            if (!file_exists($dbPath)) {
+                return;
+            }
+            
+            $db = new SQLite3($dbPath);
+            
+            // 检查proxy_config表是否存在
+            $tableCheck = $db->query("SELECT name FROM sqlite_master WHERE type='table' AND name='proxy_config'");
+            if (!$tableCheck || !$tableCheck->fetchArray()) {
+                $db->close();
+                return;
+            }
             
             // 获取代理配置
             $result = $db->query("SELECT config_key, config_value FROM proxy_config WHERE config_key IN ('proxy_enabled', 'active_proxy_type', 'active_proxy_id')");
+            
+            if (!$result) {
+                $db->close();
+                return;
+            }
+            
             $config = [];
             while ($row = $result->fetchArray(SQLITE3_ASSOC)) {
                 $config[$row['config_key']] = $row['config_value'];
@@ -47,26 +67,37 @@ class MailFetcher {
                 $proxyId = (int)($config['active_proxy_id'] ?? 0);
                 
                 if (!empty($proxyType) && $proxyId > 0) {
-                    // 获取代理详情
+                    // 检查代理表是否存在
                     $tableName = $proxyType === 'socks5' ? 'socks5_proxies' : 'http_proxies';
+                    $proxyTableCheck = $db->query("SELECT name FROM sqlite_master WHERE type='table' AND name='$tableName'");
+                    
+                    if (!$proxyTableCheck || !$proxyTableCheck->fetchArray()) {
+                        $db->close();
+                        return;
+                    }
+                    
+                    // 获取代理详情
                     $stmt = $db->prepare("SELECT * FROM {$tableName} WHERE id = ? AND status = 1");
                     $stmt->bindValue(1, $proxyId);
                     $proxyResult = $stmt->execute();
-                    $proxy = $proxyResult->fetchArray(SQLITE3_ASSOC);
                     
-                    if ($proxy) {
-                        $this->proxyEnabled = true;
-                        $this->proxyInfo = [
-                            'type' => $proxyType,
-                            'host' => $proxy['host'],
-                            'port' => $proxy['port'],
-                            'username' => $proxy['username'] ?? '',
-                            'password' => $proxy['password'] ?? '',
-                            'name' => $proxy['name'] ?? ''
-                        ];
+                    if ($proxyResult) {
+                        $proxy = $proxyResult->fetchArray(SQLITE3_ASSOC);
                         
-                        // 设置代理环境变量（用于支持代理的库）
-                        $this->setProxyEnvironment();
+                        if ($proxy) {
+                            $this->proxyEnabled = true;
+                            $this->proxyInfo = [
+                                'type' => $proxyType,
+                                'host' => $proxy['host'],
+                                'port' => $proxy['port'],
+                                'username' => $proxy['username'] ?? '',
+                                'password' => $proxy['password'] ?? '',
+                                'name' => $proxy['name'] ?? ''
+                            ];
+                            
+                            // 设置代理环境变量（用于支持代理的库）
+                            $this->setProxyEnvironment();
+                        }
                     }
                 }
             }
@@ -74,6 +105,7 @@ class MailFetcher {
             $db->close();
         } catch (Exception $e) {
             error_log('检查代理状态失败: ' . $e->getMessage());
+            // 不抛出异常，只记录日志，确保MailFetcher可以正常工作
         }
     }
     

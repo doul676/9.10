@@ -49,7 +49,12 @@ if ($_POST) {
                 $stmt->bindValue(9, $beijingTime->format('Y-m-d H:i:s'));
                 $stmt->bindValue(10, $beijingTime->format('Y-m-d H:i:s'));
                 $stmt->execute();
-                $message = '邮箱账号添加成功';
+                
+                // 使用JavaScript重定向避免重复通知
+                echo "<script>
+                    window.location.href = '?success=" . urlencode('邮箱账号添加成功') . "';
+                </script>";
+                exit();
             } else {
                 $error = '请填写所有必需字段';
             }
@@ -59,7 +64,12 @@ if ($_POST) {
                 $stmt = $db->prepare('DELETE FROM mail_accounts WHERE id = ?');
                 $stmt->bindValue(1, $id);
                 $stmt->execute();
-                $message = '邮箱账号删除成功';
+                
+                // 使用JavaScript重定向避免重复通知
+                echo "<script>
+                    window.location.href = '?success=" . urlencode('邮箱账号删除成功') . "';
+                </script>";
+                exit();
             }
         } elseif ($action === 'update') {
             $id = (int)($_POST['id'] ?? 0);
@@ -87,7 +97,12 @@ if ($_POST) {
                 $stmt->bindValue(9, $beijingTime->format('Y-m-d H:i:s'));
                 $stmt->bindValue(10, $id);
                 $stmt->execute();
-                $message = '邮箱账号更新成功';
+                
+                // 使用JavaScript重定向避免重复通知
+                echo "<script>
+                    window.location.href = '?success=" . urlencode('邮箱账号更新成功') . "';
+                </script>";
+                exit();
             } else {
                 $error = '请填写所有必需字段';
             }
@@ -100,7 +115,12 @@ if ($_POST) {
                     $stmt->bindValue($index + 1, (int)$id);
                 }
                 $stmt->execute();
-                $message = '成功删除 ' . count($ids) . ' 个邮箱账号';
+                
+                // 使用JavaScript重定向避免重复通知
+                echo "<script>
+                    window.location.href = '?success=" . urlencode('成功删除 ' . count($ids) . ' 个邮箱账号') . "';
+                </script>";
+                exit();
             } else {
                 $error = '请选择要删除的邮箱账号';
             }
@@ -152,6 +172,12 @@ if ($_POST) {
                 }
                 
                 $message = "批量添加完成：成功 {$successCount} 个，失败 {$failCount} 个";
+                
+                // 使用JavaScript重定向避免重复通知
+                echo "<script>
+                    window.location.href = '?success=" . urlencode($message) . "';
+                </script>";
+                exit();
             } else {
                 $error = '请填写所有必需字段';
             }
@@ -1383,6 +1409,15 @@ try {
         
         // Show PHP messages as toasts on page load
         document.addEventListener('DOMContentLoaded', function() {
+            // 检查URL参数中的成功消息
+            const urlParams = new URLSearchParams(window.location.search);
+            const successMessage = urlParams.get('success');
+            if (successMessage) {
+                showToast(decodeURIComponent(successMessage), 'success');
+                // 清除URL参数，避免刷新时重复显示
+                window.history.replaceState({}, document.title, window.location.pathname + window.location.search.replace(/[?&]success=[^&]*/, '').replace(/^&/, '?'));
+            }
+            
             <?php if ($message): ?>
                 showToast('<?php echo addslashes(htmlspecialchars($message)); ?>', 'success');
             <?php endif; ?>
