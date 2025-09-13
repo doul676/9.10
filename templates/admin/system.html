@@ -4,11 +4,372 @@
 
 {% block head %}
 <style>
-    /* 基础样式将在完善时添加 */
+    * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+    }
+    
+    :root {
+        --primary-color: #667eea;
+        --secondary-color: #764ba2;
+        --sidebar-width: 280px;
+        --header-height: 70px;
+        --transition: all 0.3s ease;
+    }
+    
+    body {
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        background: #f8fafc;
+        line-height: 1.6;
+        color: #334155;
+        transition: var(--transition);
+    }
+    
+    /* Sidebar and main layout styles - same as other templates */
+    .sidebar {
+        position: fixed;
+        left: 0;
+        top: 0;
+        width: var(--sidebar-width);
+        height: 100vh;
+        background: linear-gradient(135deg, var(--primary-color) 0%, var(--secondary-color) 100%);
+        z-index: 1000;
+        transition: var(--transition);
+        box-shadow: 4px 0 15px rgba(0,0,0,0.1);
+    }
+    
+    .sidebar-header {
+        padding: 20px;
+        border-bottom: 1px solid rgba(255,255,255,0.1);
+    }
+    
+    .sidebar-logo {
+        color: white;
+        font-size: 20px;
+        font-weight: 700;
+        text-decoration: none;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+    
+    .sidebar-nav {
+        padding: 20px 0;
+    }
+    
+    .nav-item {
+        display: flex;
+        align-items: center;
+        padding: 15px 25px;
+        color: rgba(255,255,255,0.8);
+        text-decoration: none;
+        transition: var(--transition);
+        gap: 15px;
+        font-weight: 500;
+    }
+    
+    .nav-item:hover {
+        background: rgba(255,255,255,0.1);
+        color: white;
+        transform: translateX(5px);
+    }
+    
+    .nav-item.active {
+        background: rgba(255,255,255,0.2);
+        color: white;
+        border-right: 4px solid white;
+    }
+    
+    .main-content {
+        margin-left: var(--sidebar-width);
+        min-height: 100vh;
+        transition: var(--transition);
+    }
+    
+    .header {
+        background: white;
+        height: var(--header-height);
+        box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 30px;
+        position: sticky;
+        top: 0;
+        z-index: 999;
+    }
+    
+    .header-title {
+        font-size: 24px;
+        font-weight: 600;
+        color: #1e293b;
+    }
+    
+    .header-actions {
+        display: flex;
+        align-items: center;
+        gap: 20px;
+    }
+    
+    .user-info {
+        display: flex;
+        align-items: center;
+        gap: 15px;
+        color: #64748b;
+    }
+    
+    .logout-btn {
+        background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+        color: white;
+        text-decoration: none;
+        padding: 8px 16px;
+        border-radius: 8px;
+        font-size: 14px;
+        font-weight: 500;
+        transition: var(--transition);
+    }
+    
+    .logout-btn:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 5px 15px rgba(239, 68, 68, 0.3);
+    }
+    
+    .content {
+        padding: 30px;
+    }
+    
+    .card {
+        background: white;
+        border-radius: 15px;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.05), 0 1px 3px rgba(0,0,0,0.1);
+        overflow: hidden;
+        margin-bottom: 25px;
+        transition: var(--transition);
+    }
+    
+    .card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 25px rgba(0,0,0,0.1), 0 4px 10px rgba(0,0,0,0.06);
+    }
+    
+    .card-header {
+        padding: 20px 25px;
+        border-bottom: 1px solid #f1f5f9;
+        background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+    
+    .card-title {
+        font-size: 18px;
+        font-weight: 600;
+        color: #1e293b;
+        margin: 0;
+    }
+    
+    .card-body {
+        padding: 25px;
+    }
+    
+    .btn {
+        padding: 10px 20px;
+        border: none;
+        border-radius: 8px;
+        font-size: 14px;
+        font-weight: 500;
+        cursor: pointer;
+        transition: var(--transition);
+        text-decoration: none;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        text-align: center;
+    }
+    
+    .btn-primary {
+        background: linear-gradient(135deg, var(--primary-color) 0%, var(--secondary-color) 100%);
+        color: white;
+    }
+    
+    .btn-primary:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 5px 15px rgba(102, 126, 234, 0.3);
+    }
+    
+    .btn-success {
+        background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+        color: white;
+    }
+    
+    .btn-success:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 5px 15px rgba(16, 185, 129, 0.3);
+    }
+    
+    .btn-warning {
+        background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+        color: white;
+    }
+    
+    .btn-warning:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 5px 15px rgba(245, 158, 11, 0.3);
+    }
+    
+    .btn-danger {
+        background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+        color: white;
+    }
+    
+    .btn-danger:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 5px 15px rgba(239, 68, 68, 0.3);
+    }
+    
+    .form-group {
+        margin-bottom: 20px;
+    }
+    
+    .form-group label {
+        display: block;
+        margin-bottom: 8px;
+        font-weight: 500;
+        color: #374151;
+    }
+    
+    .form-group input,
+    .form-group select,
+    .form-group textarea {
+        width: 100%;
+        padding: 12px 15px;
+        border: 2px solid #e5e7eb;
+        border-radius: 8px;
+        font-size: 14px;
+        transition: var(--transition);
+        background: white;
+    }
+    
+    .form-group input:focus,
+    .form-group select:focus,
+    .form-group textarea:focus {
+        outline: none;
+        border-color: var(--primary-color);
+        box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+    }
+    
+    .settings-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+        gap: 25px;
+    }
+    
+    .settings-section {
+        background: #f8fafc;
+        padding: 20px;
+        border-radius: 10px;
+        border: 1px solid #e5e7eb;
+    }
+    
+    .settings-section h3 {
+        margin-bottom: 15px;
+        color: #1e293b;
+        font-size: 16px;
+        font-weight: 600;
+    }
+    
+    .checkbox-group {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+    
+    .checkbox-group input[type="checkbox"] {
+        width: auto;
+        margin: 0;
+    }
+    
+    .toast-container {
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        z-index: 3000;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        max-width: 400px;
+    }
+    
+    .toast {
+        padding: 15px 20px;
+        border-radius: 10px;
+        color: white;
+        font-weight: 500;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+        transform: translateX(450px);
+        opacity: 0;
+        transition: all 0.3s ease;
+        position: relative;
+        overflow: hidden;
+    }
+    
+    .toast.show {
+        transform: translateX(0);
+        opacity: 1;
+    }
+    
+    .toast.success {
+        background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+    }
+    
+    .toast.error {
+        background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+    }
+    
+    .toast.info {
+        background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+    }
+    
+    @media (max-width: 768px) {
+        .sidebar {
+            transform: translateX(-100%);
+        }
+        
+        .sidebar.mobile-open {
+            transform: translateX(0);
+        }
+        
+        .main-content {
+            margin-left: 0;
+        }
+        
+        .header-title {
+            font-size: 20px;
+        }
+        
+        .content {
+            padding: 20px;
+        }
+        
+        .card-header {
+            flex-direction: column;
+            gap: 15px;
+            align-items: flex-start;
+        }
+        
+        .settings-grid {
+            grid-template-columns: 1fr;
+        }
+    }
 </style>
 {% endblock %}
 
 {% block body %}
+<!-- Toast notification container -->
+<div id="toast-container" class="toast-container"></div>
+
+<!-- Sidebar -->
 <div class="sidebar">
     <div class="sidebar-header">
         <div class="sidebar-logo">📧 邮件管理系统</div>
@@ -38,6 +399,7 @@
     </nav>
 </div>
 
+<!-- Main Content -->
 <div class="main-content">
     <div class="header">
         <h1 class="header-title">系统设置</h1>
@@ -50,15 +412,556 @@
     </div>
     
     <div class="content">
-        <div class="card">
-            <div class="card-header">
-                <h2 class="card-title">系统配置</h2>
+        <div class="settings-grid">
+            <!-- 基本设置 -->
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title">基本设置</h2>
+                    <button class="btn btn-success" onclick="saveBasicSettings()">💾 保存</button>
+                </div>
+                <div class="card-body">
+                    <div class="form-group">
+                        <label for="siteTitle">网站标题</label>
+                        <input type="text" id="siteTitle" name="site_title" placeholder="邮件查看系统">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="siteDescription">网站描述</label>
+                        <textarea id="siteDescription" name="site_description" rows="3" placeholder="专业的邮件管理和查看系统"></textarea>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="adminEmail">管理员邮箱</label>
+                        <input type="email" id="adminEmail" name="admin_email" placeholder="admin@example.com">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="systemTimezone">系统时区</label>
+                        <select id="systemTimezone" name="system_timezone">
+                            <option value="Asia/Shanghai">Asia/Shanghai (中国标准时间)</option>
+                            <option value="Asia/Tokyo">Asia/Tokyo (日本标准时间)</option>
+                            <option value="America/New_York">America/New_York (美国东部时间)</option>
+                            <option value="Europe/London">Europe/London (英国时间)</option>
+                            <option value="UTC">UTC (协调世界时)</option>
+                        </select>
+                    </div>
+                </div>
             </div>
-            <div class="card-body">
-                <p>系统设置功能正在开发中...</p>
-                <p>将包含管理员密码修改、系统参数配置等功能。</p>
+            
+            <!-- 邮件设置 -->
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title">邮件设置</h2>
+                    <button class="btn btn-success" onclick="saveEmailSettings()">💾 保存</button>
+                </div>
+                <div class="card-body">
+                    <div class="form-group">
+                        <label for="maxEmailCheckInterval">邮件检查最大间隔（秒）</label>
+                        <input type="number" id="maxEmailCheckInterval" name="max_email_check_interval" min="60" max="3600" value="300">
+                    </div>
+                    
+                    <div class="form-group">
+                        <div class="checkbox-group">
+                            <input type="checkbox" id="enableEmailForwarding" name="enable_email_forwarding">
+                            <label for="enableEmailForwarding">启用邮件转发</label>
+                        </div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="maxStorageSize">最大存储大小（MB）</label>
+                        <input type="number" id="maxStorageSize" name="max_storage_size" min="100" max="10000" value="1000">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="cleanupDays">自动清理天数</label>
+                        <input type="number" id="cleanupDays" name="cleanup_days" min="1" max="365" value="30">
+                    </div>
+                </div>
+            </div>
+            
+            <!-- SMTP设置 -->
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title">SMTP设置</h2>
+                    <div style="display: flex; gap: 10px;">
+                        <button class="btn btn-warning" onclick="testSMTP()">🧪 测试连接</button>
+                        <button class="btn btn-success" onclick="saveSMTPSettings()">💾 保存</button>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <div class="form-group">
+                        <label for="smtpHost">SMTP服务器</label>
+                        <input type="text" id="smtpHost" name="smtp_host" placeholder="smtp.example.com">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="smtpPort">SMTP端口</label>
+                        <input type="number" id="smtpPort" name="smtp_port" min="1" max="65535" value="587">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="smtpUsername">SMTP用户名</label>
+                        <input type="text" id="smtpUsername" name="smtp_username" placeholder="发件邮箱用户名">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="smtpPassword">SMTP密码</label>
+                        <input type="password" id="smtpPassword" name="smtp_password" placeholder="发件邮箱密码或授权码">
+                    </div>
+                </div>
+            </div>
+            
+            <!-- 安全设置 -->
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title">安全设置</h2>
+                    <button class="btn btn-success" onclick="saveSecuritySettings()">💾 保存</button>
+                </div>
+                <div class="card-body">
+                    <div class="form-group">
+                        <div class="checkbox-group">
+                            <input type="checkbox" id="enableRegistration" name="enable_registration">
+                            <label for="enableRegistration">允许用户注册</label>
+                        </div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="sessionTimeout">会话超时时间（分钟）</label>
+                        <input type="number" id="sessionTimeout" name="session_timeout" min="5" max="1440" value="30">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="maxLoginAttempts">最大登录尝试次数</label>
+                        <input type="number" id="maxLoginAttempts" name="max_login_attempts" min="1" max="10" value="5">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="lockoutDuration">锁定持续时间（分钟）</label>
+                        <input type="number" id="lockoutDuration" name="lockout_duration" min="1" max="1440" value="15">
+                    </div>
+                </div>
+            </div>
+            
+            <!-- 管理员密码修改 -->
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title">修改密码</h2>
+                    <button class="btn btn-primary" onclick="changePassword()">🔐 修改密码</button>
+                </div>
+                <div class="card-body">
+                    <div class="form-group">
+                        <label for="currentPassword">当前密码</label>
+                        <input type="password" id="currentPassword" name="current_password" placeholder="请输入当前密码">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="newPassword">新密码</label>
+                        <input type="password" id="newPassword" name="new_password" placeholder="请输入新密码">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="confirmPassword">确认新密码</label>
+                        <input type="password" id="confirmPassword" name="confirm_password" placeholder="请再次输入新密码">
+                    </div>
+                </div>
+            </div>
+            
+            <!-- 系统维护 -->
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title">系统维护</h2>
+                </div>
+                <div class="card-body">
+                    <div style="display: flex; flex-direction: column; gap: 15px;">
+                        <button class="btn btn-warning" onclick="cleanupLogs()">🧹 清理系统日志</button>
+                        <button class="btn btn-warning" onclick="optimizeDatabase()">⚡ 优化数据库</button>
+                        <button class="btn btn-primary" onclick="exportSettings()">📥 导出配置</button>
+                        <button class="btn btn-primary" onclick="importSettings()">📤 导入配置</button>
+                        <button class="btn btn-danger" onclick="resetSystem()">🔄 重置系统</button>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // 页面加载时初始化
+    document.addEventListener('DOMContentLoaded', function() {
+        loadSystemSettings();
+    });
+    
+    // 加载系统设置
+    async function loadSystemSettings() {
+        try {
+            const response = await fetch('/admin/api/system/config', {
+                method: 'GET',
+                headers: {
+                    'Content-Type': 'application/json',
+                }
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                populateSettings(data.data);
+            } else {
+                showToast('加载系统设置失败', 'error');
+            }
+        } catch (error) {
+            console.error('加载系统设置失败:', error);
+            showToast('网络错误，请稍后重试', 'error');
+        }
+    }
+    
+    // 填充设置表单
+    function populateSettings(settings) {
+        for (const [key, value] of Object.entries(settings)) {
+            const element = document.querySelector(`[name="${key}"]`);
+            if (element) {
+                if (element.type === 'checkbox') {
+                    element.checked = value === '1' || value === true;
+                } else {
+                    element.value = value;
+                }
+            }
+        }
+    }
+    
+    // 保存基本设置
+    async function saveBasicSettings() {
+        const settings = {
+            site_title: document.getElementById('siteTitle').value,
+            site_description: document.getElementById('siteDescription').value,
+            admin_email: document.getElementById('adminEmail').value,
+            system_timezone: document.getElementById('systemTimezone').value
+        };
+        
+        await saveSettings('basic', settings);
+    }
+    
+    // 保存邮件设置
+    async function saveEmailSettings() {
+        const settings = {
+            max_email_check_interval: document.getElementById('maxEmailCheckInterval').value,
+            enable_email_forwarding: document.getElementById('enableEmailForwarding').checked ? '1' : '0',
+            max_storage_size: document.getElementById('maxStorageSize').value,
+            cleanup_days: document.getElementById('cleanupDays').value
+        };
+        
+        await saveSettings('email', settings);
+    }
+    
+    // 保存SMTP设置
+    async function saveSMTPSettings() {
+        const settings = {
+            smtp_host: document.getElementById('smtpHost').value,
+            smtp_port: document.getElementById('smtpPort').value,
+            smtp_username: document.getElementById('smtpUsername').value,
+            smtp_password: document.getElementById('smtpPassword').value
+        };
+        
+        await saveSettings('smtp', settings);
+    }
+    
+    // 保存安全设置
+    async function saveSecuritySettings() {
+        const settings = {
+            enable_registration: document.getElementById('enableRegistration').checked ? '1' : '0',
+            session_timeout: document.getElementById('sessionTimeout').value,
+            max_login_attempts: document.getElementById('maxLoginAttempts').value,
+            lockout_duration: document.getElementById('lockoutDuration').value
+        };
+        
+        await saveSettings('security', settings);
+    }
+    
+    // 通用设置保存函数
+    async function saveSettings(category, settings) {
+        try {
+            const response = await fetch('/admin/api/system/config', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ category, settings })
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                showToast(`${category}设置保存成功`, 'success');
+            } else {
+                showToast(data.message || '保存失败', 'error');
+            }
+        } catch (error) {
+            console.error('保存设置失败:', error);
+            showToast('网络错误，请稍后重试', 'error');
+        }
+    }
+    
+    // 测试SMTP连接
+    async function testSMTP() {
+        try {
+            showToast('正在测试SMTP连接...', 'info');
+            
+            const response = await fetch('/admin/api/system/test-smtp', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    host: document.getElementById('smtpHost').value,
+                    port: document.getElementById('smtpPort').value,
+                    username: document.getElementById('smtpUsername').value,
+                    password: document.getElementById('smtpPassword').value
+                })
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                showToast('SMTP连接测试成功', 'success');
+            } else {
+                showToast(data.message || 'SMTP连接测试失败', 'error');
+            }
+        } catch (error) {
+            console.error('SMTP测试失败:', error);
+            showToast('网络错误，请稍后重试', 'error');
+        }
+    }
+    
+    // 修改密码
+    async function changePassword() {
+        const currentPassword = document.getElementById('currentPassword').value;
+        const newPassword = document.getElementById('newPassword').value;
+        const confirmPassword = document.getElementById('confirmPassword').value;
+        
+        if (!currentPassword || !newPassword || !confirmPassword) {
+            showToast('请填写所有密码字段', 'error');
+            return;
+        }
+        
+        if (newPassword !== confirmPassword) {
+            showToast('新密码和确认密码不匹配', 'error');
+            return;
+        }
+        
+        if (newPassword.length < 6) {
+            showToast('新密码长度至少6位', 'error');
+            return;
+        }
+        
+        try {
+            const response = await fetch('/admin/api/system/change-password', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    current_password: currentPassword,
+                    new_password: newPassword
+                })
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                showToast('密码修改成功', 'success');
+                // 清空密码字段
+                document.getElementById('currentPassword').value = '';
+                document.getElementById('newPassword').value = '';
+                document.getElementById('confirmPassword').value = '';
+            } else {
+                showToast(data.message || '密码修改失败', 'error');
+            }
+        } catch (error) {
+            console.error('修改密码失败:', error);
+            showToast('网络错误，请稍后重试', 'error');
+        }
+    }
+    
+    // 清理系统日志
+    async function cleanupLogs() {
+        if (!confirm('确定要清理系统日志吗？这将删除30天前的所有日志。')) {
+            return;
+        }
+        
+        try {
+            const response = await fetch('/admin/api/system/cleanup-logs', {
+                method: 'DELETE',
+                headers: {
+                    'Content-Type': 'application/json',
+                }
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                showToast(`清理完成，共删除${data.deleted_count}条日志`, 'success');
+            } else {
+                showToast(data.message || '清理失败', 'error');
+            }
+        } catch (error) {
+            console.error('清理日志失败:', error);
+            showToast('网络错误，请稍后重试', 'error');
+        }
+    }
+    
+    // 优化数据库
+    async function optimizeDatabase() {
+        if (!confirm('确定要优化数据库吗？这可能需要几分钟时间。')) {
+            return;
+        }
+        
+        try {
+            showToast('正在优化数据库...', 'info', 5000);
+            
+            const response = await fetch('/admin/api/system/optimize-db', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                }
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                showToast('数据库优化完成', 'success');
+            } else {
+                showToast(data.message || '优化失败', 'error');
+            }
+        } catch (error) {
+            console.error('数据库优化失败:', error);
+            showToast('网络错误，请稍后重试', 'error');
+        }
+    }
+    
+    // 导出配置
+    async function exportSettings() {
+        try {
+            const response = await fetch('/admin/api/system/export-config', {
+                method: 'GET',
+                headers: {
+                    'Content-Type': 'application/json',
+                }
+            });
+            
+            if (response.ok) {
+                const blob = await response.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `system_config_${new Date().toISOString().split('T')[0]}.json`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                window.URL.revokeObjectURL(url);
+                showToast('配置导出成功', 'success');
+            } else {
+                showToast('导出失败', 'error');
+            }
+        } catch (error) {
+            console.error('导出配置失败:', error);
+            showToast('网络错误，请稍后重试', 'error');
+        }
+    }
+    
+    // 导入配置
+    function importSettings() {
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = '.json';
+        input.onchange = async function(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+            
+            try {
+                const text = await file.text();
+                const config = JSON.parse(text);
+                
+                const response = await fetch('/admin/api/system/import-config', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(config)
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    showToast('配置导入成功', 'success');
+                    loadSystemSettings();
+                } else {
+                    showToast(data.message || '导入失败', 'error');
+                }
+            } catch (error) {
+                console.error('导入配置失败:', error);
+                showToast('配置文件格式错误', 'error');
+            }
+        };
+        input.click();
+    }
+    
+    // 重置系统
+    async function resetSystem() {
+        if (!confirm('警告：这将重置所有系统设置到默认值，确定要继续吗？')) {
+            return;
+        }
+        
+        if (!confirm('最后确认：重置操作不可撤销，确定要重置系统吗？')) {
+            return;
+        }
+        
+        try {
+            const response = await fetch('/admin/api/system/reset', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                }
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                showToast('系统重置成功', 'success');
+                setTimeout(() => {
+                    window.location.reload();
+                }, 2000);
+            } else {
+                showToast(data.message || '重置失败', 'error');
+            }
+        } catch (error) {
+            console.error('系统重置失败:', error);
+            showToast('网络错误，请稍后重试', 'error');
+        }
+    }
+    
+    // Toast通知系统
+    function showToast(message, type = 'info', duration = 3000) {
+        const container = document.getElementById('toast-container');
+        
+        const toast = document.createElement('div');
+        toast.className = `toast ${type}`;
+        toast.textContent = message;
+        
+        container.appendChild(toast);
+        
+        setTimeout(() => {
+            toast.classList.add('show');
+        }, 10);
+        
+        setTimeout(() => {
+            toast.classList.remove('show');
+            setTimeout(() => {
+                if (container.contains(toast)) {
+                    container.removeChild(toast);
+                }
+            }, 300);
+        }, duration);
+    }
+</script>
 {% endblock %}

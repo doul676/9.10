@@ -4,11 +4,384 @@
 
 {% block head %}
 <style>
-    /* 基础样式将在完善时添加 */
+    * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+    }
+    
+    :root {
+        --primary-color: #667eea;
+        --secondary-color: #764ba2;
+        --sidebar-width: 280px;
+        --header-height: 70px;
+        --transition: all 0.3s ease;
+    }
+    
+    body {
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        background: #f8fafc;
+        line-height: 1.6;
+        color: #334155;
+        transition: var(--transition);
+    }
+    
+    /* Sidebar and main layout styles - same as other templates */
+    .sidebar {
+        position: fixed;
+        left: 0;
+        top: 0;
+        width: var(--sidebar-width);
+        height: 100vh;
+        background: linear-gradient(135deg, var(--primary-color) 0%, var(--secondary-color) 100%);
+        z-index: 1000;
+        transition: var(--transition);
+        box-shadow: 4px 0 15px rgba(0,0,0,0.1);
+    }
+    
+    .sidebar-header {
+        padding: 20px;
+        border-bottom: 1px solid rgba(255,255,255,0.1);
+    }
+    
+    .sidebar-logo {
+        color: white;
+        font-size: 20px;
+        font-weight: 700;
+        text-decoration: none;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+    
+    .sidebar-nav {
+        padding: 20px 0;
+    }
+    
+    .nav-item {
+        display: flex;
+        align-items: center;
+        padding: 15px 25px;
+        color: rgba(255,255,255,0.8);
+        text-decoration: none;
+        transition: var(--transition);
+        gap: 15px;
+        font-weight: 500;
+    }
+    
+    .nav-item:hover {
+        background: rgba(255,255,255,0.1);
+        color: white;
+        transform: translateX(5px);
+    }
+    
+    .nav-item.active {
+        background: rgba(255,255,255,0.2);
+        color: white;
+        border-right: 4px solid white;
+    }
+    
+    .main-content {
+        margin-left: var(--sidebar-width);
+        min-height: 100vh;
+        transition: var(--transition);
+    }
+    
+    .header {
+        background: white;
+        height: var(--header-height);
+        box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 30px;
+        position: sticky;
+        top: 0;
+        z-index: 999;
+    }
+    
+    .header-title {
+        font-size: 24px;
+        font-weight: 600;
+        color: #1e293b;
+    }
+    
+    .header-actions {
+        display: flex;
+        align-items: center;
+        gap: 20px;
+    }
+    
+    .user-info {
+        display: flex;
+        align-items: center;
+        gap: 15px;
+        color: #64748b;
+    }
+    
+    .logout-btn {
+        background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+        color: white;
+        text-decoration: none;
+        padding: 8px 16px;
+        border-radius: 8px;
+        font-size: 14px;
+        font-weight: 500;
+        transition: var(--transition);
+    }
+    
+    .logout-btn:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 5px 15px rgba(239, 68, 68, 0.3);
+    }
+    
+    .content {
+        padding: 30px;
+    }
+    
+    .card {
+        background: white;
+        border-radius: 15px;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.05), 0 1px 3px rgba(0,0,0,0.1);
+        overflow: hidden;
+        margin-bottom: 25px;
+        transition: var(--transition);
+    }
+    
+    .card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 25px rgba(0,0,0,0.1), 0 4px 10px rgba(0,0,0,0.06);
+    }
+    
+    .card-header {
+        padding: 20px 25px;
+        border-bottom: 1px solid #f1f5f9;
+        background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+    
+    .card-title {
+        font-size: 18px;
+        font-weight: 600;
+        color: #1e293b;
+        margin: 0;
+    }
+    
+    .card-body {
+        padding: 25px;
+    }
+    
+    .btn {
+        padding: 10px 20px;
+        border: none;
+        border-radius: 8px;
+        font-size: 14px;
+        font-weight: 500;
+        cursor: pointer;
+        transition: var(--transition);
+        text-decoration: none;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        text-align: center;
+    }
+    
+    .btn-primary {
+        background: linear-gradient(135deg, var(--primary-color) 0%, var(--secondary-color) 100%);
+        color: white;
+    }
+    
+    .btn-primary:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 5px 15px rgba(102, 126, 234, 0.3);
+    }
+    
+    .btn-warning {
+        background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+        color: white;
+    }
+    
+    .btn-warning:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 5px 15px rgba(245, 158, 11, 0.3);
+    }
+    
+    .btn-danger {
+        background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+        color: white;
+    }
+    
+    .btn-danger:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 5px 15px rgba(239, 68, 68, 0.3);
+    }
+    
+    .table-container {
+        overflow-x: auto;
+        border-radius: 10px;
+        border: 1px solid #e5e7eb;
+    }
+    
+    table {
+        width: 100%;
+        border-collapse: collapse;
+        background: white;
+    }
+    
+    table th,
+    table td {
+        padding: 15px;
+        text-align: left;
+        border-bottom: 1px solid #f1f5f9;
+    }
+    
+    table th {
+        background: #f8fafc;
+        font-weight: 600;
+        color: #374151;
+        border-bottom: 2px solid #e5e7eb;
+    }
+    
+    table tbody tr:hover {
+        background: #f8fafc;
+    }
+    
+    .filter-area {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 15px;
+        margin-bottom: 25px;
+        padding: 20px;
+        background: #f8fafc;
+        border-radius: 10px;
+    }
+    
+    .filter-group input,
+    .filter-group select {
+        width: 100%;
+        padding: 10px 12px;
+        border: 2px solid #e5e7eb;
+        border-radius: 8px;
+        font-size: 14px;
+        transition: var(--transition);
+    }
+    
+    .filter-group input:focus,
+    .filter-group select:focus {
+        outline: none;
+        border-color: var(--primary-color);
+        box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+    }
+    
+    .status-badge {
+        padding: 4px 12px;
+        border-radius: 20px;
+        font-size: 12px;
+        font-weight: 500;
+        text-transform: uppercase;
+    }
+    
+    .status-badge.received {
+        background: #dcfce7;
+        color: #166534;
+    }
+    
+    .status-badge.error {
+        background: #fee2e2;
+        color: #991b1b;
+    }
+    
+    .status-badge.processing {
+        background: #fef3c7;
+        color: #92400e;
+    }
+    
+    .toast-container {
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        z-index: 3000;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        max-width: 400px;
+    }
+    
+    .toast {
+        padding: 15px 20px;
+        border-radius: 10px;
+        color: white;
+        font-weight: 500;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+        transform: translateX(450px);
+        opacity: 0;
+        transition: all 0.3s ease;
+        position: relative;
+        overflow: hidden;
+    }
+    
+    .toast.show {
+        transform: translateX(0);
+        opacity: 1;
+    }
+    
+    .toast.success {
+        background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+    }
+    
+    .toast.error {
+        background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+    }
+    
+    .toast.info {
+        background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+    }
+    
+    @media (max-width: 768px) {
+        .sidebar {
+            transform: translateX(-100%);
+        }
+        
+        .sidebar.mobile-open {
+            transform: translateX(0);
+        }
+        
+        .main-content {
+            margin-left: 0;
+        }
+        
+        .header-title {
+            font-size: 20px;
+        }
+        
+        .content {
+            padding: 20px;
+        }
+        
+        .card-header {
+            flex-direction: column;
+            gap: 15px;
+            align-items: flex-start;
+        }
+        
+        .table-container {
+            font-size: 12px;
+        }
+        
+        .filter-area {
+            grid-template-columns: 1fr;
+        }
+    }
 </style>
 {% endblock %}
 
 {% block body %}
+<!-- Toast notification container -->
+<div id="toast-container" class="toast-container"></div>
+
+<!-- Sidebar -->
 <div class="sidebar">
     <div class="sidebar-header">
         <div class="sidebar-logo">📧 邮件管理系统</div>
@@ -38,6 +411,7 @@
     </nav>
 </div>
 
+<!-- Main Content -->
 <div class="main-content">
     <div class="header">
         <h1 class="header-title">收件日志</h1>
@@ -50,15 +424,332 @@
     </div>
     
     <div class="content">
+        <!-- 筛选区域 -->
         <div class="card">
             <div class="card-header">
-                <h2 class="card-title">邮件接收日志</h2>
+                <h2 class="card-title">邮件日志筛选</h2>
+                <div style="display: flex; gap: 10px;">
+                    <button class="btn btn-warning" onclick="exportLogs()">📥 导出日志</button>
+                    <button class="btn btn-danger" onclick="clearOldLogs()">🗑️ 清理旧日志</button>
+                </div>
             </div>
             <div class="card-body">
-                <p>邮件接收日志功能正在开发中...</p>
-                <p>将显示邮件查看的历史记录和访问统计。</p>
+                <div class="filter-area">
+                    <div class="filter-group">
+                        <label>邮箱地址</label>
+                        <input type="text" id="filterEmail" placeholder="搜索邮箱地址">
+                    </div>
+                    <div class="filter-group">
+                        <label>发件人</label>
+                        <input type="text" id="filterSender" placeholder="搜索发件人">
+                    </div>
+                    <div class="filter-group">
+                        <label>主题</label>
+                        <input type="text" id="filterSubject" placeholder="搜索邮件主题">
+                    </div>
+                    <div class="filter-group">
+                        <label>状态</label>
+                        <select id="filterStatus">
+                            <option value="">全部状态</option>
+                            <option value="received">已接收</option>
+                            <option value="processing">处理中</option>
+                            <option value="error">错误</option>
+                        </select>
+                    </div>
+                    <div class="filter-group">
+                        <label>开始日期</label>
+                        <input type="date" id="filterStartDate">
+                    </div>
+                    <div class="filter-group">
+                        <label>结束日期</label>
+                        <input type="date" id="filterEndDate">
+                    </div>
+                    <div class="filter-group" style="display: flex; align-items: end;">
+                        <button class="btn btn-primary" onclick="applyFilters()" style="width: 100%;">🔍 筛选</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 邮件日志列表 -->
+        <div class="card">
+            <div class="card-header">
+                <h2 class="card-title">收件记录</h2>
+                <span id="logCount" style="color: #64748b;">共 0 条记录</span>
+            </div>
+            <div class="card-body">
+                <div class="table-container">
+                    <table id="logsTable">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>邮箱地址</th>
+                                <th>主题</th>
+                                <th>发件人</th>
+                                <th>收件人</th>
+                                <th>邮件大小</th>
+                                <th>状态</th>
+                                <th>错误信息</th>
+                                <th>接收时间</th>
+                                <th>记录时间</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <!-- 邮件日志列表将通过JavaScript加载 -->
+                        </tbody>
+                    </table>
+                </div>
             </div>
         </div>
     </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // 页面加载时初始化
+    document.addEventListener('DOMContentLoaded', function() {
+        loadLogs();
+        
+        // 绑定筛选输入事件
+        ['filterEmail', 'filterSender', 'filterSubject'].forEach(id => {
+            document.getElementById(id).addEventListener('input', debounce(applyFilters, 500));
+        });
+        
+        document.getElementById('filterStatus').addEventListener('change', applyFilters);
+    });
+    
+    // 防抖函数
+    function debounce(func, wait) {
+        let timeout;
+        return function executedFunction(...args) {
+            const later = () => {
+                clearTimeout(timeout);
+                func(...args);
+            };
+            clearTimeout(timeout);
+            timeout = setTimeout(later, wait);
+        };
+    }
+    
+    // 加载邮件日志列表
+    async function loadLogs(filters = {}) {
+        try {
+            const params = new URLSearchParams(filters);
+            const response = await fetch(`/admin/api/mail/logs?${params}`, {
+                method: 'GET',
+                headers: {
+                    'Content-Type': 'application/json',
+                }
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                renderLogsTable(data.data);
+                document.getElementById('logCount').textContent = `共 ${data.data.length} 条记录`;
+            } else {
+                showToast('加载邮件日志失败', 'error');
+            }
+        } catch (error) {
+            console.error('加载邮件日志失败:', error);
+            showToast('网络错误，请稍后重试', 'error');
+        }
+    }
+    
+    // 渲染邮件日志表格
+    function renderLogsTable(logs) {
+        const tbody = document.querySelector('#logsTable tbody');
+        tbody.innerHTML = '';
+        
+        if (logs.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="10" style="text-align: center; color: #6b7280;">暂无邮件日志</td></tr>';
+            return;
+        }
+        
+        logs.forEach(log => {
+            const row = document.createElement('tr');
+            
+            let statusBadge;
+            switch(log.status) {
+                case 'received':
+                    statusBadge = '<span class="status-badge received">已接收</span>';
+                    break;
+                case 'processing':
+                    statusBadge = '<span class="status-badge processing">处理中</span>';
+                    break;
+                case 'error':
+                    statusBadge = '<span class="status-badge error">错误</span>';
+                    break;
+                default:
+                    statusBadge = `<span class="status-badge">${escapeHtml(log.status)}</span>`;
+            }
+            
+            const emailSize = log.email_size ? formatFileSize(log.email_size) : '-';
+            
+            row.innerHTML = `
+                <td>${log.id}</td>
+                <td><code style="background: #f3f4f6; padding: 4px 8px; border-radius: 4px; font-size: 12px;">${escapeHtml(log.email_address)}</code></td>
+                <td title="${escapeHtml(log.subject || '')}" style="max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${escapeHtml(log.subject || '-')}</td>
+                <td title="${escapeHtml(log.sender || '')}" style="max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${escapeHtml(log.sender || '-')}</td>
+                <td title="${escapeHtml(log.recipient || '')}" style="max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${escapeHtml(log.recipient || '-')}</td>
+                <td>${emailSize}</td>
+                <td>${statusBadge}</td>
+                <td title="${escapeHtml(log.error_message || '')}" style="max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${escapeHtml(log.error_message || '-')}</td>
+                <td>${formatDateTime(log.received_at)}</td>
+                <td>${formatDateTime(log.created_at)}</td>
+            `;
+            tbody.appendChild(row);
+        });
+    }
+    
+    // 应用筛选
+    function applyFilters() {
+        const filters = {};
+        
+        const email = document.getElementById('filterEmail').value.trim();
+        if (email) filters.email = email;
+        
+        const sender = document.getElementById('filterSender').value.trim();
+        if (sender) filters.sender = sender;
+        
+        const subject = document.getElementById('filterSubject').value.trim();
+        if (subject) filters.subject = subject;
+        
+        const status = document.getElementById('filterStatus').value;
+        if (status) filters.status = status;
+        
+        const startDate = document.getElementById('filterStartDate').value;
+        if (startDate) filters.start_date = startDate;
+        
+        const endDate = document.getElementById('filterEndDate').value;
+        if (endDate) filters.end_date = endDate;
+        
+        loadLogs(filters);
+    }
+    
+    // 导出邮件日志
+    async function exportLogs() {
+        try {
+            const filters = {};
+            
+            const email = document.getElementById('filterEmail').value.trim();
+            if (email) filters.email = email;
+            
+            const sender = document.getElementById('filterSender').value.trim();
+            if (sender) filters.sender = sender;
+            
+            const subject = document.getElementById('filterSubject').value.trim();
+            if (subject) filters.subject = subject;
+            
+            const status = document.getElementById('filterStatus').value;
+            if (status) filters.status = status;
+            
+            const startDate = document.getElementById('filterStartDate').value;
+            if (startDate) filters.start_date = startDate;
+            
+            const endDate = document.getElementById('filterEndDate').value;
+            if (endDate) filters.end_date = endDate;
+            
+            const params = new URLSearchParams(filters);
+            const response = await fetch(`/admin/api/mail/logs/export?${params}`, {
+                method: 'GET',
+                headers: {
+                    'Content-Type': 'application/json',
+                }
+            });
+            
+            if (response.ok) {
+                const blob = await response.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `mail_logs_${new Date().toISOString().split('T')[0]}.csv`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                window.URL.revokeObjectURL(url);
+                showToast('邮件日志导出成功', 'success');
+            } else {
+                showToast('导出失败', 'error');
+            }
+        } catch (error) {
+            console.error('导出邮件日志失败:', error);
+            showToast('网络错误，请稍后重试', 'error');
+        }
+    }
+    
+    // 清理旧日志
+    async function clearOldLogs() {
+        if (!confirm('确定要清理30天前的旧邮件日志吗？')) {
+            return;
+        }
+        
+        try {
+            const response = await fetch('/admin/api/mail/logs/cleanup', {
+                method: 'DELETE',
+                headers: {
+                    'Content-Type': 'application/json',
+                }
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                showToast(`已清理${data.deleted_count}条旧日志`, 'success');
+                loadLogs();
+            } else {
+                showToast(data.message || '清理失败', 'error');
+            }
+        } catch (error) {
+            console.error('清理旧日志失败:', error);
+            showToast('网络错误，请稍后重试', 'error');
+        }
+    }
+    
+    // 格式化文件大小
+    function formatFileSize(bytes) {
+        if (bytes === 0) return '0 B';
+        const k = 1024;
+        const sizes = ['B', 'KB', 'MB', 'GB'];
+        const i = Math.floor(Math.log(bytes) / Math.log(k));
+        return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+    }
+    
+    // Toast通知系统
+    function showToast(message, type = 'info', duration = 3000) {
+        const container = document.getElementById('toast-container');
+        
+        const toast = document.createElement('div');
+        toast.className = `toast ${type}`;
+        toast.textContent = message;
+        
+        container.appendChild(toast);
+        
+        setTimeout(() => {
+            toast.classList.add('show');
+        }, 10);
+        
+        setTimeout(() => {
+            toast.classList.remove('show');
+            setTimeout(() => {
+                if (container.contains(toast)) {
+                    container.removeChild(toast);
+                }
+            }, 300);
+        }, duration);
+    }
+    
+    // 工具函数
+    function escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+    
+    function formatDateTime(dateString) {
+        if (!dateString) return '-';
+        return new Date(dateString).toLocaleString('zh-CN');
+    }
+</script>
 {% endblock %}

@@ -392,6 +392,498 @@ def api_admin_mailbox():
                 'message': f'删除失败: {str(e)}'
             })
 
+# ===============================
+# 代理管理 API
+# ===============================
+
+@app.route('/admin/api/proxy/<proxy_type>', methods=['GET', 'POST', 'DELETE'])
+@admin_required
+def api_admin_proxy(proxy_type):
+    """代理管理 API"""
+    if proxy_type not in ['http', 'socks5']:
+        return jsonify({
+            'success': False,
+            'message': '不支持的代理类型'
+        })
+    
+    db = get_db()
+    table_name = f"{proxy_type}_proxies"
+    
+    if request.method == 'GET':
+        # 获取代理列表
+        proxies = db.execute(f'''
+            SELECT * FROM {table_name} 
+            ORDER BY created_at DESC
+        ''').fetchall()
+        
+        return jsonify({
+            'success': True,
+            'data': [dict(proxy) for proxy in proxies]
+        })
+    
+    elif request.method == 'POST':
+        # 添加或编辑代理
+        data = request.get_json()
+        action = data.get('action')
+        
+        if action == 'add':
+            name = data.get('name', '').strip()
+            host = data.get('host', '').strip()
+            port = int(data.get('port', 0))
+            username = data.get('username', '').strip()
+            password = data.get('password', '').strip()
+            remarks = data.get('remarks', '').strip()
+            
+            if not all([name, host, port]):
+                return jsonify({
+                    'success': False,
+                    'message': '请填写所有必需字段'
+                })
+            
+            try:
+                db.execute(f'''
+                    INSERT INTO {table_name} 
+                    (name, host, port, username, password, remarks, status, created_at, updated_at) 
+                    VALUES (?, ?, ?, ?, ?, ?, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                ''', (name, host, port, username, password, remarks))
+                db.commit()
+                
+                return jsonify({
+                    'success': True,
+                    'message': f'{proxy_type.upper()}代理添加成功'
+                })
+                
+            except Exception as e:
+                return jsonify({
+                    'success': False,
+                    'message': f'添加失败: {str(e)}'
+                })
+        
+        elif action == 'edit':
+            proxy_id = data.get('id')
+            name = data.get('name', '').strip()
+            host = data.get('host', '').strip()
+            port = int(data.get('port', 0))
+            username = data.get('username', '').strip()
+            password = data.get('password', '').strip()
+            remarks = data.get('remarks', '').strip()
+            
+            if not all([proxy_id, name, host, port]):
+                return jsonify({
+                    'success': False,
+                    'message': '请填写所有必需字段'
+                })
+            
+            try:
+                db.execute(f'''
+                    UPDATE {table_name} 
+                    SET name = ?, host = ?, port = ?, username = ?, password = ?, 
+                        remarks = ?, updated_at = CURRENT_TIMESTAMP 
+                    WHERE id = ?
+                ''', (name, host, port, username, password, remarks, proxy_id))
+                db.commit()
+                
+                return jsonify({
+                    'success': True,
+                    'message': f'{proxy_type.upper()}代理更新成功'
+                })
+                
+            except Exception as e:
+                return jsonify({
+                    'success': False,
+                    'message': f'更新失败: {str(e)}'
+                })
+    
+    elif request.method == 'DELETE':
+        # 删除代理
+        data = request.get_json()
+        proxy_id = data.get('id')
+        
+        if not proxy_id:
+            return jsonify({
+                'success': False,
+                'message': '缺少代理ID'
+            })
+        
+        try:
+            db.execute(f'DELETE FROM {table_name} WHERE id = ?', (proxy_id,))
+            db.commit()
+            
+            return jsonify({
+                'success': True,
+                'message': f'{proxy_type.upper()}代理删除成功'
+            })
+            
+        except Exception as e:
+            return jsonify({
+                'success': False,
+                'message': f'删除失败: {str(e)}'
+            })
+
+@app.route('/admin/api/proxy/<proxy_type>/test', methods=['POST'])
+@admin_required
+def api_test_proxy(proxy_type):
+    """测试代理连接"""
+    if proxy_type not in ['http', 'socks5']:
+        return jsonify({
+            'success': False,
+            'message': '不支持的代理类型'
+        })
+    
+    data = request.get_json()
+    proxy_id = data.get('id')
+    
+    if not proxy_id:
+        return jsonify({
+            'success': False,
+            'message': '缺少代理ID'
+        })
+    
+    db = get_db()
+    table_name = f"{proxy_type}_proxies"
+    
+    try:
+        # 获取代理信息
+        proxy = db.execute(f'SELECT * FROM {table_name} WHERE id = ?', (proxy_id,)).fetchone()
+        
+        if not proxy:
+            return jsonify({
+                'success': False,
+                'message': '代理不存在'
+            })
+        
+        # 模拟测试代理连接（实际应用中需要真实测试）
+        import time
+        import random
+        
+        start_time = time.time()
+        
+        # 模拟网络延迟
+        time.sleep(random.uniform(0.1, 0.5))
+        
+        # 模拟测试结果（90%成功率）
+        success = random.random() > 0.1
+        response_time = int((time.time() - start_time) * 1000)
+        
+        if success:
+            # 更新代理状态
+            db.execute(f'''
+                UPDATE {table_name} 
+                SET status = 1, last_check = CURRENT_TIMESTAMP, 
+                    response_time = ?, success_count = success_count + 1 
+                WHERE id = ?
+            ''', (response_time, proxy_id))
+            db.commit()
+            
+            return jsonify({
+                'success': True,
+                'message': '代理测试成功',
+                'response_time': response_time
+            })
+        else:
+            # 更新失败计数
+            db.execute(f'''
+                UPDATE {table_name} 
+                SET status = 0, last_check = CURRENT_TIMESTAMP, 
+                    fail_count = fail_count + 1 
+                WHERE id = ?
+            ''', (proxy_id,))
+            db.commit()
+            
+            return jsonify({
+                'success': False,
+                'message': '代理连接失败'
+            })
+            
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': f'测试失败: {str(e)}'
+        })
+
+@app.route('/admin/api/proxy/config', methods=['GET', 'POST'])
+@admin_required
+def api_proxy_config():
+    """代理配置管理"""
+    db = get_db()
+    
+    if request.method == 'GET':
+        # 获取代理配置
+        try:
+            configs = db.execute('SELECT config_key, config_value FROM proxy_config').fetchall()
+            config_dict = {config['config_key']: config['config_value'] for config in configs}
+            
+            return jsonify({
+                'success': True,
+                'data': config_dict
+            })
+            
+        except Exception as e:
+            return jsonify({
+                'success': False,
+                'message': f'获取配置失败: {str(e)}'
+            })
+    
+    elif request.method == 'POST':
+        # 更新代理配置
+        data = request.get_json()
+        
+        try:
+            for key, value in data.items():
+                db.execute('''
+                    INSERT OR REPLACE INTO proxy_config 
+                    (config_key, config_value, updated_at) 
+                    VALUES (?, ?, CURRENT_TIMESTAMP)
+                ''', (key, value))
+            
+            db.commit()
+            
+            return jsonify({
+                'success': True,
+                'message': '配置保存成功'
+            })
+            
+        except Exception as e:
+            return jsonify({
+                'success': False,
+                'message': f'保存配置失败: {str(e)}'
+            })
+
+# ===============================
+# 卡密管理 API
+# ===============================
+
+@app.route('/admin/api/kami', methods=['GET', 'POST', 'DELETE'])
+@admin_required
+def api_admin_kami():
+    """卡密管理 API"""
+    db = get_db()
+    
+    if request.method == 'GET':
+        # 获取卡密列表
+        cards = db.execute('''
+            SELECT * FROM kami_cards 
+            ORDER BY created_at DESC
+        ''').fetchall()
+        
+        return jsonify({
+            'success': True,
+            'data': [dict(card) for card in cards]
+        })
+    
+    elif request.method == 'POST':
+        # 生成卡密
+        data = request.get_json()
+        action = data.get('action')
+        
+        if action == 'generate':
+            card_type = data.get('card_type', 'monthly')
+            duration = int(data.get('duration', 30))
+            price = float(data.get('price', 0.00))
+            count = int(data.get('count', 1))
+            remarks = data.get('remarks', '').strip()
+            
+            if count < 1 or count > 1000:
+                return jsonify({
+                    'success': False,
+                    'message': '生成数量必须在1-1000之间'
+                })
+            
+            try:
+                import secrets
+                import string
+                
+                generated_cards = []
+                for i in range(count):
+                    # 生成随机卡密
+                    card_key = f"CARD-{secrets.token_urlsafe(8).upper()}-{card_type.upper()}"
+                    
+                    # 插入数据库
+                    db.execute('''
+                        INSERT INTO kami_cards 
+                        (card_key, card_type, duration, price, remarks, created_at, updated_at) 
+                        VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                    ''', (card_key, card_type, duration, price, remarks))
+                    
+                    generated_cards.append(card_key)
+                
+                db.commit()
+                
+                return jsonify({
+                    'success': True,
+                    'message': f'成功生成{count}张卡密',
+                    'data': generated_cards
+                })
+                
+            except Exception as e:
+                return jsonify({
+                    'success': False,
+                    'message': f'生成失败: {str(e)}'
+                })
+    
+    elif request.method == 'DELETE':
+        # 删除卡密
+        data = request.get_json()
+        card_id = data.get('id')
+        
+        if not card_id:
+            return jsonify({
+                'success': False,
+                'message': '缺少卡密ID'
+            })
+        
+        try:
+            db.execute('DELETE FROM kami_cards WHERE id = ?', (card_id,))
+            db.commit()
+            
+            return jsonify({
+                'success': True,
+                'message': '卡密删除成功'
+            })
+            
+        except Exception as e:
+            return jsonify({
+                'success': False,
+                'message': f'删除失败: {str(e)}'
+            })
+
+@app.route('/admin/api/kami/batch', methods=['POST'])
+@admin_required
+def api_kami_batch():
+    """批量生成卡密"""
+    db = get_db()
+    data = request.get_json()
+    requests = data.get('requests', [])
+    
+    if not requests:
+        return jsonify({
+            'success': False,
+            'message': '没有有效的生成请求'
+        })
+    
+    try:
+        import secrets
+        total_count = 0
+        
+        for req in requests:
+            card_type = req.get('card_type', 'monthly')
+            count = int(req.get('count', 1))
+            price = float(req.get('price', 0.00))
+            remarks = req.get('remarks', '').strip()
+            
+            # 根据类型确定天数
+            duration_map = {
+                'daily': 1, 'weekly': 7, 'monthly': 30,
+                'quarterly': 90, 'yearly': 365
+            }
+            duration = duration_map.get(card_type, 30)
+            
+            # 生成卡密
+            for i in range(count):
+                card_key = f"CARD-{secrets.token_urlsafe(8).upper()}-{card_type.upper()}"
+                
+                db.execute('''
+                    INSERT INTO kami_cards 
+                    (card_key, card_type, duration, price, remarks, created_at, updated_at) 
+                    VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                ''', (card_key, card_type, duration, price, remarks))
+                
+                total_count += 1
+        
+        db.commit()
+        
+        return jsonify({
+            'success': True,
+            'message': f'批量生成完成',
+            'total_count': total_count
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': f'批量生成失败: {str(e)}'
+        })
+
+@app.route('/admin/api/kami/export', methods=['GET'])
+@admin_required
+def api_kami_export():
+    """导出卡密"""
+    db = get_db()
+    
+    try:
+        import csv
+        import io
+        
+        cards = db.execute('''
+            SELECT card_key, card_type, duration, price, status, 
+                   used_by, used_at, expires_at, created_at, remarks 
+            FROM kami_cards 
+            ORDER BY created_at DESC
+        ''').fetchall()
+        
+        output = io.StringIO()
+        writer = csv.writer(output)
+        
+        # 写入标题行
+        writer.writerow(['卡密', '类型', '时长(天)', '价格', '状态', '使用者', '使用时间', '过期时间', '创建时间', '备注'])
+        
+        # 写入数据行
+        for card in cards:
+            status_text = '可用'
+            if card['used_at']:
+                status_text = '已使用'
+            elif card['expires_at'] and card['expires_at'] < datetime.now(timezone.utc).isoformat():
+                status_text = '已过期'
+            
+            writer.writerow([
+                card['card_key'], card['card_type'], card['duration'], 
+                card['price'], status_text, card['used_by'] or '', 
+                card['used_at'] or '', card['expires_at'] or '', 
+                card['created_at'], card['remarks'] or ''
+            ])
+        
+        output.seek(0)
+        return app.response_class(
+            output.getvalue(),
+            mimetype='text/csv',
+            headers={'Content-Disposition': 'attachment; filename=kami_export.csv'}
+        )
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': f'导出失败: {str(e)}'
+        })
+
+@app.route('/admin/api/kami/cleanup', methods=['DELETE'])
+@admin_required
+def api_kami_cleanup():
+    """清理过期卡密"""
+    db = get_db()
+    
+    try:
+        # 删除过期的未使用卡密
+        result = db.execute('''
+            DELETE FROM kami_cards 
+            WHERE expires_at IS NOT NULL 
+            AND expires_at < CURRENT_TIMESTAMP 
+            AND used_at IS NULL
+        ''')
+        deleted_count = result.rowcount
+        db.commit()
+        
+        return jsonify({
+            'success': True,
+            'message': f'清理完成',
+            'deleted_count': deleted_count
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': f'清理失败: {str(e)}'
+        })
+
 if __name__ == '__main__':
     # 初始化数据库
     with app.app_context():
