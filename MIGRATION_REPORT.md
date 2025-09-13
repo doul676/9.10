@@ -125,7 +125,7 @@ python app.py
 ### 方法三: 生产环境
 ```bash
 pip install gunicorn
-gunicorn -w 4 -b 0.0.0.0:8000 app:app
+gunicorn -w 4 -b 0.0.0.0:8005 app:app
 ```
 
 ## 🔒 安全性改进
@@ -184,8 +184,8 @@ gunicorn -w 4 -b 0.0.0.0:8000 app:app
 ## 📝 使用指南
 
 ### 🌐 访问地址
-- **前端页面**: http://localhost:8000/
-- **管理后台**: http://localhost:8000/admin
+- **前端页面**: http://localhost:8005/
+- **管理后台**: http://localhost:8005/admin
 - **默认账号**: admin / admin
 
 ### 👥 用户操作

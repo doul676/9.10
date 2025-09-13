@@ -5,6 +5,8 @@ db/*.db
 # 临时文件
 *.tmp
 *.temp
+cookies.txt
+*.cookie
 
 # 系统文件
 .DS_Store
