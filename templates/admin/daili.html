@@ -700,6 +700,12 @@
                     <button class="btn btn-primary" onclick="showAddProxyModal('socks5')">
                         ➕ 添加SOCKS5代理
                     </button>
+                    <button class="btn btn-success" onclick="enableProxy()" id="enableProxyBtn">
+                        🌐 开启代理
+                    </button>
+                    <button class="btn btn-warning" onclick="disableProxy()" id="disableProxyBtn" style="display: none;">
+                        ⏹️ 关闭代理
+                    </button>
                     <button class="btn btn-danger" onclick="batchDeleteProxies()" id="batchDeleteBtn" style="display: none;">
                         🗑️ 批量删除
                     </button>
@@ -839,7 +845,125 @@
     // 页面加载时初始化
     document.addEventListener('DOMContentLoaded', function() {
         loadAllProxies();
+        loadProxyConfig();
     });
+    
+    // ========== 代理配置管理功能 ==========
+    
+    // 加载代理配置状态
+    async function loadProxyConfig() {
+        try {
+            const response = await fetch('/admin/api/proxy-config');
+            const data = await response.json();
+            
+            if (data.success) {
+                const config = data.data;
+                const proxyEnabled = config.proxy_enabled === '1';
+                
+                updateProxyButtonState(proxyEnabled);
+                
+                if (proxyEnabled) {
+                    const activeProxyType = config.active_proxy_type;
+                    const activeProxyId = config.active_proxy_id;
+                    if (activeProxyType && activeProxyId !== '0') {
+                        showToast(`代理已开启: ${activeProxyType.toUpperCase()} 代理 (ID: ${activeProxyId})`, 'info');
+                    }
+                }
+            }
+        } catch (error) {
+            console.error('加载代理配置失败:', error);
+        }
+    }
+    
+    // 更新代理按钮状态
+    function updateProxyButtonState(enabled) {
+        const enableBtn = document.getElementById('enableProxyBtn');
+        const disableBtn = document.getElementById('disableProxyBtn');
+        
+        if (enabled) {
+            enableBtn.style.display = 'none';
+            disableBtn.style.display = 'inline-block';
+        } else {
+            enableBtn.style.display = 'inline-block';
+            disableBtn.style.display = 'none';
+        }
+    }
+    
+    // 开启代理
+    async function enableProxy() {
+        if (!confirm('确定要开启代理吗？系统将自动选择第一个可用的代理。')) {
+            return;
+        }
+        
+        try {
+            showToast('正在测试代理并开启...', 'info', 1000);
+            
+            const response = await fetch('/admin/api/proxy-config', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ action: 'enable_proxy' })
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                showToast(data.message, 'success', 5000);
+                updateProxyButtonState(true);
+                
+                // 显示测试结果详情
+                if (data.test_results && data.test_results.length > 1) {
+                    let details = '\n\n代理测试详情：';
+                    data.test_results.forEach(result => {
+                        const status = result.success ? '✅' : '❌';
+                        details += `\n${status} ${result.name} (${result.type.toUpperCase()}): ${result.message}`;
+                    });
+                    showToast(data.message + details, 'success', 8000);
+                }
+                
+                // 刷新代理列表以更新状态
+                loadAllProxies();
+            } else {
+                showToast(data.message || '开启代理失败', 'error', 5000);
+            }
+        } catch (error) {
+            console.error('开启代理失败:', error);
+            showToast('网络错误，请稍后重试', 'error');
+        }
+    }
+    
+    // 关闭代理
+    async function disableProxy() {
+        if (!confirm('确定要关闭代理吗？关闭后将使用直连方式访问邮件服务器。')) {
+            return;
+        }
+        
+        try {
+            const response = await fetch('/admin/api/proxy-config', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ action: 'disable_proxy' })
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                showToast(data.message, 'success');
+                updateProxyButtonState(false);
+                
+                // 刷新代理列表
+                loadAllProxies();
+            } else {
+                showToast(data.message || '关闭代理失败', 'error');
+            }
+        } catch (error) {
+            console.error('关闭代理失败:', error);
+            showToast('网络错误，请稍后重试', 'error');
+        }
+    }
     
     // ========== 统一代理管理功能 ==========
     
