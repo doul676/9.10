@@ -35,7 +35,7 @@ if (empty($email)) {
 
 try {
     // 连接数据库查找邮箱配置
-    $db = new SQLite3(__DIR__ . '/../../db/mail.sqlite');
+    $db = new SQLite3('../../db/mail.sqlite');
     $stmt = $db->prepare('SELECT * FROM mail_accounts WHERE email = ?');
     $stmt->bindValue(1, $email);
     $result = $stmt->execute();
@@ -51,14 +51,14 @@ try {
     }
     
     // 使用完整的IMAP扩展检查函数
-    require_once '../utils/imap_check.php';
-    $imapInfo = checkImapExtension();
+    // require_once '../api.php';
+    // $imapInfo = checkImapExtension();
     
-    if (!$imapInfo['available']) {
+    // 简化的IMAP扩展检查（无需身份验证）
+    if (!extension_loaded('imap')) {
         echo json_encode([
             'success' => false,
-            'message' => $imapInfo['message'],
-            'diagnostics' => $imapInfo['diagnostics'],
+            'message' => 'PHP IMAP扩展未加载，请联系管理员配置',
             'error_type' => 'extension_issue'
         ]);
         $db->close();
@@ -78,6 +78,7 @@ try {
     // 连接并获取最新邮件
     if ($fetcher->connect()) {
         $result = $fetcher->getLatestMail();
+        $proxyInfo = $fetcher->getProxyInfo();
         $fetcher->close();
         
         if ($result['success']) {
@@ -85,25 +86,30 @@ try {
                 echo json_encode([
                     'success' => true,
                     'message' => '邮件获取成功',
-                    'mail' => $result['mail']
+                    'mail' => $result['mail'],
+                    'proxy' => $proxyInfo
                 ]);
             } else {
                 echo json_encode([
                     'success' => true,
                     'message' => '邮箱中暂无邮件',
-                    'mail' => null
+                    'mail' => null,
+                    'proxy' => $proxyInfo
                 ]);
             }
         } else {
             echo json_encode([
                 'success' => false,
-                'message' => $result['message']
+                'message' => $result['message'],
+                'proxy' => $proxyInfo
             ]);
         }
     } else {
+        $proxyInfo = $fetcher->getProxyInfo();
         echo json_encode([
             'success' => false,
-            'message' => '无法连接到邮件服务器，请检查邮箱配置'
+            'message' => '无法连接到邮件服务器，请检查邮箱配置',
+            'proxy' => $proxyInfo
         ]);
     }
     

@@ -416,6 +416,58 @@
             border: 1px solid #b3d7ff;
         }
         
+        /* 代理状态样式 */
+        .proxy-status {
+            background: linear-gradient(135deg, #e8f5e8, #f0f8f0);
+            border: 2px solid #28a745;
+            border-radius: 12px;
+            padding: 15px;
+            margin: 15px 0;
+            font-size: 14px;
+            box-shadow: 0 4px 12px rgba(40, 167, 69, 0.15);
+            animation: fadeInUp 0.5s ease;
+        }
+        
+        .proxy-status.disabled {
+            background: linear-gradient(135deg, #f8f9fa, #e9ecef);
+            border-color: #6c757d;
+            box-shadow: 0 4px 12px rgba(108, 117, 125, 0.15);
+        }
+        
+        .proxy-status-title {
+            font-weight: bold;
+            color: #155724;
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .proxy-status.disabled .proxy-status-title {
+            color: #495057;
+        }
+        
+        .proxy-status-detail {
+            color: #155724;
+            font-size: 13px;
+            line-height: 1.4;
+        }
+        
+        .proxy-status.disabled .proxy-status-detail {
+            color: #6c757d;
+        }
+        
+        @keyframes fadeInUp {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        
         /* Toast Notifications */
         .toast-container {
             position: fixed;
@@ -523,6 +575,9 @@
             <div class="loading" id="loading">正在获取邮件，请稍候...</div>
             
             <div id="message"></div>
+            
+            <!-- 代理状态显示 -->
+            <div class="proxy-status" id="proxyStatus" style="display: none;"></div>
         </div>
         
         <div class="mail-display" id="mailDisplay">
@@ -610,6 +665,11 @@
                 });
                 
                 const data = await response.json();
+                
+                // 显示代理状态信息
+                if (data.proxy) {
+                    displayProxyStatus(data.proxy);
+                }
                 
                 if (data.success) {
                     if (data.mail) {
@@ -853,6 +913,43 @@
         function isValidEmail(email) {
             const re = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
             return re.test(email);
+        }
+        
+        function displayProxyStatus(proxyData) {
+            const proxyStatusDiv = document.getElementById('proxyStatus');
+            
+            if (!proxyData) {
+                proxyStatusDiv.style.display = 'none';
+                return;
+            }
+            
+            if (proxyData.enabled && proxyData.info) {
+                const info = proxyData.info;
+                proxyStatusDiv.innerHTML = `
+                    <div class="proxy-status-title">
+                        🔒 连接已使用代理
+                    </div>
+                    <div class="proxy-status-detail">
+                        代理名称：${escapeHtml(info.name)}<br>
+                        代理类型：${info.type.toUpperCase()}<br>
+                        服务器：${escapeHtml(info.host)}:${info.port}<br>
+                        状态：✅ 已启用并正在使用
+                    </div>
+                `;
+                proxyStatusDiv.className = 'proxy-status';
+            } else {
+                proxyStatusDiv.innerHTML = `
+                    <div class="proxy-status-title">
+                        🌐 直接连接
+                    </div>
+                    <div class="proxy-status-detail">
+                        当前未使用代理服务器，直接连接到邮件服务器
+                    </div>
+                `;
+                proxyStatusDiv.className = 'proxy-status disabled';
+            }
+            
+            proxyStatusDiv.style.display = 'block';
         }
     </script>
 </body>

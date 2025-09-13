@@ -78,6 +78,7 @@ try {
     // 连接并获取最新邮件
     if ($fetcher->connect()) {
         $result = $fetcher->getLatestMail();
+        $proxyInfo = $fetcher->getProxyInfo();
         $fetcher->close();
         
         if ($result['success']) {
@@ -85,25 +86,30 @@ try {
                 echo json_encode([
                     'success' => true,
                     'message' => '邮件获取成功',
-                    'mail' => $result['mail']
+                    'mail' => $result['mail'],
+                    'proxy' => $proxyInfo
                 ]);
             } else {
                 echo json_encode([
                     'success' => true,
                     'message' => '邮箱中暂无邮件',
-                    'mail' => null
+                    'mail' => null,
+                    'proxy' => $proxyInfo
                 ]);
             }
         } else {
             echo json_encode([
                 'success' => false,
-                'message' => $result['message']
+                'message' => $result['message'],
+                'proxy' => $proxyInfo
             ]);
         }
     } else {
+        $proxyInfo = $fetcher->getProxyInfo();
         echo json_encode([
             'success' => false,
-            'message' => '无法连接到邮件服务器，请检查邮箱配置'
+            'message' => '无法连接到邮件服务器，请检查邮箱配置',
+            'proxy' => $proxyInfo
         ]);
     }
     

@@ -12,6 +12,8 @@ class MailFetcher {
     private $protocol;
     private $ssl;
     private $connection;
+    private $proxyEnabled = false;
+    private $proxyInfo = null;
     
     public function __construct($server, $port, $username, $password, $protocol = 'imap', $ssl = true) {
         $this->server = $server;
@@ -20,6 +22,101 @@ class MailFetcher {
         $this->password = $password;
         $this->protocol = strtolower($protocol);
         $this->ssl = $ssl;
+        
+        // 检查是否启用了代理
+        $this->checkProxyStatus();
+    }
+    
+    /**
+     * 检查代理状态并配置代理信息
+     */
+    private function checkProxyStatus() {
+        try {
+            $db = new SQLite3(__DIR__ . '/../../db/mail.sqlite');
+            
+            // 获取代理配置
+            $result = $db->query("SELECT config_key, config_value FROM proxy_config WHERE config_key IN ('proxy_enabled', 'active_proxy_type', 'active_proxy_id')");
+            $config = [];
+            while ($row = $result->fetchArray(SQLITE3_ASSOC)) {
+                $config[$row['config_key']] = $row['config_value'];
+            }
+            
+            // 检查是否启用代理
+            if (isset($config['proxy_enabled']) && $config['proxy_enabled'] === '1') {
+                $proxyType = $config['active_proxy_type'] ?? '';
+                $proxyId = (int)($config['active_proxy_id'] ?? 0);
+                
+                if (!empty($proxyType) && $proxyId > 0) {
+                    // 获取代理详情
+                    $tableName = $proxyType === 'socks5' ? 'socks5_proxies' : 'http_proxies';
+                    $stmt = $db->prepare("SELECT * FROM {$tableName} WHERE id = ? AND status = 1");
+                    $stmt->bindValue(1, $proxyId);
+                    $proxyResult = $stmt->execute();
+                    $proxy = $proxyResult->fetchArray(SQLITE3_ASSOC);
+                    
+                    if ($proxy) {
+                        $this->proxyEnabled = true;
+                        $this->proxyInfo = [
+                            'type' => $proxyType,
+                            'host' => $proxy['host'],
+                            'port' => $proxy['port'],
+                            'username' => $proxy['username'] ?? '',
+                            'password' => $proxy['password'] ?? '',
+                            'name' => $proxy['name'] ?? ''
+                        ];
+                        
+                        // 设置代理环境变量（用于支持代理的库）
+                        $this->setProxyEnvironment();
+                    }
+                }
+            }
+            
+            $db->close();
+        } catch (Exception $e) {
+            error_log('检查代理状态失败: ' . $e->getMessage());
+        }
+    }
+    
+    /**
+     * 设置代理环境变量
+     */
+    private function setProxyEnvironment() {
+        if (!$this->proxyEnabled || !$this->proxyInfo) {
+            return;
+        }
+        
+        $proxyUrl = '';
+        if ($this->proxyInfo['type'] === 'http') {
+            if (!empty($this->proxyInfo['username']) && !empty($this->proxyInfo['password'])) {
+                $proxyUrl = "http://{$this->proxyInfo['username']}:{$this->proxyInfo['password']}@{$this->proxyInfo['host']}:{$this->proxyInfo['port']}";
+            } else {
+                $proxyUrl = "http://{$this->proxyInfo['host']}:{$this->proxyInfo['port']}";
+            }
+        } else if ($this->proxyInfo['type'] === 'socks5') {
+            if (!empty($this->proxyInfo['username']) && !empty($this->proxyInfo['password'])) {
+                $proxyUrl = "socks5://{$this->proxyInfo['username']}:{$this->proxyInfo['password']}@{$this->proxyInfo['host']}:{$this->proxyInfo['port']}";
+            } else {
+                $proxyUrl = "socks5://{$this->proxyInfo['host']}:{$this->proxyInfo['port']}";
+            }
+        }
+        
+        if ($proxyUrl) {
+            // 设置HTTP和HTTPS代理环境变量
+            putenv("http_proxy={$proxyUrl}");
+            putenv("https_proxy={$proxyUrl}");
+            putenv("HTTP_PROXY={$proxyUrl}");
+            putenv("HTTPS_PROXY={$proxyUrl}");
+        }
+    }
+    
+    /**
+     * 获取代理信息
+     */
+    public function getProxyInfo() {
+        return [
+            'enabled' => $this->proxyEnabled,
+            'info' => $this->proxyInfo
+        ];
     }
     
     /**
@@ -27,6 +124,13 @@ class MailFetcher {
      */
     public function connect() {
         try {
+            // 记录代理使用情况
+            if ($this->proxyEnabled) {
+                error_log("邮件连接使用代理: {$this->proxyInfo['name']} ({$this->proxyInfo['type']}) - {$this->proxyInfo['host']}:{$this->proxyInfo['port']}");
+            } else {
+                error_log("邮件连接未使用代理");
+            }
+            
             if ($this->protocol === 'imap') {
                 return $this->connectIMAP();
             } elseif ($this->protocol === 'pop3') {
@@ -184,17 +288,10 @@ class MailFetcher {
             // 解码主题
             $subject = $this->decodeHeader($header->subject ?? '');
             
-            // 发件人信息 - 完整格式显示 "姓名 <email@domain.com>"
+            // 发件人信息
             $from = $header->from[0] ?? null;
             $fromEmail = $from ? $from->mailbox . '@' . $from->host : '未知';
-            $fromName = $from && isset($from->personal) ? $this->decodeHeader($from->personal) : '';
-            
-            // 构建完整的发件人显示格式
-            if ($fromName && $fromName !== $fromEmail) {
-                $fromDisplay = $fromName . ' <' . $fromEmail . '>';
-            } else {
-                $fromDisplay = $fromEmail;
-            }
+            $fromName = $from && isset($from->personal) ? $this->decodeHeader($from->personal) : $fromEmail;
             
             // 收件人信息
             $to = $header->to[0] ?? null;
@@ -207,9 +304,8 @@ class MailFetcher {
             
             $mailData = [
                 'subject' => $subject,
-                'from' => $fromDisplay,
+                'from' => $fromName,
                 'from_email' => $fromEmail,
-                'from_name' => $fromName,
                 'to' => $toEmail,
                 'date' => $formattedDate,
                 'message_id' => $header->message_id ?? '',
@@ -260,35 +356,14 @@ class MailFetcher {
                     'type' => 'image',
                     'content' => $decodedBody,
                     'subtype' => strtolower($structure->subtype ?? ''),
-                    'encoding' => $structure->encoding ?? 0,
-                    'images' => [[
-                        'filename' => 'image.' . strtolower($structure->subtype ?? 'jpg'),
-                        'mime_type' => 'image/' . strtolower($structure->subtype ?? 'jpeg'),
-                        'size' => strlen($decodedBody),
-                        'content' => base64_encode($decodedBody),
-                        'part_number' => '1',
-                        'subtype' => strtolower($structure->subtype ?? '')
-                    ]],
-                    'attachments' => []
+                    'encoding' => $structure->encoding ?? 0
                 ];
             }
             
-            // 检查是否为HTML内容
-            if (isset($structure->subtype) && strtolower($structure->subtype) === 'html') {
-                return [
-                    'type' => 'html',
-                    'content' => $decodedBody,
-                    'images' => [],
-                    'attachments' => []
-                ];
-            } else {
-                return [
-                    'type' => 'text',
-                    'content' => $this->formatTextContent($decodedBody),
-                    'images' => [],
-                    'attachments' => []
-                ];
-            }
+            return [
+                'type' => 'text',
+                'content' => $decodedBody
+            ];
         }
         
         // 多部分邮件
@@ -312,20 +387,9 @@ class MailFetcher {
             ];
         }
         
-        // 如果有文本内容，格式化显示
-        if (!empty($mainContent)) {
-            if (!empty($htmlBody)) {
-                $formattedContent = $this->htmlToText($mainContent);
-            } else {
-                $formattedContent = $this->formatTextContent($mainContent);
-            }
-        } else {
-            $formattedContent = '无法读取邮件内容';
-        }
-        
         return [
             'type' => !empty($htmlBody) ? 'html' : 'text',
-            'content' => $formattedContent,
+            'content' => $mainContent ?: '无法读取邮件内容',
             'images' => $images,
             'attachments' => $attachments
         ];
@@ -553,84 +617,6 @@ class MailFetcher {
     }
     
     /**
-     * 格式化纯文本内容 - 提升可读性
-     */
-    private function formatTextContent($text) {
-        // 清理内容
-        $text = trim($text);
-        
-        // 移除多余的空行（保留段落分隔，最多两个连续换行）
-        $text = preg_replace('/\n{3,}/', "\n\n", $text);
-        
-        // 移除行首行尾空白但保留缩进
-        $lines = explode("\n", $text);
-        $formattedLines = [];
-        
-        foreach ($lines as $line) {
-            // 移除行尾空白，保留行首缩进
-            $formattedLines[] = rtrim($line);
-        }
-        
-        $text = implode("\n", $formattedLines);
-        
-        // 移除开头和结尾的多余空行
-        $text = trim($text);
-        
-        // 清理特殊字符和乱码
-        $text = preg_replace('/[^\x{20}-\x{7E}\x{4E00}-\x{9FFF}\s]/u', '', $text);
-        
-        // 处理邮件引用符号（>开头的行）
-        $text = preg_replace('/^>\s*/m', '  > ', $text);
-        
-        return $text;
-    }
-    
-    /**
-     * 将HTML内容转换为格式化的纯文本
-     */
-    private function htmlToText($html) {
-        // 清理和预处理HTML
-        $html = trim($html);
-        
-        // 移除脚本和样式标签及其内容
-        $html = preg_replace('/<script[^>]*>.*?<\/script>/is', '', $html);
-        $html = preg_replace('/<style[^>]*>.*?<\/style>/is', '', $html);
-        $html = preg_replace('/<head[^>]*>.*?<\/head>/is', '', $html);
-        
-        // 移除HTML注释
-        $html = preg_replace('/<!--.*?-->/s', '', $html);
-        
-        // 处理标题标签 - 添加换行和分隔
-        $html = preg_replace('/<h[1-6][^>]*>/i', "\n\n", $html);
-        $html = preg_replace('/<\/h[1-6]>/i', "\n" . str_repeat('-', 20) . "\n", $html);
-        
-        // 处理段落和换行
-        $html = str_replace(['<br>', '<br/>', '<br />'], "\n", $html);
-        $html = str_replace(['</p>', '</div>', '</li>'], "\n\n", $html);
-        
-        // 处理列表
-        $html = str_replace('<li>', "• ", $html);
-        $html = preg_replace('/<\/?(ul|ol)[^>]*>/i', "\n", $html);
-        
-        // 处理表格
-        $html = str_replace(['<td>', '<th>'], "    ", $html);
-        $html = str_replace(['</td>', '</th>', '</tr>'], "\n", $html);
-        $html = preg_replace('/<\/?(table|tbody|thead)[^>]*>/i', "\n", $html);
-        
-        // 处理链接 - 保留链接文本
-        $html = preg_replace('/<a[^>]*href=["\']([^"\']*)["\'][^>]*>(.*?)<\/a>/i', '$2 [$1]', $html);
-        
-        // 移除所有剩余的HTML标签
-        $text = strip_tags($html);
-        
-        // 解码HTML实体
-        $text = html_entity_decode($text, ENT_QUOTES, 'UTF-8');
-        
-        // 清理和格式化文本
-        return $this->formatTextContent($text);
-    }
-    
-    /**
      * 关闭连接
      */
     public function close() {
@@ -638,17 +624,6 @@ class MailFetcher {
             imap_close($this->connection);
             $this->connection = null;
         }
-    }
-    
-    /**
-     * 格式化文件大小
-     */
-    private function formatFileSize($bytes) {
-        if ($bytes === 0) return '0 B';
-        $k = 1024;
-        $sizes = ['B', 'KB', 'MB', 'GB'];
-        $i = floor(log($bytes) / log($k));
-        return round(($bytes / pow($k, $i)), 2) . ' ' . $sizes[$i];
     }
     
     /**

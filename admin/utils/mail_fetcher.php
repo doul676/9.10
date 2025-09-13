@@ -12,6 +12,8 @@ class MailFetcher {
     private $protocol;
     private $ssl;
     private $connection;
+    private $proxyEnabled = false;
+    private $proxyInfo = null;
     
     public function __construct($server, $port, $username, $password, $protocol = 'imap', $ssl = true) {
         $this->server = $server;
@@ -20,6 +22,101 @@ class MailFetcher {
         $this->password = $password;
         $this->protocol = strtolower($protocol);
         $this->ssl = $ssl;
+        
+        // 检查是否启用了代理
+        $this->checkProxyStatus();
+    }
+    
+    /**
+     * 检查代理状态并配置代理信息
+     */
+    private function checkProxyStatus() {
+        try {
+            $db = new SQLite3(__DIR__ . '/../../db/mail.sqlite');
+            
+            // 获取代理配置
+            $result = $db->query("SELECT config_key, config_value FROM proxy_config WHERE config_key IN ('proxy_enabled', 'active_proxy_type', 'active_proxy_id')");
+            $config = [];
+            while ($row = $result->fetchArray(SQLITE3_ASSOC)) {
+                $config[$row['config_key']] = $row['config_value'];
+            }
+            
+            // 检查是否启用代理
+            if (isset($config['proxy_enabled']) && $config['proxy_enabled'] === '1') {
+                $proxyType = $config['active_proxy_type'] ?? '';
+                $proxyId = (int)($config['active_proxy_id'] ?? 0);
+                
+                if (!empty($proxyType) && $proxyId > 0) {
+                    // 获取代理详情
+                    $tableName = $proxyType === 'socks5' ? 'socks5_proxies' : 'http_proxies';
+                    $stmt = $db->prepare("SELECT * FROM {$tableName} WHERE id = ? AND status = 1");
+                    $stmt->bindValue(1, $proxyId);
+                    $proxyResult = $stmt->execute();
+                    $proxy = $proxyResult->fetchArray(SQLITE3_ASSOC);
+                    
+                    if ($proxy) {
+                        $this->proxyEnabled = true;
+                        $this->proxyInfo = [
+                            'type' => $proxyType,
+                            'host' => $proxy['host'],
+                            'port' => $proxy['port'],
+                            'username' => $proxy['username'] ?? '',
+                            'password' => $proxy['password'] ?? '',
+                            'name' => $proxy['name'] ?? ''
+                        ];
+                        
+                        // 设置代理环境变量（用于支持代理的库）
+                        $this->setProxyEnvironment();
+                    }
+                }
+            }
+            
+            $db->close();
+        } catch (Exception $e) {
+            error_log('检查代理状态失败: ' . $e->getMessage());
+        }
+    }
+    
+    /**
+     * 设置代理环境变量
+     */
+    private function setProxyEnvironment() {
+        if (!$this->proxyEnabled || !$this->proxyInfo) {
+            return;
+        }
+        
+        $proxyUrl = '';
+        if ($this->proxyInfo['type'] === 'http') {
+            if (!empty($this->proxyInfo['username']) && !empty($this->proxyInfo['password'])) {
+                $proxyUrl = "http://{$this->proxyInfo['username']}:{$this->proxyInfo['password']}@{$this->proxyInfo['host']}:{$this->proxyInfo['port']}";
+            } else {
+                $proxyUrl = "http://{$this->proxyInfo['host']}:{$this->proxyInfo['port']}";
+            }
+        } else if ($this->proxyInfo['type'] === 'socks5') {
+            if (!empty($this->proxyInfo['username']) && !empty($this->proxyInfo['password'])) {
+                $proxyUrl = "socks5://{$this->proxyInfo['username']}:{$this->proxyInfo['password']}@{$this->proxyInfo['host']}:{$this->proxyInfo['port']}";
+            } else {
+                $proxyUrl = "socks5://{$this->proxyInfo['host']}:{$this->proxyInfo['port']}";
+            }
+        }
+        
+        if ($proxyUrl) {
+            // 设置HTTP和HTTPS代理环境变量
+            putenv("http_proxy={$proxyUrl}");
+            putenv("https_proxy={$proxyUrl}");
+            putenv("HTTP_PROXY={$proxyUrl}");
+            putenv("HTTPS_PROXY={$proxyUrl}");
+        }
+    }
+    
+    /**
+     * 获取代理信息
+     */
+    public function getProxyInfo() {
+        return [
+            'enabled' => $this->proxyEnabled,
+            'info' => $this->proxyInfo
+        ];
     }
     
     /**
@@ -27,6 +124,13 @@ class MailFetcher {
      */
     public function connect() {
         try {
+            // 记录代理使用情况
+            if ($this->proxyEnabled) {
+                error_log("邮件连接使用代理: {$this->proxyInfo['name']} ({$this->proxyInfo['type']}) - {$this->proxyInfo['host']}:{$this->proxyInfo['port']}");
+            } else {
+                error_log("邮件连接未使用代理");
+            }
+            
             if ($this->protocol === 'imap') {
                 return $this->connectIMAP();
             } elseif ($this->protocol === 'pop3') {
