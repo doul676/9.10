@@ -1,0 +1,816 @@
+{% extends "base.html" %}
+
+{% block title %}邮箱管理 - 邮件查看系统{% endblock %}
+
+{% block head %}
+<style>
+    * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+    }
+    
+    :root {
+        --primary-color: #667eea;
+        --secondary-color: #764ba2;
+        --sidebar-width: 280px;
+        --header-height: 70px;
+        --transition: all 0.3s ease;
+    }
+    
+    body {
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        background: #f8fafc;
+        line-height: 1.6;
+        color: #334155;
+        transition: var(--transition);
+    }
+    
+    /* Sidebar Styles */
+    .sidebar {
+        position: fixed;
+        left: 0;
+        top: 0;
+        width: var(--sidebar-width);
+        height: 100vh;
+        background: linear-gradient(135deg, var(--primary-color) 0%, var(--secondary-color) 100%);
+        z-index: 1000;
+        transition: var(--transition);
+        box-shadow: 4px 0 15px rgba(0,0,0,0.1);
+    }
+    
+    .sidebar-header {
+        padding: 20px;
+        border-bottom: 1px solid rgba(255,255,255,0.1);
+    }
+    
+    .sidebar-logo {
+        color: white;
+        font-size: 20px;
+        font-weight: 700;
+        text-align: center;
+        text-shadow: 0 2px 4px rgba(0,0,0,0.3);
+    }
+    
+    .sidebar-nav {
+        padding: 20px 0;
+    }
+    
+    .nav-item {
+        display: block;
+        color: rgba(255,255,255,0.8);
+        text-decoration: none;
+        padding: 15px 25px;
+        transition: var(--transition);
+        border-left: 3px solid transparent;
+        position: relative;
+        overflow: hidden;
+    }
+    
+    .nav-item::before {
+        content: '';
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(255,255,255,0.1);
+        transform: translateX(-100%);
+        transition: var(--transition);
+    }
+    
+    .nav-item:hover::before {
+        transform: translateX(0);
+    }
+    
+    .nav-item:hover,
+    .nav-item.active {
+        color: white;
+        background: rgba(255,255,255,0.15);
+        border-left-color: white;
+        transform: translateX(5px);
+    }
+    
+    .nav-item i {
+        margin-right: 10px;
+        width: 20px;
+        text-align: center;
+    }
+    
+    /* Main Content */
+    .main-content {
+        margin-left: var(--sidebar-width);
+        min-height: 100vh;
+        transition: var(--transition);
+    }
+    
+    .header {
+        background: white;
+        height: var(--header-height);
+        box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 30px;
+        position: sticky;
+        top: 0;
+        z-index: 999;
+    }
+    
+    .header-title {
+        font-size: 24px;
+        font-weight: 600;
+        color: #1e293b;
+    }
+    
+    .header-actions {
+        display: flex;
+        align-items: center;
+        gap: 20px;
+    }
+    
+    .user-info {
+        display: flex;
+        align-items: center;
+        gap: 15px;
+        color: #64748b;
+    }
+    
+    .logout-btn {
+        background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+        color: white;
+        text-decoration: none;
+        padding: 8px 16px;
+        border-radius: 8px;
+        font-size: 14px;
+        font-weight: 500;
+        transition: var(--transition);
+    }
+    
+    .logout-btn:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 5px 15px rgba(239, 68, 68, 0.3);
+    }
+    
+    /* Content Area */
+    .content {
+        padding: 30px;
+    }
+    
+    /* Cards */
+    .card {
+        background: white;
+        border-radius: 15px;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.05), 0 1px 3px rgba(0,0,0,0.1);
+        overflow: hidden;
+        margin-bottom: 25px;
+        transition: var(--transition);
+    }
+    
+    .card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 25px rgba(0,0,0,0.1), 0 4px 10px rgba(0,0,0,0.06);
+    }
+    
+    .card-header {
+        padding: 20px 25px;
+        border-bottom: 1px solid #f1f5f9;
+        background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+    
+    .card-title {
+        font-size: 18px;
+        font-weight: 600;
+        color: #1e293b;
+        margin: 0;
+    }
+    
+    .card-body {
+        padding: 25px;
+    }
+    
+    .btn {
+        padding: 10px 20px;
+        border: none;
+        border-radius: 8px;
+        font-size: 14px;
+        font-weight: 500;
+        cursor: pointer;
+        transition: var(--transition);
+        text-decoration: none;
+        display: inline-block;
+    }
+    
+    .btn-primary {
+        background: linear-gradient(135deg, var(--primary-color) 0%, var(--secondary-color) 100%);
+        color: white;
+    }
+    
+    .btn-primary:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 5px 15px rgba(102, 126, 234, 0.3);
+    }
+    
+    .btn-danger {
+        background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+        color: white;
+    }
+    
+    .btn-danger:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 5px 15px rgba(239, 68, 68, 0.3);
+    }
+    
+    .btn-success {
+        background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+        color: white;
+    }
+    
+    .btn-success:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 5px 15px rgba(16, 185, 129, 0.3);
+    }
+    
+    /* Form Styles */
+    .form-group {
+        margin-bottom: 20px;
+    }
+    
+    .form-group label {
+        display: block;
+        margin-bottom: 8px;
+        color: #374151;
+        font-weight: 500;
+    }
+    
+    .form-group input,
+    .form-group select {
+        width: 100%;
+        padding: 12px 16px;
+        border: 2px solid #e5e7eb;
+        border-radius: 8px;
+        font-size: 14px;
+        transition: var(--transition);
+    }
+    
+    .form-group input:focus,
+    .form-group select:focus {
+        outline: none;
+        border-color: var(--primary-color);
+        box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+    }
+    
+    .checkbox-group {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+    
+    .checkbox-group input[type="checkbox"] {
+        width: auto;
+    }
+    
+    /* Table Styles */
+    .table-container {
+        overflow-x: auto;
+    }
+    
+    table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 20px;
+    }
+    
+    table th,
+    table td {
+        padding: 12px 16px;
+        text-align: left;
+        border-bottom: 1px solid #e5e7eb;
+    }
+    
+    table th {
+        background: #f8fafc;
+        font-weight: 600;
+        color: #374151;
+    }
+    
+    table tr:hover {
+        background: #f8fafc;
+    }
+    
+    /* Modal Styles */
+    .modal {
+        display: none;
+        position: fixed;
+        z-index: 2000;
+        left: 0;
+        top: 0;
+        width: 100%;
+        height: 100%;
+        background-color: rgba(0, 0, 0, 0.5);
+        animation: fadeIn 0.3s ease;
+    }
+    
+    .modal.show {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+    
+    .modal-content {
+        background: white;
+        border-radius: 15px;
+        width: 90%;
+        max-width: 600px;
+        max-height: 80vh;
+        overflow-y: auto;
+        animation: slideInUp 0.3s ease;
+    }
+    
+    .modal-header {
+        padding: 20px 25px;
+        border-bottom: 1px solid #e5e7eb;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+    
+    .modal-title {
+        font-size: 18px;
+        font-weight: 600;
+        color: #1e293b;
+    }
+    
+    .modal-close {
+        background: none;
+        border: none;
+        font-size: 24px;
+        cursor: pointer;
+        color: #6b7280;
+    }
+    
+    .modal-close:hover {
+        color: #374151;
+    }
+    
+    .modal-body {
+        padding: 25px;
+    }
+    
+    .modal-footer {
+        padding: 20px 25px;
+        border-top: 1px solid #e5e7eb;
+        display: flex;
+        justify-content: flex-end;
+        gap: 15px;
+    }
+    
+    /* Toast Notifications */
+    .toast-container {
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        z-index: 3000;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        max-width: 400px;
+    }
+    
+    .toast {
+        padding: 15px 20px;
+        border-radius: 10px;
+        color: white;
+        font-weight: 500;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+        transform: translateX(450px);
+        opacity: 0;
+        transition: all 0.3s ease;
+        position: relative;
+        overflow: hidden;
+    }
+    
+    .toast.show {
+        transform: translateX(0);
+        opacity: 1;
+    }
+    
+    .toast.success {
+        background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+    }
+    
+    .toast.error {
+        background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+    }
+    
+    .toast.info {
+        background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+    }
+    
+    /* Responsive */
+    @media (max-width: 768px) {
+        .sidebar {
+            transform: translateX(-100%);
+        }
+        
+        .sidebar.mobile-open {
+            transform: translateX(0);
+        }
+        
+        .main-content {
+            margin-left: 0;
+        }
+        
+        .header-title {
+            font-size: 20px;
+        }
+        
+        .content {
+            padding: 20px;
+        }
+        
+        .card-header {
+            flex-direction: column;
+            gap: 15px;
+            align-items: flex-start;
+        }
+        
+        .modal-content {
+            width: 95%;
+            margin: 20px;
+        }
+        
+        .table-container {
+            font-size: 12px;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block body %}
+<!-- Toast notification container -->
+<div id="toast-container" class="toast-container"></div>
+
+<!-- Sidebar -->
+<div class="sidebar">
+    <div class="sidebar-header">
+        <div class="sidebar-logo">📧 邮件管理系统</div>
+    </div>
+    <nav class="sidebar-nav">
+        <a href="{{ url_for('admin_home') }}" class="nav-item">
+            <i>🏠</i> 首页
+        </a>
+        <a href="{{ url_for('admin_mailbox') }}" class="nav-item active">
+            <i>📫</i> 邮箱管理
+        </a>
+        <a href="{{ url_for('admin_daili') }}" class="nav-item">
+            <i>🌐</i> 代理池
+        </a>
+        <a href="{{ url_for('admin_kami') }}" class="nav-item">
+            <i>🔑</i> 卡密管理
+        </a>
+        <a href="{{ url_for('admin_kamirizhi') }}" class="nav-item">
+            <i>📝</i> 卡密日志
+        </a>
+        <a href="{{ url_for('admin_shoujian') }}" class="nav-item">
+            <i>📧</i> 收件日志
+        </a>
+        <a href="{{ url_for('admin_system') }}" class="nav-item">
+            <i>⚙️</i> 系统设置
+        </a>
+    </nav>
+</div>
+
+<!-- Main Content -->
+<div class="main-content">
+    <div class="header">
+        <h1 class="header-title">邮箱管理</h1>
+        <div class="header-actions">
+            <div class="user-info">
+                <span>欢迎，{{ admin_username }}</span>
+            </div>
+            <a href="{{ url_for('admin_logout') }}" class="logout-btn">退出登录</a>
+        </div>
+    </div>
+    
+    <div class="content">
+        <div class="card">
+            <div class="card-header">
+                <h2 class="card-title">邮箱账号管理</h2>
+                <button class="btn btn-primary" onclick="showAddModal()">
+                    ➕ 添加邮箱
+                </button>
+            </div>
+            <div class="card-body">
+                <div class="table-container">
+                    <table id="mailboxTable">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>邮箱地址</th>
+                                <th>服务器</th>
+                                <th>端口</th>
+                                <th>协议</th>
+                                <th>SSL</th>
+                                <th>备注</th>
+                                <th>创建时间</th>
+                                <th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <!-- 邮箱列表将通过JavaScript加载 -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 添加/编辑邮箱模态框 -->
+<div id="mailboxModal" class="modal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3 class="modal-title" id="modalTitle">添加邮箱</h3>
+            <button class="modal-close" onclick="closeModal()">&times;</button>
+        </div>
+        <div class="modal-body">
+            <form id="mailboxForm">
+                <input type="hidden" id="mailboxId" name="id">
+                <input type="hidden" id="formAction" name="action" value="add">
+                
+                <div class="form-group">
+                    <label for="email">邮箱地址 *</label>
+                    <input type="email" id="email" name="email" required>
+                </div>
+                
+                <div class="form-group">
+                    <label for="password">密码/授权码 *</label>
+                    <input type="password" id="password" name="password" required>
+                </div>
+                
+                <div class="form-group">
+                    <label for="server">服务器地址 *</label>
+                    <input type="text" id="server" name="server" required 
+                           placeholder="例: imap.qq.com">
+                </div>
+                
+                <div class="form-group">
+                    <label for="port">端口 *</label>
+                    <input type="number" id="port" name="port" required 
+                           placeholder="例: 993">
+                </div>
+                
+                <div class="form-group">
+                    <label for="protocol">协议</label>
+                    <select id="protocol" name="protocol">
+                        <option value="imap">IMAP</option>
+                        <option value="pop3">POP3</option>
+                    </select>
+                </div>
+                
+                <div class="form-group">
+                    <div class="checkbox-group">
+                        <input type="checkbox" id="ssl" name="ssl" checked>
+                        <label for="ssl">启用SSL</label>
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <label for="remarks">备注</label>
+                    <input type="text" id="remarks" name="remarks" 
+                           placeholder="可选：备注信息">
+                </div>
+            </form>
+        </div>
+        <div class="modal-footer">
+            <button type="button" class="btn" onclick="closeModal()">取消</button>
+            <button type="button" class="btn btn-primary" onclick="saveMailbox()">保存</button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // 页面加载时获取邮箱列表
+    document.addEventListener('DOMContentLoaded', function() {
+        loadMailboxes();
+    });
+    
+    // 加载邮箱列表
+    async function loadMailboxes() {
+        try {
+            const response = await fetch('/admin/api/mailbox', {
+                method: 'GET',
+                headers: {
+                    'Content-Type': 'application/json',
+                }
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                renderMailboxTable(data.data);
+            } else {
+                showToast('加载邮箱列表失败', 'error');
+            }
+        } catch (error) {
+            console.error('加载邮箱列表失败:', error);
+            showToast('网络错误，请稍后重试', 'error');
+        }
+    }
+    
+    // 渲染邮箱表格
+    function renderMailboxTable(mailboxes) {
+        const tbody = document.querySelector('#mailboxTable tbody');
+        tbody.innerHTML = '';
+        
+        if (mailboxes.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="9" style="text-align: center; color: #6b7280;">暂无邮箱账号</td></tr>';
+            return;
+        }
+        
+        mailboxes.forEach(mailbox => {
+            const row = document.createElement('tr');
+            row.innerHTML = `
+                <td>${mailbox.id}</td>
+                <td>${escapeHtml(mailbox.email)}</td>
+                <td>${escapeHtml(mailbox.server)}</td>
+                <td>${mailbox.port}</td>
+                <td>${mailbox.protocol.toUpperCase()}</td>
+                <td>${mailbox.ssl ? '✅' : '❌'}</td>
+                <td>${escapeHtml(mailbox.remarks || '-')}</td>
+                <td>${formatDateTime(mailbox.created_at)}</td>
+                <td>
+                    <button class="btn btn-success" onclick="editMailbox(${mailbox.id})" style="margin-right: 5px;">编辑</button>
+                    <button class="btn btn-danger" onclick="deleteMailbox(${mailbox.id})">删除</button>
+                </td>
+            `;
+            tbody.appendChild(row);
+        });
+    }
+    
+    // 显示添加邮箱模态框
+    function showAddModal() {
+        document.getElementById('modalTitle').textContent = '添加邮箱';
+        document.getElementById('formAction').value = 'add';
+        document.getElementById('mailboxForm').reset();
+        document.getElementById('mailboxId').value = '';
+        document.getElementById('ssl').checked = true;
+        document.getElementById('mailboxModal').classList.add('show');
+    }
+    
+    // 编辑邮箱
+    async function editMailbox(id) {
+        try {
+            const response = await fetch('/admin/api/mailbox');
+            const data = await response.json();
+            
+            if (data.success) {
+                const mailbox = data.data.find(m => m.id === id);
+                if (mailbox) {
+                    document.getElementById('modalTitle').textContent = '编辑邮箱';
+                    document.getElementById('formAction').value = 'edit';
+                    document.getElementById('mailboxId').value = mailbox.id;
+                    document.getElementById('email').value = mailbox.email;
+                    document.getElementById('password').value = mailbox.password;
+                    document.getElementById('server').value = mailbox.server;
+                    document.getElementById('port').value = mailbox.port;
+                    document.getElementById('protocol').value = mailbox.protocol;
+                    document.getElementById('ssl').checked = mailbox.ssl;
+                    document.getElementById('remarks').value = mailbox.remarks || '';
+                    document.getElementById('mailboxModal').classList.add('show');
+                }
+            }
+        } catch (error) {
+            console.error('获取邮箱信息失败:', error);
+            showToast('获取邮箱信息失败', 'error');
+        }
+    }
+    
+    // 删除邮箱
+    async function deleteMailbox(id) {
+        if (!confirm('确定要删除这个邮箱账号吗？')) {
+            return;
+        }
+        
+        try {
+            const response = await fetch('/admin/api/mailbox', {
+                method: 'DELETE',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ id: id })
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                showToast('邮箱删除成功', 'success');
+                loadMailboxes();
+            } else {
+                showToast(data.message || '删除失败', 'error');
+            }
+        } catch (error) {
+            console.error('删除邮箱失败:', error);
+            showToast('网络错误，请稍后重试', 'error');
+        }
+    }
+    
+    // 保存邮箱
+    async function saveMailbox() {
+        const form = document.getElementById('mailboxForm');
+        const formData = new FormData(form);
+        
+        const data = {
+            action: formData.get('action'),
+            email: formData.get('email'),
+            password: formData.get('password'),
+            server: formData.get('server'),
+            port: parseInt(formData.get('port')),
+            protocol: formData.get('protocol'),
+            ssl: formData.get('ssl') === 'on',
+            remarks: formData.get('remarks')
+        };
+        
+        if (data.action === 'edit') {
+            data.id = parseInt(formData.get('id'));
+        }
+        
+        try {
+            const response = await fetch('/admin/api/mailbox', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(data)
+            });
+            
+            const result = await response.json();
+            
+            if (result.success) {
+                showToast(result.message || '保存成功', 'success');
+                closeModal();
+                loadMailboxes();
+            } else {
+                showToast(result.message || '保存失败', 'error');
+            }
+        } catch (error) {
+            console.error('保存邮箱失败:', error);
+            showToast('网络错误，请稍后重试', 'error');
+        }
+    }
+    
+    // 关闭模态框
+    function closeModal() {
+        document.getElementById('mailboxModal').classList.remove('show');
+    }
+    
+    // 点击模态框外部关闭
+    document.getElementById('mailboxModal').addEventListener('click', function(e) {
+        if (e.target === this) {
+            closeModal();
+        }
+    });
+    
+    // Toast通知系统
+    function showToast(message, type = 'info', duration = 3000) {
+        const container = document.getElementById('toast-container');
+        
+        const toast = document.createElement('div');
+        toast.className = `toast ${type}`;
+        toast.textContent = message;
+        
+        container.appendChild(toast);
+        
+        setTimeout(() => {
+            toast.classList.add('show');
+        }, 10);
+        
+        setTimeout(() => {
+            toast.classList.remove('show');
+            setTimeout(() => {
+                if (container.contains(toast)) {
+                    container.removeChild(toast);
+                }
+            }, 300);
+        }, duration);
+    }
+    
+    // 工具函数
+    function escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+    
+    function formatDateTime(dateString) {
+        if (!dateString) return '-';
+        return new Date(dateString).toLocaleString('zh-CN');
+    }
+</script>
+{% endblock %}

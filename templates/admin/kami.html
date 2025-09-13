@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+
+{% block title %}卡密管理 - 邮件查看系统{% endblock %}
+
+{% block head %}
+<!-- 基础样式 -->
+<style>
+    /* 基础样式将在完善时添加 */
+</style>
+{% endblock %}
+
+{% block body %}
+<div class="sidebar">
+    <div class="sidebar-header">
+        <div class="sidebar-logo">📧 邮件管理系统</div>
+    </div>
+    <nav class="sidebar-nav">
+        <a href="{{ url_for('admin_home') }}" class="nav-item">
+            <i>🏠</i> 首页
+        </a>
+        <a href="{{ url_for('admin_mailbox') }}" class="nav-item">
+            <i>📫</i> 邮箱管理
+        </a>
+        <a href="{{ url_for('admin_daili') }}" class="nav-item">
+            <i>🌐</i> 代理池
+        </a>
+        <a href="{{ url_for('admin_kami') }}" class="nav-item active">
+            <i>🔑</i> 卡密管理
+        </a>
+        <a href="{{ url_for('admin_kamirizhi') }}" class="nav-item">
+            <i>📝</i> 卡密日志
+        </a>
+        <a href="{{ url_for('admin_shoujian') }}" class="nav-item">
+            <i>📧</i> 收件日志
+        </a>
+        <a href="{{ url_for('admin_system') }}" class="nav-item">
+            <i>⚙️</i> 系统设置
+        </a>
+    </nav>
+</div>
+
+<div class="main-content">
+    <div class="header">
+        <h1 class="header-title">卡密管理</h1>
+        <div class="header-actions">
+            <div class="user-info">
+                <span>欢迎，{{ admin_username }}</span>
+            </div>
+            <a href="{{ url_for('admin_logout') }}" class="logout-btn">退出登录</a>
+        </div>
+    </div>
+    
+    <div class="content">
+        <div class="card">
+            <div class="card-header">
+                <h2 class="card-title">卡密管理功能</h2>
+            </div>
+            <div class="card-body">
+                <p>卡密管理功能正在开发中...</p>
+                <p>将包含卡密生成、管理和验证功能。</p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
