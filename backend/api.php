@@ -142,38 +142,78 @@ function performConnectionTest($server, $port, $username, $password, $protocol, 
             exit();
         }
         
-        // 创建邮件获取器实例
+        // 创建邮件获取器实例（会自动检查并使用代理）
         $fetcher = new MailFetcher($server, $port, $username, $password, $protocol, $ssl);
+        
+        // 获取代理信息用于显示
+        $proxyInfo = $fetcher->getProxyInfo();
         
         // 尝试连接
         if ($fetcher->connect()) {
             $fetcher->close();
+            
+            $diagnostics = [
+                'imap_extension' => '✅ IMAP扩展已正确安装并可用',
+                'connection_protocol' => strtoupper($protocol) . ($ssl ? ' with SSL' : ' without SSL'),
+                'server_info' => $server . ':' . $port
+            ];
+            
+            // 添加代理状态信息到诊断中
+            if ($proxyInfo['enabled'] && $proxyInfo['info']) {
+                $proxy = $proxyInfo['info'];
+                $diagnostics['proxy_status'] = "✅ 使用代理连接：{$proxy['name']} ({$proxy['type']}) - {$proxy['host']}:{$proxy['port']}";
+            } else {
+                $diagnostics['proxy_status'] = "🌐 直接连接（未使用代理）";
+            }
+            
             echo json_encode([
                 'success' => true,
                 'message' => '✅ 邮箱连接测试成功！服务器响应正常',
-                'diagnostics' => [
-                    'imap_extension' => '✅ IMAP扩展已正确安装并可用',
-                    'connection_protocol' => strtoupper($protocol) . ($ssl ? ' with SSL' : ' without SSL'),
-                    'server_info' => $server . ':' . $port
-                ]
+                'diagnostics' => $diagnostics,
+                'proxy' => $proxyInfo
             ]);
         } else {
+            $diagnostics = [
+                'imap_extension' => '✅ IMAP扩展可用',
+                'connection_issue' => '服务器连接失败，请检查服务器地址、端口和凭据'
+            ];
+            
+            // 添加代理状态信息到诊断中
+            if ($proxyInfo['enabled'] && $proxyInfo['info']) {
+                $proxy = $proxyInfo['info'];
+                $diagnostics['proxy_status'] = "⚠️ 使用代理连接：{$proxy['name']} ({$proxy['type']}) - {$proxy['host']}:{$proxy['port']}";
+                $diagnostics['proxy_note'] = "连接失败可能与代理配置有关，建议检查代理设置";
+            } else {
+                $diagnostics['proxy_status'] = "🌐 直接连接（未使用代理）";
+            }
+            
             echo json_encode([
                 'success' => false,
                 'message' => '❌ 邮箱连接失败，请检查配置信息',
-                'diagnostics' => [
-                    'imap_extension' => '✅ IMAP扩展可用',
-                    'connection_issue' => '服务器连接失败，请检查服务器地址、端口和凭据'
-                ],
+                'diagnostics' => $diagnostics,
+                'proxy' => $proxyInfo,
                 'error_type' => 'connection_failed'
             ]);
         }
         
     } catch (Exception $e) {
+        // 创建邮件获取器以获取代理信息
+        $fetcher = new MailFetcher($server, $port, $username, $password, $protocol, $ssl);
+        $proxyInfo = $fetcher->getProxyInfo();
+        
         // 根据错误类型提供更具体的提示
         $errorMessage = $e->getMessage();
         $errorType = 'unknown';
         $diagnostics = ['imap_extension' => '✅ IMAP扩展可用'];
+        
+        // 添加代理状态信息到诊断中
+        if ($proxyInfo['enabled'] && $proxyInfo['info']) {
+            $proxy = $proxyInfo['info'];
+            $diagnostics['proxy_status'] = "⚠️ 使用代理连接：{$proxy['name']} ({$proxy['type']}) - {$proxy['host']}:{$proxy['port']}";
+            $diagnostics['proxy_note'] = "连接失败可能与代理配置有关，建议检查代理设置";
+        } else {
+            $diagnostics['proxy_status'] = "🌐 直接连接（未使用代理）";
+        }
         
         if (strpos($errorMessage, 'SSL证书') !== false) {
             $errorType = 'ssl_error';
@@ -197,6 +237,7 @@ function performConnectionTest($server, $port, $username, $password, $protocol, 
             'success' => false,
             'message' => '❌ 连接测试失败：' . $errorMessage,
             'diagnostics' => $diagnostics,
+            'proxy' => $proxyInfo,
             'error_type' => $errorType
         ]);
     }
@@ -725,10 +766,18 @@ function testSocks5ProxyFunctionality($host, $port, $username, $password) {
     }
     
     // 设置超时
-    stream_set_timeout($socket, 3);
+    stream_set_timeout($socket, 5);
     
-    // SOCKS5握手 - 无认证方法
-    $request = "\x05\x01\x00";
+    // SOCKS5握手 - 检查是否需要认证
+    $hasAuth = !empty($username) && !empty($password);
+    if ($hasAuth) {
+        // 支持无认证和用户名密码认证
+        $request = "\x05\x02\x00\x02";
+    } else {
+        // 只支持无认证
+        $request = "\x05\x01\x00";
+    }
+    
     fwrite($socket, $request);
     
     $response = fread($socket, 2);
@@ -749,44 +798,41 @@ function testSocks5ProxyFunctionality($host, $port, $username, $password) {
     }
     
     $authMethod = ord($response[1]);
+    
     if ($authMethod === 0) {
-        // 无需认证，测试连接请求
-        $testHost = 'httpbin.org';
-        $testPort = 80;
+        // 无需认证，直接测试连接
+        return testSocks5Connection($socket);
+    } else if ($authMethod === 2 && $hasAuth) {
+        // 需要用户名密码认证
+        $userLen = strlen($username);
+        $passLen = strlen($password);
+        $authRequest = "\x01" . chr($userLen) . $username . chr($passLen) . $password;
+        fwrite($socket, $authRequest);
         
-        // 解析目标主机IP
-        $targetIp = gethostbyname($testHost);
-        if ($targetIp === $testHost) {
+        $authResponse = fread($socket, 2);
+        if (strlen($authResponse) < 2) {
             fclose($socket);
             return [
                 'success' => false,
-                'message' => 'SOCKS5测试失败：无法解析测试域名'
+                'message' => 'SOCKS5用户认证失败：无响应'
             ];
         }
         
-        // 连接请求
-        $request = "\x05\x01\x00\x01" . inet_pton($targetIp) . pack('n', $testPort);
-        fwrite($socket, $request);
-        
-        $response = fread($socket, 10);
-        fclose($socket);
-        
-        if (strlen($response) >= 2 && ord($response[1]) === 0) {
-            return [
-                'success' => true,
-                'message' => 'SOCKS5代理功能正常'
-            ];
+        if (ord($authResponse[1]) === 0) {
+            // 认证成功，测试连接
+            return testSocks5Connection($socket);
         } else {
+            fclose($socket);
             return [
                 'success' => false,
-                'message' => 'SOCKS5连接测试失败'
+                'message' => 'SOCKS5用户认证失败：用户名或密码错误'
             ];
         }
-    } else if ($authMethod === 2) {
+    } else if ($authMethod === 2 && !$hasAuth) {
         fclose($socket);
         return [
             'success' => false,
-            'message' => 'SOCKS5代理需要用户名密码认证'
+            'message' => 'SOCKS5代理需要用户名密码认证，但未提供认证信息'
         ];
     } else if ($authMethod === 255) {
         fclose($socket);
@@ -798,7 +844,63 @@ function testSocks5ProxyFunctionality($host, $port, $username, $password) {
         fclose($socket);
         return [
             'success' => false,
-            'message' => 'SOCKS5代理返回未知认证方法'
+            'message' => 'SOCKS5代理返回未知认证方法: ' . $authMethod
+        ];
+    }
+}
+
+/**
+ * 测试SOCKS5连接到目标服务器
+ */
+function testSocks5Connection($socket) {
+    $testHost = 'httpbin.org';
+    $testPort = 80;
+    
+    // 解析目标主机IP
+    $targetIp = gethostbyname($testHost);
+    if ($targetIp === $testHost) {
+        fclose($socket);
+        return [
+            'success' => false,
+            'message' => 'SOCKS5测试失败：无法解析测试域名'
+        ];
+    }
+    
+    // 连接请求 - IPv4
+    $request = "\x05\x01\x00\x01" . inet_pton($targetIp) . pack('n', $testPort);
+    fwrite($socket, $request);
+    
+    $response = fread($socket, 10);
+    fclose($socket);
+    
+    if (strlen($response) >= 2) {
+        $replyCode = ord($response[1]);
+        if ($replyCode === 0) {
+            return [
+                'success' => true,
+                'message' => 'SOCKS5代理功能正常'
+            ];
+        } else {
+            $errorMessages = [
+                1 => '一般SOCKS服务器失败',
+                2 => '连接规则不允许',
+                3 => '网络不可达',
+                4 => '主机不可达',
+                5 => '连接被拒绝',
+                6 => 'TTL超时',
+                7 => '命令不支持',
+                8 => '地址类型不支持'
+            ];
+            $errorMsg = $errorMessages[$replyCode] ?? "未知错误码: $replyCode";
+            return [
+                'success' => false,
+                'message' => "SOCKS5连接测试失败：$errorMsg"
+            ];
+        }
+    } else {
+        return [
+            'success' => false,
+            'message' => 'SOCKS5连接测试失败：响应不完整'
         ];
     }
 }

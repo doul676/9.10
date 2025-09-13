@@ -105,7 +105,7 @@ class MailFetcher {
             $db->close();
         } catch (Exception $e) {
             error_log('检查代理状态失败: ' . $e->getMessage());
-            // 不抛出异常，只记录日志，确保MailFetcher可以正常工作
+            // 不抛出异常，确保MailFetcher可以正常工作
         }
     }
     
@@ -159,6 +159,11 @@ class MailFetcher {
             // 记录代理使用情况
             if ($this->proxyEnabled) {
                 error_log("邮件连接使用代理: {$this->proxyInfo['name']} ({$this->proxyInfo['type']}) - {$this->proxyInfo['host']}:{$this->proxyInfo['port']}");
+                
+                // 检查代理类型是否可能影响IMAP连接
+                if ($this->proxyInfo['type'] === 'socks5') {
+                    error_log("警告: SOCKS5代理可能不被PHP IMAP扩展直接支持，如果连接失败请考虑使用HTTP代理或直连");
+                }
             } else {
                 error_log("邮件连接未使用代理");
             }
@@ -171,8 +176,20 @@ class MailFetcher {
                 throw new Exception('不支持的协议: ' . $this->protocol);
             }
         } catch (Exception $e) {
-            error_log('邮件连接失败: ' . $e->getMessage());
-            return false;
+            $errorMessage = $e->getMessage();
+            
+            // 如果启用了代理并且连接失败，提供更有用的错误信息
+            if ($this->proxyEnabled) {
+                $proxyInfo = $this->proxyInfo;
+                $errorMessage .= " (注意: 当前启用了{$proxyInfo['type']}代理: {$proxyInfo['name']}，这可能影响邮件服务器连接)";
+                
+                if ($proxyInfo['type'] === 'socks5') {
+                    $errorMessage .= " [提示: PHP IMAP扩展对SOCKS5代理支持有限，建议尝试使用HTTP代理或直连]";
+                }
+            }
+            
+            error_log('邮件连接失败: ' . $errorMessage);
+            throw new Exception($errorMessage);
         }
     }
     

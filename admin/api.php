@@ -990,10 +990,18 @@ function testSocks5ProxyFunctionality($host, $port, $username, $password) {
     }
     
     // 设置超时
-    stream_set_timeout($socket, 3);
+    stream_set_timeout($socket, 5);
     
-    // SOCKS5握手 - 无认证方法
-    $request = "\x05\x01\x00";
+    // SOCKS5握手 - 检查是否需要认证
+    $hasAuth = !empty($username) && !empty($password);
+    if ($hasAuth) {
+        // 支持无认证和用户名密码认证
+        $request = "\x05\x02\x00\x02";
+    } else {
+        // 只支持无认证
+        $request = "\x05\x01\x00";
+    }
+    
     fwrite($socket, $request);
     
     $response = fread($socket, 2);
@@ -1014,44 +1022,41 @@ function testSocks5ProxyFunctionality($host, $port, $username, $password) {
     }
     
     $authMethod = ord($response[1]);
+    
     if ($authMethod === 0) {
-        // 无需认证，测试连接请求
-        $testHost = 'httpbin.org';
-        $testPort = 80;
+        // 无需认证，直接测试连接
+        return testSocks5Connection($socket);
+    } else if ($authMethod === 2 && $hasAuth) {
+        // 需要用户名密码认证
+        $userLen = strlen($username);
+        $passLen = strlen($password);
+        $authRequest = "\x01" . chr($userLen) . $username . chr($passLen) . $password;
+        fwrite($socket, $authRequest);
         
-        // 解析目标主机IP
-        $targetIp = gethostbyname($testHost);
-        if ($targetIp === $testHost) {
+        $authResponse = fread($socket, 2);
+        if (strlen($authResponse) < 2) {
             fclose($socket);
             return [
                 'success' => false,
-                'message' => 'SOCKS5测试失败：无法解析测试域名'
+                'message' => 'SOCKS5用户认证失败：无响应'
             ];
         }
         
-        // 连接请求
-        $request = "\x05\x01\x00\x01" . inet_pton($targetIp) . pack('n', $testPort);
-        fwrite($socket, $request);
-        
-        $response = fread($socket, 10);
-        fclose($socket);
-        
-        if (strlen($response) >= 2 && ord($response[1]) === 0) {
-            return [
-                'success' => true,
-                'message' => 'SOCKS5代理功能正常'
-            ];
+        if (ord($authResponse[1]) === 0) {
+            // 认证成功，测试连接
+            return testSocks5Connection($socket);
         } else {
+            fclose($socket);
             return [
                 'success' => false,
-                'message' => 'SOCKS5连接测试失败'
+                'message' => 'SOCKS5用户认证失败：用户名或密码错误'
             ];
         }
-    } else if ($authMethod === 2) {
+    } else if ($authMethod === 2 && !$hasAuth) {
         fclose($socket);
         return [
             'success' => false,
-            'message' => 'SOCKS5代理需要用户名密码认证'
+            'message' => 'SOCKS5代理需要用户名密码认证，但未提供认证信息'
         ];
     } else if ($authMethod === 255) {
         fclose($socket);
@@ -1063,7 +1068,63 @@ function testSocks5ProxyFunctionality($host, $port, $username, $password) {
         fclose($socket);
         return [
             'success' => false,
-            'message' => 'SOCKS5代理返回未知认证方法'
+            'message' => 'SOCKS5代理返回未知认证方法: ' . $authMethod
+        ];
+    }
+}
+
+/**
+ * 测试SOCKS5连接到目标服务器
+ */
+function testSocks5Connection($socket) {
+    $testHost = 'httpbin.org';
+    $testPort = 80;
+    
+    // 解析目标主机IP
+    $targetIp = gethostbyname($testHost);
+    if ($targetIp === $testHost) {
+        fclose($socket);
+        return [
+            'success' => false,
+            'message' => 'SOCKS5测试失败：无法解析测试域名'
+        ];
+    }
+    
+    // 连接请求 - IPv4
+    $request = "\x05\x01\x00\x01" . inet_pton($targetIp) . pack('n', $testPort);
+    fwrite($socket, $request);
+    
+    $response = fread($socket, 10);
+    fclose($socket);
+    
+    if (strlen($response) >= 2) {
+        $replyCode = ord($response[1]);
+        if ($replyCode === 0) {
+            return [
+                'success' => true,
+                'message' => 'SOCKS5代理功能正常'
+            ];
+        } else {
+            $errorMessages = [
+                1 => '一般SOCKS服务器失败',
+                2 => '连接规则不允许',
+                3 => '网络不可达',
+                4 => '主机不可达',
+                5 => '连接被拒绝',
+                6 => 'TTL超时',
+                7 => '命令不支持',
+                8 => '地址类型不支持'
+            ];
+            $errorMsg = $errorMessages[$replyCode] ?? "未知错误码: $replyCode";
+            return [
+                'success' => false,
+                'message' => "SOCKS5连接测试失败：$errorMsg"
+            ];
+        }
+    } else {
+        return [
+            'success' => false,
+            'message' => 'SOCKS5连接测试失败：响应不完整'
         ];
     }
 }

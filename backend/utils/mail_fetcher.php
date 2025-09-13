@@ -32,10 +32,30 @@ class MailFetcher {
      */
     private function checkProxyStatus() {
         try {
-            $db = new SQLite3(__DIR__ . '/../../db/mail.sqlite');
+            $dbPath = __DIR__ . '/../../db/mail.sqlite';
+            
+            // 如果数据库不存在，跳过代理检查
+            if (!file_exists($dbPath)) {
+                return;
+            }
+            
+            $db = new SQLite3($dbPath);
+            
+            // 检查proxy_config表是否存在
+            $tableCheck = $db->query("SELECT name FROM sqlite_master WHERE type='table' AND name='proxy_config'");
+            if (!$tableCheck || !$tableCheck->fetchArray()) {
+                $db->close();
+                return;
+            }
             
             // 获取代理配置
             $result = $db->query("SELECT config_key, config_value FROM proxy_config WHERE config_key IN ('proxy_enabled', 'active_proxy_type', 'active_proxy_id')");
+            
+            if (!$result) {
+                $db->close();
+                return;
+            }
+            
             $config = [];
             while ($row = $result->fetchArray(SQLITE3_ASSOC)) {
                 $config[$row['config_key']] = $row['config_value'];
@@ -47,26 +67,37 @@ class MailFetcher {
                 $proxyId = (int)($config['active_proxy_id'] ?? 0);
                 
                 if (!empty($proxyType) && $proxyId > 0) {
-                    // 获取代理详情
+                    // 检查代理表是否存在
                     $tableName = $proxyType === 'socks5' ? 'socks5_proxies' : 'http_proxies';
+                    $proxyTableCheck = $db->query("SELECT name FROM sqlite_master WHERE type='table' AND name='$tableName'");
+                    
+                    if (!$proxyTableCheck || !$proxyTableCheck->fetchArray()) {
+                        $db->close();
+                        return;
+                    }
+                    
+                    // 获取代理详情
                     $stmt = $db->prepare("SELECT * FROM {$tableName} WHERE id = ? AND status = 1");
                     $stmt->bindValue(1, $proxyId);
                     $proxyResult = $stmt->execute();
-                    $proxy = $proxyResult->fetchArray(SQLITE3_ASSOC);
                     
-                    if ($proxy) {
-                        $this->proxyEnabled = true;
-                        $this->proxyInfo = [
-                            'type' => $proxyType,
-                            'host' => $proxy['host'],
-                            'port' => $proxy['port'],
-                            'username' => $proxy['username'] ?? '',
-                            'password' => $proxy['password'] ?? '',
-                            'name' => $proxy['name'] ?? ''
-                        ];
+                    if ($proxyResult) {
+                        $proxy = $proxyResult->fetchArray(SQLITE3_ASSOC);
                         
-                        // 设置代理环境变量（用于支持代理的库）
-                        $this->setProxyEnvironment();
+                        if ($proxy) {
+                            $this->proxyEnabled = true;
+                            $this->proxyInfo = [
+                                'type' => $proxyType,
+                                'host' => $proxy['host'],
+                                'port' => $proxy['port'],
+                                'username' => $proxy['username'] ?? '',
+                                'password' => $proxy['password'] ?? '',
+                                'name' => $proxy['name'] ?? ''
+                            ];
+                            
+                            // 设置代理环境变量（用于支持代理的库）
+                            $this->setProxyEnvironment();
+                        }
                     }
                 }
             }
@@ -74,6 +105,7 @@ class MailFetcher {
             $db->close();
         } catch (Exception $e) {
             error_log('检查代理状态失败: ' . $e->getMessage());
+            // 不抛出异常，确保MailFetcher可以正常工作
         }
     }
     
@@ -127,6 +159,11 @@ class MailFetcher {
             // 记录代理使用情况
             if ($this->proxyEnabled) {
                 error_log("邮件连接使用代理: {$this->proxyInfo['name']} ({$this->proxyInfo['type']}) - {$this->proxyInfo['host']}:{$this->proxyInfo['port']}");
+                
+                // 检查代理类型是否可能影响IMAP连接
+                if ($this->proxyInfo['type'] === 'socks5') {
+                    error_log("警告: SOCKS5代理可能不被PHP IMAP扩展直接支持，如果连接失败请考虑使用HTTP代理或直连");
+                }
             } else {
                 error_log("邮件连接未使用代理");
             }
@@ -139,8 +176,20 @@ class MailFetcher {
                 throw new Exception('不支持的协议: ' . $this->protocol);
             }
         } catch (Exception $e) {
-            error_log('邮件连接失败: ' . $e->getMessage());
-            return false;
+            $errorMessage = $e->getMessage();
+            
+            // 如果启用了代理并且连接失败，提供更有用的错误信息
+            if ($this->proxyEnabled) {
+                $proxyInfo = $this->proxyInfo;
+                $errorMessage .= " (注意: 当前启用了{$proxyInfo['type']}代理: {$proxyInfo['name']}，这可能影响邮件服务器连接)";
+                
+                if ($proxyInfo['type'] === 'socks5') {
+                    $errorMessage .= " [提示: PHP IMAP扩展对SOCKS5代理支持有限，建议尝试使用HTTP代理或直连]";
+                }
+            }
+            
+            error_log('邮件连接失败: ' . $errorMessage);
+            throw new Exception($errorMessage);
         }
     }
     
