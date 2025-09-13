@@ -5,3 +5,5 @@ imapclient>=2.3.1
 requests>=2.31.0
 pysocks>=1.7.1
 charset-normalizer>=3.3.2
+mysql-connector-python>=8.2.0
+psycopg2-binary>=2.9.9
