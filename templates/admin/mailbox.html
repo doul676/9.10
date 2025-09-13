@@ -526,6 +526,12 @@
         flex: 1;
     }
     
+    .server-id {
+        font-size: 11px;
+        color: #9ca3af;
+        font-weight: 500;
+    }
+    
     .server-name {
         font-weight: 500;
         color: #1e293b;
@@ -704,45 +710,50 @@
                 <input type="hidden" id="mailboxId" name="id">
                 <input type="hidden" id="formAction" name="action" value="add">
                 
-                <!-- 邮箱地址 -->
-                <div class="form-group">
-                    <label for="email">邮箱地址 *</label>
-                    <input type="email" id="email" name="email" required placeholder="例: user@example.com">
+                <!-- 邮箱账号和邮箱密码同一行 -->
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="email">邮箱账号 *</label>
+                        <input type="email" id="email" name="email" required placeholder="例: user@example.com">
+                    </div>
+                    <div class="form-group">
+                        <label for="password">邮箱密码 *</label>
+                        <input type="password" id="password" name="password" required placeholder="邮箱密码或授权码">
+                    </div>
                 </div>
                 
-                <!-- 密码/授权码 -->
-                <div class="form-group">
-                    <label for="password">密码/授权码 *</label>
-                    <input type="password" id="password" name="password" required placeholder="邮箱密码或授权码">
+                <!-- 服务器地址和选择服务器同一行 -->
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="server">服务器地址 *</label>
+                        <input type="text" id="server" name="server" required 
+                               placeholder="例: imap.qq.com">
+                    </div>
+                    <div class="form-group">
+                        <label for="serverSelect">选择服务器</label>
+                        <select id="serverSelect" onchange="selectServer()">
+                            <option value="">选择已有服务器或手动输入</option>
+                        </select>
+                    </div>
                 </div>
                 
-                <!-- 服务器地址 -->
-                <div class="form-group">
-                    <label for="server">服务器地址 *</label>
-                    <select id="serverSelect" onchange="selectServer()">
-                        <option value="">选择已有服务器或手动输入</option>
-                    </select>
-                    <input type="text" id="server" name="server" required 
-                           placeholder="例: imap.qq.com" style="margin-top: 8px;">
+                <!-- 协议和端口同一行 -->
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="protocol">协议 *</label>
+                        <select id="protocol" name="protocol" onchange="updatePortByProtocol()">
+                            <option value="imap">IMAP</option>
+                            <option value="pop3">POP3</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="port">端口 *</label>
+                        <input type="number" id="port" name="port" required 
+                               placeholder="例: 993">
+                    </div>
                 </div>
                 
-                <!-- 端口 -->
-                <div class="form-group">
-                    <label for="port">端口 *</label>
-                    <input type="number" id="port" name="port" required 
-                           placeholder="例: 993">
-                </div>
-                
-                <!-- 协议 -->
-                <div class="form-group">
-                    <label for="protocol">协议 *</label>
-                    <select id="protocol" name="protocol" onchange="updatePortByProtocol()">
-                        <option value="imap">IMAP</option>
-                        <option value="pop3">POP3</option>
-                    </select>
-                </div>
-                
-                <!-- 启用SSL -->
+                <!-- 启用SSL单独一行 -->
                 <div class="form-group">
                     <div class="checkbox-group">
                         <input type="checkbox" id="ssl" name="ssl" checked onchange="updatePortBySSL()">
@@ -750,7 +761,7 @@
                     </div>
                 </div>
                 
-                <!-- 备注 -->
+                <!-- 备注单独一行 -->
                 <div class="form-group">
                     <label for="remarks">备注</label>
                     <input type="text" id="remarks" name="remarks" 
@@ -760,7 +771,7 @@
         </div>
         <div class="modal-footer">
             <button type="button" class="btn" onclick="closeModal()">取消</button>
-            <button type="button" class="btn btn-success" onclick="testMailbox()" id="testBtn" style="display: none;">测试连接</button>
+            <button type="button" class="btn btn-success" onclick="testMailbox()" id="testBtn" style="display: none;">测试邮箱</button>
             <button type="button" class="btn btn-primary" onclick="saveMailbox()">保存</button>
         </div>
     </div>
@@ -775,7 +786,7 @@
         </div>
         <div class="modal-body">
             <form id="batchAddForm">
-                <!-- 批量邮箱内容 -->
+                <!-- 批量邮箱内容一行 -->
                 <div class="form-group">
                     <label for="batchContent">批量邮箱内容 *</label>
                     <textarea id="batchContent" name="batch_content" rows="10" 
@@ -784,33 +795,38 @@
                     <small style="color: #6b7280;">请按照"账号----密码"的格式填写，每行一个账号</small>
                 </div>
                 
-                <!-- 服务器地址 -->
-                <div class="form-group">
-                    <label for="batchServerSelect">服务器地址 *</label>
-                    <select id="batchServerSelect" onchange="selectBatchServer()">
-                        <option value="">选择已有服务器或手动输入</option>
-                    </select>
-                    <input type="text" id="batchServer" name="server" required 
-                           placeholder="例: imap.qq.com" style="margin-top: 8px;">
+                <!-- 服务器地址和选择服务器一行 -->
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="batchServer">服务器地址 *</label>
+                        <input type="text" id="batchServer" name="server" required 
+                               placeholder="例: imap.qq.com">
+                    </div>
+                    <div class="form-group">
+                        <label for="batchServerSelect">选择服务器</label>
+                        <select id="batchServerSelect" onchange="selectBatchServer()">
+                            <option value="">选择已有服务器或手动输入</option>
+                        </select>
+                    </div>
                 </div>
                 
-                <!-- 端口 -->
-                <div class="form-group">
-                    <label for="batchPort">端口 *</label>
-                    <input type="number" id="batchPort" name="port" required 
-                           placeholder="例: 993">
+                <!-- 协议和端口一行 -->
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="batchProtocol">协议 *</label>
+                        <select id="batchProtocol" name="protocol" onchange="updateBatchPortByProtocol()">
+                            <option value="imap">IMAP</option>
+                            <option value="pop3">POP3</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="batchPort">端口 *</label>
+                        <input type="number" id="batchPort" name="port" required 
+                               placeholder="例: 993">
+                    </div>
                 </div>
                 
-                <!-- 协议 -->
-                <div class="form-group">
-                    <label for="batchProtocol">协议 *</label>
-                    <select id="batchProtocol" name="protocol" onchange="updateBatchPortByProtocol()">
-                        <option value="imap">IMAP</option>
-                        <option value="pop3">POP3</option>
-                    </select>
-                </div>
-                
-                <!-- 启用SSL -->
+                <!-- 启用SSL单独一行 -->
                 <div class="form-group">
                     <div class="checkbox-group">
                         <input type="checkbox" id="batchSsl" name="ssl" checked onchange="updateBatchPortBySSL()">
@@ -818,7 +834,7 @@
                     </div>
                 </div>
                 
-                <!-- 备注 -->
+                <!-- 备注单独一行 -->
                 <div class="form-group">
                     <label for="batchRemarks">备注</label>
                     <input type="text" id="batchRemarks" name="remarks" 
@@ -1518,7 +1534,7 @@
         }
     }
     
-    // 渲染服务器列表
+    // 渲染服务器列表 - 布局：序号ID，服务器名称，服务器地址
     function renderServerList(serverList) {
         const container = document.getElementById('serverList');
         container.innerHTML = '';
@@ -1534,8 +1550,9 @@
             item.innerHTML = `
                 <input type="checkbox" class="server-checkbox" value="${server.id}" onchange="toggleServerSelection(${server.id})" style="margin-right: 10px;">
                 <div class="server-info">
+                    <div class="server-id">ID: ${server.id}</div>
                     <div class="server-name">${escapeHtml(server.server_name)}</div>
-                    <div class="server-address">${escapeHtml(server.server_address)} (IMAP:${server.default_port_imap}, POP3:${server.default_port_pop3})</div>
+                    <div class="server-address">${escapeHtml(server.server_address)}</div>
                 </div>
                 <div class="server-actions">
                     <button class="btn btn-success btn-small" onclick="editServer(${server.id})">编辑</button>

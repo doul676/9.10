@@ -30,15 +30,15 @@ CREATE TABLE IF NOT EXISTS server_addresses (
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
--- 插入默认服务器配置
-INSERT OR IGNORE INTO server_addresses (server_name, server_address, default_port_imap, default_port_pop3, ssl_enabled, remarks) VALUES 
-('QQ邮箱', 'imap.qq.com', 993, 995, 1, 'QQ邮箱官方服务器'),
-('163邮箱', 'imap.163.com', 993, 995, 1, '网易163邮箱服务器'),
-('Gmail', 'imap.gmail.com', 993, 995, 1, 'Google Gmail服务器'),
-('Outlook', 'outlook.office365.com', 993, 995, 1, 'Microsoft Outlook服务器'),
-('Yahoo', 'imap.mail.yahoo.com', 993, 995, 1, 'Yahoo邮箱服务器'),
-('126邮箱', 'imap.126.com', 993, 995, 1, '网易126邮箱服务器'),
-('新浪邮箱', 'imap.sina.com', 993, 995, 1, '新浪邮箱服务器');
+-- 插入默认服务器配置 (已移除 - 根据需求去掉所有默认的服务器地址)
+-- INSERT OR IGNORE INTO server_addresses (server_name, server_address, default_port_imap, default_port_pop3, ssl_enabled, remarks) VALUES 
+-- ('QQ邮箱', 'imap.qq.com', 993, 995, 1, 'QQ邮箱官方服务器'),
+-- ('163邮箱', 'imap.163.com', 993, 995, 1, '网易163邮箱服务器'),
+-- ('Gmail', 'imap.gmail.com', 993, 995, 1, 'Google Gmail服务器'),
+-- ('Outlook', 'outlook.office365.com', 993, 995, 1, 'Microsoft Outlook服务器'),
+-- ('Yahoo', 'imap.mail.yahoo.com', 993, 995, 1, 'Yahoo邮箱服务器'),
+-- ('126邮箱', 'imap.126.com', 993, 995, 1, '网易126邮箱服务器'),
+-- ('新浪邮箱', 'imap.sina.com', 993, 995, 1, '新浪邮箱服务器');
 
 -- HTTP代理管理表
 CREATE TABLE IF NOT EXISTS http_proxies (
