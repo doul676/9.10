@@ -62,6 +62,23 @@ CREATE TABLE IF NOT EXISTS socks5_proxies (
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
+-- 全局代理配置表
+CREATE TABLE IF NOT EXISTS proxy_config (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    config_key TEXT NOT NULL UNIQUE,
+    config_value TEXT NOT NULL,
+    description TEXT DEFAULT '',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 插入默认代理配置
+INSERT OR IGNORE INTO proxy_config (config_key, config_value, description) VALUES 
+('proxy_enabled', '0', '全局代理启用状态'),
+('active_proxy_type', '', '当前激活的代理类型 (http/socks5)'),
+('active_proxy_id', '0', '当前激活的代理ID'),
+('proxy_timeout', '30', '代理连接超时时间（秒）');
+
 -- 创建索引
 CREATE INDEX IF NOT EXISTS idx_mail_accounts_email ON mail_accounts(email);
 CREATE INDEX IF NOT EXISTS idx_mail_accounts_created_at ON mail_accounts(created_at);
@@ -71,3 +88,4 @@ CREATE INDEX IF NOT EXISTS idx_http_proxies_host_port ON http_proxies(host, port
 CREATE INDEX IF NOT EXISTS idx_http_proxies_status ON http_proxies(status);
 CREATE INDEX IF NOT EXISTS idx_socks5_proxies_host_port ON socks5_proxies(host, port);
 CREATE INDEX IF NOT EXISTS idx_socks5_proxies_status ON socks5_proxies(status);
+CREATE INDEX IF NOT EXISTS idx_proxy_config_key ON proxy_config(config_key);

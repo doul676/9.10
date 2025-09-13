@@ -47,6 +47,15 @@ switch ($action) {
     case 'test_proxy':
         testProxyConnection();
         break;
+    case 'refresh_proxies':
+        refreshProxies();
+        break;
+    case 'toggle_proxy':
+        toggleGlobalProxy();
+        break;
+    case 'get_proxy_status':
+        getGlobalProxyStatus();
+        break;
     default:
         http_response_code(400);
         echo json_encode([
@@ -1223,5 +1232,375 @@ function updateProxyTestResult($name, $host, $port, $proxyType, $success, $respo
         $db->close();
     } catch (Exception $e) {
         error_log('Failed to update proxy test result: ' . $e->getMessage());
+    }
+}
+
+/**
+ * 刷新代理列表
+ */
+function refreshProxies() {
+    try {
+        $db = new SQLite3('../db/mail.sqlite');
+        
+        // 确保代理表存在
+        $db->exec('CREATE TABLE IF NOT EXISTS http_proxies (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            host TEXT NOT NULL,
+            port INTEGER NOT NULL,
+            username TEXT DEFAULT "",
+            password TEXT DEFAULT "",
+            status INTEGER DEFAULT 1,
+            last_check DATETIME DEFAULT NULL,
+            response_time INTEGER DEFAULT 0,
+            success_count INTEGER DEFAULT 0,
+            fail_count INTEGER DEFAULT 0,
+            remarks TEXT DEFAULT "",
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )');
+        
+        $db->exec('CREATE TABLE IF NOT EXISTS socks5_proxies (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            host TEXT NOT NULL,
+            port INTEGER NOT NULL,
+            username TEXT DEFAULT "",
+            password TEXT DEFAULT "",
+            status INTEGER DEFAULT 1,
+            last_check DATETIME DEFAULT NULL,
+            response_time INTEGER DEFAULT 0,
+            success_count INTEGER DEFAULT 0,
+            fail_count INTEGER DEFAULT 0,
+            remarks TEXT DEFAULT "",
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )');
+        
+        // 确保全局代理配置表存在
+        $db->exec('CREATE TABLE IF NOT EXISTS proxy_config (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            config_key TEXT NOT NULL UNIQUE,
+            config_value TEXT NOT NULL,
+            description TEXT DEFAULT "",
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )');
+        
+        // 插入默认代理配置（如果不存在）
+        $db->exec("INSERT OR IGNORE INTO proxy_config (config_key, config_value, description) VALUES 
+            ('proxy_enabled', '0', '全局代理启用状态'),
+            ('active_proxy_type', '', '当前激活的代理类型 (http/socks5)'),
+            ('active_proxy_id', '0', '当前激活的代理ID'),
+            ('proxy_timeout', '30', '代理连接超时时间（秒）')");
+        
+        $allProxies = [];
+        
+        // 获取HTTP代理并添加类型标识
+        $result = $db->query('SELECT *, "http" as proxy_type FROM http_proxies ORDER BY created_at DESC');
+        while ($row = $result->fetchArray(SQLITE3_ASSOC)) {
+            $allProxies[] = $row;
+        }
+        
+        // 获取SOCKS5代理并添加类型标识
+        $result = $db->query('SELECT *, "socks5" as proxy_type FROM socks5_proxies ORDER BY created_at DESC');
+        while ($row = $result->fetchArray(SQLITE3_ASSOC)) {
+            $allProxies[] = $row;
+        }
+        
+        // 按创建时间排序所有代理
+        usort($allProxies, function($a, $b) {
+            return strtotime($b['created_at']) - strtotime($a['created_at']);
+        });
+        
+        // 获取全局代理状态
+        $proxyStatus = [];
+        $statusResult = $db->query("SELECT config_key, config_value FROM proxy_config WHERE config_key IN ('proxy_enabled', 'active_proxy_type', 'active_proxy_id')");
+        while ($row = $statusResult->fetchArray(SQLITE3_ASSOC)) {
+            $proxyStatus[$row['config_key']] = $row['config_value'];
+        }
+        
+        $db->close();
+        
+        // 统计信息
+        $httpCount = count(array_filter($allProxies, function($proxy) { return $proxy['proxy_type'] === 'http'; }));
+        $socks5Count = count(array_filter($allProxies, function($proxy) { return $proxy['proxy_type'] === 'socks5'; }));
+        
+        echo json_encode([
+            'success' => true,
+            'proxies' => $allProxies,
+            'counts' => [
+                'total' => count($allProxies),
+                'http' => $httpCount,
+                'socks5' => $socks5Count
+            ],
+            'globalStatus' => $proxyStatus,
+            'timestamp' => date('Y-m-d H:i:s')
+        ]);
+        
+    } catch (Exception $e) {
+        echo json_encode([
+            'success' => false,
+            'message' => '刷新代理列表失败：' . $e->getMessage()
+        ]);
+    }
+}
+
+/**
+ * 切换全局代理状态
+ */
+function toggleGlobalProxy() {
+    if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+        http_response_code(405);
+        echo json_encode([
+            'success' => false,
+            'message' => '只允许POST请求'
+        ]);
+        exit();
+    }
+    
+    try {
+        $db = new SQLite3('../db/mail.sqlite');
+        
+        // 确保全局代理配置表存在
+        $db->exec('CREATE TABLE IF NOT EXISTS proxy_config (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            config_key TEXT NOT NULL UNIQUE,
+            config_value TEXT NOT NULL,
+            description TEXT DEFAULT "",
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )');
+        
+        // 插入默认代理配置（如果不存在）
+        $db->exec("INSERT OR IGNORE INTO proxy_config (config_key, config_value, description) VALUES 
+            ('proxy_enabled', '0', '全局代理启用状态'),
+            ('active_proxy_type', '', '当前激活的代理类型 (http/socks5)'),
+            ('active_proxy_id', '0', '当前激活的代理ID'),
+            ('proxy_timeout', '30', '代理连接超时时间（秒）')");
+        
+        // 获取当前状态
+        $currentStatus = $db->query("SELECT config_value FROM proxy_config WHERE config_key = 'proxy_enabled'");
+        $currentRow = $currentStatus->fetchArray(SQLITE3_ASSOC);
+        $isEnabled = $currentRow ? (int)$currentRow['config_value'] : 0;
+        
+        $action = $_POST['action'] ?? 'toggle';
+        $proxyType = $_POST['proxy_type'] ?? '';
+        $proxyId = (int)($_POST['proxy_id'] ?? 0);
+        
+        $beijingTime = new DateTime('now', new DateTimeZone('Asia/Shanghai'));
+        
+        if ($action === 'enable' && !$isEnabled) {
+            // 启用代理
+            if (empty($proxyType) || $proxyId <= 0) {
+                echo json_encode([
+                    'success' => false,
+                    'message' => '启用代理需要指定代理类型和ID'
+                ]);
+                $db->close();
+                return;
+            }
+            
+            // 验证代理是否存在且状态正常
+            $tableName = $proxyType === 'socks5' ? 'socks5_proxies' : 'http_proxies';
+            $checkProxy = $db->prepare("SELECT id, name, host, port, status FROM {$tableName} WHERE id = ?");
+            $checkProxy->bindValue(1, $proxyId);
+            $proxyResult = $checkProxy->execute();
+            $proxy = $proxyResult->fetchArray(SQLITE3_ASSOC);
+            
+            if (!$proxy) {
+                echo json_encode([
+                    'success' => false,
+                    'message' => '指定的代理不存在'
+                ]);
+                $db->close();
+                return;
+            }
+            
+            if (!$proxy['status']) {
+                echo json_encode([
+                    'success' => false,
+                    'message' => '无法启用状态异常的代理，请先测试代理连接'
+                ]);
+                $db->close();
+                return;
+            }
+            
+            // 更新配置
+            $stmt = $db->prepare("UPDATE proxy_config SET config_value = ?, updated_at = ? WHERE config_key = ?");
+            $stmt->bindValue(1, '1');
+            $stmt->bindValue(2, $beijingTime->format('Y-m-d H:i:s'));
+            $stmt->bindValue(3, 'proxy_enabled');
+            $stmt->execute();
+            
+            $stmt = $db->prepare("UPDATE proxy_config SET config_value = ?, updated_at = ? WHERE config_key = ?");
+            $stmt->bindValue(1, $proxyType);
+            $stmt->bindValue(2, $beijingTime->format('Y-m-d H:i:s'));
+            $stmt->bindValue(3, 'active_proxy_type');
+            $stmt->execute();
+            
+            $stmt = $db->prepare("UPDATE proxy_config SET config_value = ?, updated_at = ? WHERE config_key = ?");
+            $stmt->bindValue(1, (string)$proxyId);
+            $stmt->bindValue(2, $beijingTime->format('Y-m-d H:i:s'));
+            $stmt->bindValue(3, 'active_proxy_id');
+            $stmt->execute();
+            
+            echo json_encode([
+                'success' => true,
+                'message' => "已启用 {$proxy['name']} ({$proxy['host']}:{$proxy['port']}) 代理",
+                'enabled' => true,
+                'activeProxy' => [
+                    'type' => $proxyType,
+                    'id' => $proxyId,
+                    'name' => $proxy['name'],
+                    'host' => $proxy['host'],
+                    'port' => $proxy['port']
+                ]
+            ]);
+            
+        } else if ($action === 'disable' && $isEnabled) {
+            // 禁用代理
+            $stmt = $db->prepare("UPDATE proxy_config SET config_value = ?, updated_at = ? WHERE config_key = ?");
+            $stmt->bindValue(1, '0');
+            $stmt->bindValue(2, $beijingTime->format('Y-m-d H:i:s'));
+            $stmt->bindValue(3, 'proxy_enabled');
+            $stmt->execute();
+            
+            $stmt = $db->prepare("UPDATE proxy_config SET config_value = ?, updated_at = ? WHERE config_key = ?");
+            $stmt->bindValue(1, '');
+            $stmt->bindValue(2, $beijingTime->format('Y-m-d H:i:s'));
+            $stmt->bindValue(3, 'active_proxy_type');
+            $stmt->execute();
+            
+            $stmt = $db->prepare("UPDATE proxy_config SET config_value = ?, updated_at = ? WHERE config_key = ?");
+            $stmt->bindValue(1, '0');
+            $stmt->bindValue(2, $beijingTime->format('Y-m-d H:i:s'));
+            $stmt->bindValue(3, 'active_proxy_id');
+            $stmt->execute();
+            
+            echo json_encode([
+                'success' => true,
+                'message' => '已禁用全局代理',
+                'enabled' => false
+            ]);
+            
+        } else {
+            // 切换状态
+            $newStatus = $isEnabled ? 0 : 1;
+            
+            if ($newStatus === 1) {
+                // 要启用代理，需要指定代理
+                if (empty($proxyType) || $proxyId <= 0) {
+                    echo json_encode([
+                        'success' => false,
+                        'message' => '启用代理需要指定代理类型和ID'
+                    ]);
+                    $db->close();
+                    return;
+                }
+            }
+            
+            $stmt = $db->prepare("UPDATE proxy_config SET config_value = ?, updated_at = ? WHERE config_key = ?");
+            $stmt->bindValue(1, (string)$newStatus);
+            $stmt->bindValue(2, $beijingTime->format('Y-m-d H:i:s'));
+            $stmt->bindValue(3, 'proxy_enabled');
+            $stmt->execute();
+            
+            if ($newStatus === 1) {
+                $stmt = $db->prepare("UPDATE proxy_config SET config_value = ?, updated_at = ? WHERE config_key = ?");
+                $stmt->bindValue(1, $proxyType);
+                $stmt->bindValue(2, $beijingTime->format('Y-m-d H:i:s'));
+                $stmt->bindValue(3, 'active_proxy_type');
+                $stmt->execute();
+                
+                $stmt = $db->prepare("UPDATE proxy_config SET config_value = ?, updated_at = ? WHERE config_key = ?");
+                $stmt->bindValue(1, (string)$proxyId);
+                $stmt->bindValue(2, $beijingTime->format('Y-m-d H:i:s'));
+                $stmt->bindValue(3, 'active_proxy_id');
+                $stmt->execute();
+            }
+            
+            echo json_encode([
+                'success' => true,
+                'message' => $newStatus ? '代理已启用' : '代理已禁用',
+                'enabled' => (bool)$newStatus
+            ]);
+        }
+        
+        $db->close();
+        
+    } catch (Exception $e) {
+        echo json_encode([
+            'success' => false,
+            'message' => '切换代理状态失败：' . $e->getMessage()
+        ]);
+    }
+}
+
+/**
+ * 获取全局代理状态
+ */
+function getGlobalProxyStatus() {
+    try {
+        $db = new SQLite3('../db/mail.sqlite');
+        
+        // 确保全局代理配置表存在
+        $db->exec('CREATE TABLE IF NOT EXISTS proxy_config (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            config_key TEXT NOT NULL UNIQUE,
+            config_value TEXT NOT NULL,
+            description TEXT DEFAULT "",
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )');
+        
+        // 插入默认代理配置（如果不存在）
+        $db->exec("INSERT OR IGNORE INTO proxy_config (config_key, config_value, description) VALUES 
+            ('proxy_enabled', '0', '全局代理启用状态'),
+            ('active_proxy_type', '', '当前激活的代理类型 (http/socks5)'),
+            ('active_proxy_id', '0', '当前激活的代理ID'),
+            ('proxy_timeout', '30', '代理连接超时时间（秒）')");
+        
+        // 获取代理配置
+        $config = [];
+        $result = $db->query("SELECT config_key, config_value FROM proxy_config");
+        while ($row = $result->fetchArray(SQLITE3_ASSOC)) {
+            $config[$row['config_key']] = $row['config_value'];
+        }
+        
+        $activeProxy = null;
+        
+        // 如果代理已启用，获取活动代理详情
+        if (isset($config['proxy_enabled']) && $config['proxy_enabled'] === '1') {
+            $proxyType = $config['active_proxy_type'] ?? '';
+            $proxyId = (int)($config['active_proxy_id'] ?? 0);
+            
+            if (!empty($proxyType) && $proxyId > 0) {
+                $tableName = $proxyType === 'socks5' ? 'socks5_proxies' : 'http_proxies';
+                $stmt = $db->prepare("SELECT id, name, host, port, status FROM {$tableName} WHERE id = ?");
+                $stmt->bindValue(1, $proxyId);
+                $proxyResult = $stmt->execute();
+                $activeProxy = $proxyResult->fetchArray(SQLITE3_ASSOC);
+                
+                if ($activeProxy) {
+                    $activeProxy['proxy_type'] = $proxyType;
+                }
+            }
+        }
+        
+        $db->close();
+        
+        echo json_encode([
+            'success' => true,
+            'enabled' => isset($config['proxy_enabled']) && $config['proxy_enabled'] === '1',
+            'config' => $config,
+            'activeProxy' => $activeProxy
+        ]);
+        
+    } catch (Exception $e) {
+        echo json_encode([
+            'success' => false,
+            'message' => '获取代理状态失败：' . $e->getMessage()
+        ]);
     }
 }
