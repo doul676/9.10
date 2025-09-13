@@ -4,11 +4,409 @@
 
 {% block head %}
 <style>
-    /* 基础样式将在完善时添加 */
+    * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+    }
+    
+    :root {
+        --primary-color: #667eea;
+        --secondary-color: #764ba2;
+        --sidebar-width: 280px;
+        --header-height: 70px;
+        --transition: all 0.3s ease;
+    }
+    
+    body {
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        background: #f8fafc;
+        line-height: 1.6;
+        color: #334155;
+        transition: var(--transition);
+    }
+    
+    /* Sidebar Styles */
+    .sidebar {
+        position: fixed;
+        left: 0;
+        top: 0;
+        width: var(--sidebar-width);
+        height: 100vh;
+        background: linear-gradient(135deg, var(--primary-color) 0%, var(--secondary-color) 100%);
+        z-index: 1000;
+        transition: var(--transition);
+        box-shadow: 4px 0 15px rgba(0,0,0,0.1);
+    }
+    
+    .sidebar-header {
+        padding: 20px;
+        border-bottom: 1px solid rgba(255,255,255,0.1);
+    }
+    
+    .sidebar-logo {
+        color: white;
+        font-size: 20px;
+        font-weight: 700;
+        text-align: center;
+        text-shadow: 0 2px 4px rgba(0,0,0,0.3);
+    }
+    
+    .sidebar-nav {
+        padding: 20px 0;
+    }
+    
+    .nav-item {
+        display: block;
+        color: rgba(255,255,255,0.8);
+        text-decoration: none;
+        padding: 15px 25px;
+        transition: var(--transition);
+        border-left: 3px solid transparent;
+        position: relative;
+        overflow: hidden;
+    }
+    
+    .nav-item::before {
+        content: '';
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(255,255,255,0.1);
+        transform: translateX(-100%);
+        transition: var(--transition);
+    }
+    
+    .nav-item:hover::before {
+        transform: translateX(0);
+    }
+    
+    .nav-item:hover,
+    .nav-item.active {
+        color: white;
+        background: rgba(255,255,255,0.15);
+        border-left-color: white;
+        transform: translateX(5px);
+    }
+    
+    .nav-item i {
+        margin-right: 10px;
+        width: 20px;
+        text-align: center;
+    }
+    
+    /* Main Content */
+    .main-content {
+        margin-left: var(--sidebar-width);
+        min-height: 100vh;
+        transition: var(--transition);
+    }
+    
+    .header {
+        background: white;
+        height: var(--header-height);
+        box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 30px;
+        position: sticky;
+        top: 0;
+        z-index: 999;
+    }
+    
+    .header-title {
+        font-size: 24px;
+        font-weight: 600;
+        color: #1e293b;
+    }
+    
+    .header-actions {
+        display: flex;
+        align-items: center;
+        gap: 20px;
+    }
+    
+    .user-info {
+        display: flex;
+        align-items: center;
+        gap: 15px;
+        color: #64748b;
+    }
+    
+    .logout-btn {
+        background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+        color: white;
+        text-decoration: none;
+        padding: 8px 16px;
+        border-radius: 8px;
+        font-size: 14px;
+        font-weight: 500;
+        transition: var(--transition);
+    }
+    
+    .logout-btn:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 5px 15px rgba(239, 68, 68, 0.3);
+    }
+    
+    /* Content Area */
+    .content {
+        padding: 30px;
+    }
+    
+    /* Cards */
+    .card {
+        background: white;
+        border-radius: 15px;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.05), 0 1px 3px rgba(0,0,0,0.1);
+        overflow: hidden;
+        margin-bottom: 25px;
+        transition: var(--transition);
+    }
+    
+    .card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 25px rgba(0,0,0,0.1), 0 4px 10px rgba(0,0,0,0.06);
+    }
+    
+    .card-header {
+        padding: 20px 25px;
+        border-bottom: 1px solid #f1f5f9;
+        background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+    
+    .card-title {
+        font-size: 18px;
+        font-weight: 600;
+        color: #1e293b;
+        margin: 0;
+    }
+    
+    .card-body {
+        padding: 25px;
+    }
+    
+    .settings-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+        gap: 25px;
+    }
+    
+    .setting-group {
+        background: #f8fafc;
+        border-radius: 12px;
+        padding: 20px;
+        border: 1px solid #e5e7eb;
+    }
+    
+    .setting-group h4 {
+        color: #1e293b;
+        font-size: 16px;
+        font-weight: 600;
+        margin-bottom: 15px;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+    
+    .setting-group-icon {
+        font-size: 18px;
+        color: var(--primary-color);
+    }
+    
+    .form-group {
+        margin-bottom: 20px;
+    }
+    
+    .form-group label {
+        display: block;
+        margin-bottom: 8px;
+        color: #374151;
+        font-weight: 500;
+        font-size: 14px;
+    }
+    
+    .form-group input,
+    .form-group select,
+    .form-group textarea {
+        width: 100%;
+        padding: 12px 16px;
+        border: 2px solid #e5e7eb;
+        border-radius: 8px;
+        font-size: 14px;
+        transition: var(--transition);
+    }
+    
+    .form-group input:focus,
+    .form-group select:focus,
+    .form-group textarea:focus {
+        outline: none;
+        border-color: var(--primary-color);
+        box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+    }
+    
+    .form-group textarea {
+        min-height: 100px;
+        resize: vertical;
+    }
+    
+    .checkbox-group {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 15px;
+    }
+    
+    .checkbox-group input[type="checkbox"] {
+        width: auto;
+    }
+    
+    .checkbox-group label {
+        margin: 0;
+        font-size: 14px;
+    }
+    
+    .btn {
+        padding: 12px 20px;
+        border: none;
+        border-radius: 8px;
+        font-size: 14px;
+        font-weight: 500;
+        cursor: pointer;
+        transition: var(--transition);
+        text-decoration: none;
+        display: inline-block;
+    }
+    
+    .btn-primary {
+        background: linear-gradient(135deg, var(--primary-color) 0%, var(--secondary-color) 100%);
+        color: white;
+    }
+    
+    .btn-primary:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 5px 15px rgba(102, 126, 234, 0.3);
+    }
+    
+    .btn-danger {
+        background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+        color: white;
+    }
+    
+    .btn-danger:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 5px 15px rgba(239, 68, 68, 0.3);
+    }
+    
+    .btn-success {
+        background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+        color: white;
+    }
+    
+    .btn-success:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 5px 15px rgba(16, 185, 129, 0.3);
+    }
+    
+    .system-info {
+        background: linear-gradient(135deg, #e0f2fe 0%, #b3e5fc 100%);
+        border: 1px solid #4fc3f7;
+        border-radius: 12px;
+        padding: 20px;
+        margin-bottom: 25px;
+    }
+    
+    .system-info h3 {
+        color: #0277bd;
+        margin-bottom: 15px;
+        font-size: 18px;
+    }
+    
+    .info-row {
+        display: flex;
+        justify-content: space-between;
+        padding: 8px 0;
+        border-bottom: 1px solid rgba(2, 119, 189, 0.1);
+    }
+    
+    .info-row:last-child {
+        border-bottom: none;
+    }
+    
+    .info-label {
+        color: #0277bd;
+        font-weight: 500;
+    }
+    
+    .info-value {
+        color: #01579b;
+        font-weight: 600;
+    }
+    
+    .development-notice {
+        background: linear-gradient(135deg, #fff7ed 0%, #fed7aa 100%);
+        border: 1px solid #fdba74;
+        border-radius: 12px;
+        padding: 20px;
+        margin-top: 20px;
+        text-align: center;
+    }
+    
+    .development-notice h3 {
+        color: #ea580c;
+        margin-bottom: 8px;
+        font-size: 18px;
+    }
+    
+    .development-notice p {
+        color: #9a3412;
+        margin: 0;
+        font-size: 14px;
+    }
+    
+    /* Responsive */
+    @media (max-width: 768px) {
+        .sidebar {
+            transform: translateX(-100%);
+        }
+        
+        .sidebar.mobile-open {
+            transform: translateX(0);
+        }
+        
+        .main-content {
+            margin-left: 0;
+        }
+        
+        .header-title {
+            font-size: 20px;
+        }
+        
+        .content {
+            padding: 20px;
+        }
+        
+        .card-header {
+            flex-direction: column;
+            gap: 15px;
+            align-items: flex-start;
+        }
+        
+        .settings-grid {
+            grid-template-columns: 1fr;
+        }
+    }
 </style>
 {% endblock %}
 
 {% block body %}
+<!-- Sidebar -->
 <div class="sidebar">
     <div class="sidebar-header">
         <div class="sidebar-logo">📧 邮件管理系统</div>
@@ -38,6 +436,7 @@
     </nav>
 </div>
 
+<!-- Main Content -->
 <div class="main-content">
     <div class="header">
         <h1 class="header-title">系统设置</h1>
@@ -50,13 +449,149 @@
     </div>
     
     <div class="content">
+        <!-- 系统信息 -->
+        <div class="system-info">
+            <h3>🖥️ 系统信息</h3>
+            <div class="info-row">
+                <span class="info-label">系统版本</span>
+                <span class="info-value">v2.0.0</span>
+            </div>
+            <div class="info-row">
+                <span class="info-label">Python版本</span>
+                <span class="info-value">3.x</span>
+            </div>
+            <div class="info-row">
+                <span class="info-label">Flask版本</span>
+                <span class="info-value">3.x</span>
+            </div>
+            <div class="info-row">
+                <span class="info-label">数据库类型</span>
+                <span class="info-value">SQLite</span>
+            </div>
+            <div class="info-row">
+                <span class="info-label">运行时间</span>
+                <span class="info-value">计算中...</span>
+            </div>
+        </div>
+
         <div class="card">
             <div class="card-header">
                 <h2 class="card-title">系统配置</h2>
             </div>
             <div class="card-body">
-                <p>系统设置功能正在开发中...</p>
-                <p>将包含管理员密码修改、系统参数配置等功能。</p>
+                <div class="settings-grid">
+                    <!-- 基础设置 -->
+                    <div class="setting-group">
+                        <h4>
+                            <span class="setting-group-icon">⚙️</span>
+                            基础设置
+                        </h4>
+                        <div class="form-group">
+                            <label for="siteName">网站名称</label>
+                            <input type="text" id="siteName" value="邮件查看系统" placeholder="网站名称">
+                        </div>
+                        <div class="form-group">
+                            <label for="siteDescription">网站描述</label>
+                            <textarea id="siteDescription" placeholder="网站描述">专业的邮件查看和管理系统</textarea>
+                        </div>
+                        <div class="checkbox-group">
+                            <input type="checkbox" id="enableRegistration" checked>
+                            <label for="enableRegistration">允许用户注册</label>
+                        </div>
+                        <div class="checkbox-group">
+                            <input type="checkbox" id="enableMaintenanceMode">
+                            <label for="enableMaintenanceMode">维护模式</label>
+                        </div>
+                    </div>
+
+                    <!-- 安全设置 -->
+                    <div class="setting-group">
+                        <h4>
+                            <span class="setting-group-icon">🔒</span>
+                            安全设置
+                        </h4>
+                        <div class="form-group">
+                            <label for="sessionTimeout">会话超时(分钟)</label>
+                            <input type="number" id="sessionTimeout" value="30" min="5" max="1440">
+                        </div>
+                        <div class="form-group">
+                            <label for="maxLoginAttempts">最大登录尝试次数</label>
+                            <input type="number" id="maxLoginAttempts" value="5" min="1" max="20">
+                        </div>
+                        <div class="checkbox-group">
+                            <input type="checkbox" id="enableTwoFactor">
+                            <label for="enableTwoFactor">启用双重验证</label>
+                        </div>
+                        <div class="checkbox-group">
+                            <input type="checkbox" id="enableIpWhitelist">
+                            <label for="enableIpWhitelist">启用IP白名单</label>
+                        </div>
+                    </div>
+
+                    <!-- 邮件设置 -->
+                    <div class="setting-group">
+                        <h4>
+                            <span class="setting-group-icon">📧</span>
+                            邮件设置
+                        </h4>
+                        <div class="form-group">
+                            <label for="maxEmailAccounts">最大邮箱账号数</label>
+                            <input type="number" id="maxEmailAccounts" value="100" min="1" max="1000">
+                        </div>
+                        <div class="form-group">
+                            <label for="emailTimeout">邮件连接超时(秒)</label>
+                            <input type="number" id="emailTimeout" value="30" min="5" max="300">
+                        </div>
+                        <div class="checkbox-group">
+                            <input type="checkbox" id="enableAutoCheck" checked>
+                            <label for="enableAutoCheck">启用自动检查邮件</label>
+                        </div>
+                        <div class="checkbox-group">
+                            <input type="checkbox" id="enableEmailCache">
+                            <label for="enableEmailCache">启用邮件缓存</label>
+                        </div>
+                    </div>
+
+                    <!-- 代理设置 -->
+                    <div class="setting-group">
+                        <h4>
+                            <span class="setting-group-icon">🌐</span>
+                            代理设置
+                        </h4>
+                        <div class="form-group">
+                            <label for="defaultProxyType">默认代理类型</label>
+                            <select id="defaultProxyType">
+                                <option value="">不使用代理</option>
+                                <option value="http">HTTP代理</option>
+                                <option value="socks5">SOCKS5代理</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="proxyTimeout">代理连接超时(秒)</label>
+                            <input type="number" id="proxyTimeout" value="10" min="1" max="60">
+                        </div>
+                        <div class="checkbox-group">
+                            <input type="checkbox" id="enableProxyRotation">
+                            <label for="enableProxyRotation">启用代理轮换</label>
+                        </div>
+                        <div class="checkbox-group">
+                            <input type="checkbox" id="enableProxyHealthCheck" checked>
+                            <label for="enableProxyHealthCheck">启用代理健康检查</label>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- 操作按钮 -->
+                <div style="margin-top: 30px; text-align: center; gap: 15px; display: flex; justify-content: center; flex-wrap: wrap;">
+                    <button class="btn btn-primary">💾 保存设置</button>
+                    <button class="btn btn-success">🔄 重启服务</button>
+                    <button class="btn btn-danger">⚠️ 重置设置</button>
+                </div>
+                
+                <div class="development-notice">
+                    <h3>⚙️ 功能开发中</h3>
+                    <p>系统设置功能正在开发中，将提供完整的系统配置管理、安全控制和性能优化选项。</p>
+                </div>
             </div>
         </div>
     </div>
