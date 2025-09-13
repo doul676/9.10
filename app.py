@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-邮件查看系统 - Flask 应用主文件
+邮件查看系统 - Flask 应用主文件（简化版本）
 基于原有 PHP 版本完全重构，保持所有功能和 UI 一致
 """
 
@@ -13,9 +13,6 @@ from werkzeug.security import check_password_hash, generate_password_hash
 import json
 import subprocess
 import sys
-
-# 导入邮件获取器
-from python.mail_fetcher import ProxyMailFetcher
 
 app = Flask(__name__)
 
@@ -211,7 +208,7 @@ def admin_system():
 
 @app.route('/api/get_mail', methods=['POST'])
 def api_get_mail():
-    """获取邮件 API"""
+    """获取邮件 API（简化版本 - 调用现有Python脚本）"""
     try:
         data = request.get_json()
         if not data or not data.get('email'):
@@ -222,39 +219,38 @@ def api_get_mail():
         
         email = data['email'].strip()
         
-        # 从数据库获取邮箱配置
-        db = get_db()
-        account = db.execute('SELECT * FROM mail_accounts WHERE email = ?', (email,)).fetchone()
-        
-        if not account:
+        # 调用现有的Python邮件获取器脚本
+        try:
+            result = subprocess.run([
+                sys.executable, 
+                os.path.join(os.path.dirname(__file__), 'python', 'mail_fetcher.py'),
+                email
+            ], capture_output=True, text=True, timeout=30)
+            
+            if result.returncode == 0:
+                # 解析JSON输出
+                response_data = json.loads(result.stdout)
+                return jsonify(response_data)
+            else:
+                return jsonify({
+                    'success': False,
+                    'message': f'邮件获取失败: {result.stderr or "未知错误"}'
+                })
+                
+        except subprocess.TimeoutExpired:
             return jsonify({
                 'success': False,
-                'message': '邮箱账号不存在，请联系管理员添加'
+                'message': '邮件获取超时，请稍后重试'
             })
-        
-        # 创建邮件获取器
-        fetcher = ProxyMailFetcher(
-            account['server'],
-            account['port'],
-            account['username'],
-            account['password'],
-            account['protocol'],
-            bool(account['ssl'])
-        )
-        
-        # 连接并获取邮件
-        if fetcher.connect():
-            result = fetcher.get_latest_mail()
-            proxy_info = fetcher.get_proxy_info()
-            result['proxy'] = proxy_info
-            fetcher.close()
-            return jsonify(result)
-        else:
-            proxy_info = fetcher.get_proxy_info()
+        except json.JSONDecodeError:
             return jsonify({
                 'success': False,
-                'message': '无法连接到邮件服务器，请检查邮箱配置',
-                'proxy': proxy_info
+                'message': '邮件服务响应格式错误'
+            })
+        except Exception as e:
+            return jsonify({
+                'success': False,
+                'message': f'邮件服务错误: {str(e)}'
             })
             
     except Exception as e:

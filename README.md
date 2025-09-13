@@ -1,84 +1,138 @@
-# 邮件查看系统
+# 邮件查看系统 (Python Flask 版)
 
-一个专为宝塔面板设计的邮件查看项目，支持IMAP/POP3协议，便于查看验证码邮件等内容。
+一个基于 Python Flask 框架开发的邮件查看系统，支持IMAP/POP3协议，便于查看验证码邮件等内容。
 
 ## 项目特性
 
+- 🐍 **Python Flask**：现代化的 Python Web 框架，易于维护和扩展
 - 🌐 **前端界面**：简洁的邮件查看界面，用户只需输入邮箱即可查看最新邮件
 - 🔧 **后台管理**：完整的管理员控制面板，支持邮箱账号的增删改查
 - 📧 **多协议支持**：支持IMAP和POP3协议，可选择SSL安全连接
+- 🌐 **代理支持**：集成HTTP和SOCKS5代理池，支持代理连接
 - 🗄️ **SQLite数据库**：轻量级数据库，无需复杂配置
 - 🛡️ **安全性**：管理员登录验证，密码加密存储
 - 📱 **响应式设计**：支持PC和移动端访问
+- 🎨 **美观界面**：渐变背景、动画效果、主题切换
+
+## 技术栈
+
+- **后端**：Python 3.12+、Flask 3.0+
+- **前端**：HTML5、CSS3、JavaScript (ES6+)
+- **数据库**：SQLite3
+- **邮件处理**：imapclient、requests
+- **代理支持**：pysocks、socks
 
 ## 目录结构
 
 ```
 邮件查看系统/
-├── frontend/                 # 前端文件
-│   └── index.html            # 用户邮件查看页面
-├── admin/                    # 后端文件
-│   ├── login.php            # 管理员登录页面
-│   ├── dashboard.php        # 管理员控制面板
-│   ├── init_admin.php       # 管理员初始化脚本
-│   ├── api/                 # API接口
-│   │   └── get_mail.php     # 邮件获取API
-│   └── utils/               # 工具类
-│       └── mail_fetcher.php # 邮件获取工具
-├── db/                      # 数据库文件（自动创建）
-│   ├── admin.sqlite         # 管理员数据库
-│   └── mail.sqlite          # 邮箱账号数据库
-└── README.md               # 项目说明文档
+├── app.py                      # Flask 主应用文件
+├── requirements.txt            # Python 依赖包
+├── templates/                  # Jinja2 模板文件
+│   ├── base.html              # 基础模板
+│   ├── frontend/              # 前端模板
+│   │   └── index.html         # 用户邮件查看页面
+│   └── admin/                 # 后台管理模板
+│       ├── login.html         # 管理员登录页面
+│       ├── home.html          # 管理员首页
+│       ├── mailbox.html       # 邮箱管理页面
+│       ├── daili.html         # 代理池管理页面
+│       ├── kami.html          # 卡密管理页面
+│       ├── kamirizhi.html     # 卡密日志页面
+│       ├── shoujian.html      # 收件日志页面
+│       └── system.html        # 系统设置页面
+├── python/                    # Python 邮件处理模块
+│   ├── mail_fetcher.py        # 邮件获取器（支持代理）
+│   └── requirements.txt       # 邮件模块依赖
+├── db/                        # 数据库文件
+│   ├── init.sql              # 数据库初始化脚本
+│   ├── mail.sqlite           # 主数据库（自动创建）
+│   └── admin.sqlite          # 管理员数据库（自动创建）
+└── README.md                 # 项目说明文档
 ```
 
-## 宝塔面板部署指南
+## 部署指南
 
 ### 1. 环境要求
 
-- **PHP版本**：7.4 或以上
-- **PHP扩展**：必须开启 `IMAP` 扩展
-- **数据库**：SQLite（PHP内置支持）
-- **Web服务器**：Nginx 或 Apache
+- **Python版本**：3.12 或以上
+- **系统**：Linux/Windows/macOS
+- **Web服务器**：可选（Nginx + uWSGI/Gunicorn）
+- **包管理**：pip
 
-### 2. 安装IMAP扩展
+### 2. 安装依赖
 
-在宝塔面板中安装IMAP扩展：
+```bash
+# 安装 Python 依赖
+pip install -r requirements.txt
 
-1. 进入宝塔面板 → 软件商店 → PHP → 设置
-2. 找到"安装扩展"选项
-3. 安装 `IMAP` 扩展
-4. 重启PHP服务
+# 如果使用 Ubuntu/Debian 系统，可以使用 apt 安装
+sudo apt install python3-flask python3-flask-session
 
-### 3. 上传项目文件
-
-1. 将所有项目文件上传到网站根目录
-2. 确保文件权限正确（推荐755）
-3. 确保 `db/` 目录有写入权限（推荐777）
-
-### 4. 初始化管理员账号
-
-访问 `http://你的域名/admin/init_admin.php` 进行初始化
-
-初始化成功后会显示：
-```
-管理员账号初始化成功！
-默认账号: admin
-默认密码: admin
-请访问 login.php 进行登录
+# 安装邮件处理依赖
+pip install imapclient requests pysocks charset-normalizer
 ```
 
-### 5. 配置网站设置
+### 3. 部署步骤
 
-在宝塔面板中设置：
+1. **克隆项目**
+   ```bash
+   git clone <repository-url>
+   cd 邮件查看系统
+   ```
 
-1. **网站设置** → **默认文档**：添加 `index.html`
-2. **网站设置** → **伪静态**：如需要可设置
-3. **网站设置** → **SSL**：建议开启HTTPS
+2. **安装依赖**
+   ```bash
+   pip install -r requirements.txt
+   ```
 
-### 6. 测试访问
+3. **初始化数据库**
+   ```bash
+   # Flask 应用启动时会自动创建数据库和表
+   python3 app.py
+   ```
 
-- 前端页面：`http://你的域名/`
-- 管理后台：`http://你的域名/admin`
+4. **配置管理员账号**
+   - 默认管理员账号：`admin`
+   - 默认密码：`admin`
+   - 首次登录后请修改密码
+
+### 4. 启动应用
+
+#### 开发环境
+```bash
+python3 app.py
+```
+访问：`http://localhost:5000`
+
+#### 生产环境
+```bash
+# 使用 Gunicorn
+pip install gunicorn
+gunicorn -w 4 -b 0.0.0.0:5000 app:app
+
+# 使用 uWSGI
+pip install uwsgi
+uwsgi --http :5000 --wsgi-file app.py --callable app
+```
+
+### 5. 配置反向代理（可选）
+
+**Nginx 配置示例**：
+```nginx
+server {
+    listen 80;
+    server_name your-domain.com;
+
+    location / {
+        proxy_pass http://127.0.0.1:5000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+```
 
 ## 使用说明
 
@@ -90,7 +144,7 @@
    - 登录后建议修改密码
 
 2. **添加邮箱账号**
-   - 在控制面板中填写邮箱信息
+   - 在邮箱管理页面填写邮箱信息
    - 支持IMAP和POP3协议
    - 可选择是否启用SSL
 
@@ -117,111 +171,144 @@
    - SSL：开启
    - 密码：应用专用密码
 
+4. **代理池配置**
+   - 支持HTTP和SOCKS5代理
+   - 可配置多个代理服务器
+   - 自动故障切换和负载均衡
+
 ### 用户操作
 
 1. **查看邮件**
-   - 访问前端页面 `http://你的域名/`
+   - 访问首页 `http://你的域名/`
    - 输入已添加的邮箱地址
    - 点击"获取邮件"查看最新邮件
 
-## 数据库说明
+## API 接口
 
-### admin.sqlite（管理员数据库）
+### 邮件获取 API
+```http
+POST /api/get_mail
+Content-Type: application/json
 
-```sql
-CREATE TABLE admins (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    username TEXT UNIQUE NOT NULL,
-    password TEXT NOT NULL,           -- 加密后的密码
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-);
+{
+    "email": "user@example.com"
+}
 ```
 
-### mail.sqlite（邮箱数据库）
+### 邮箱管理 API
+```http
+# 获取邮箱列表
+GET /admin/api/mailbox
 
+# 添加邮箱
+POST /admin/api/mailbox
+{
+    "action": "add",
+    "email": "user@example.com",
+    "password": "password",
+    "server": "imap.example.com",
+    "port": 993,
+    "protocol": "imap",
+    "ssl": true,
+    "remarks": "备注"
+}
+
+# 删除邮箱
+DELETE /admin/api/mailbox
+{
+    "id": 1
+}
+```
+
+## 数据库结构
+
+### mail_accounts（邮箱账号表）
 ```sql
 CREATE TABLE mail_accounts (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    email TEXT NOT NULL,              -- 邮箱地址
-    username TEXT NOT NULL,           -- 登录用户名
-    password TEXT NOT NULL,           -- 邮箱密码/授权码
-    server TEXT NOT NULL,             -- 邮件服务器地址
-    port INTEGER NOT NULL,            -- 端口号
-    protocol TEXT NOT NULL,           -- imap 或 pop3
-    ssl BOOLEAN DEFAULT 0,            -- 是否启用SSL
+    email TEXT NOT NULL UNIQUE,
+    username TEXT NOT NULL,
+    password TEXT NOT NULL,
+    server TEXT NOT NULL,
+    port INTEGER NOT NULL,
+    protocol TEXT NOT NULL DEFAULT 'imap',
+    ssl INTEGER NOT NULL DEFAULT 1,
+    remarks TEXT DEFAULT '',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 ```
 
+### admin_users（管理员表）
+```sql
+CREATE TABLE admin_users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    username TEXT NOT NULL UNIQUE,
+    password TEXT NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+```
+
 ## 常见问题
 
-### 1. IMAP扩展未安装
-
-**错误信息**：`IMAP扩展功能不完整` 或 `PHP IMAP 扩展未安装`
-
-**新增诊断功能**：系统现在会自动检测：
-- 扩展是否已加载
-- 所有9个核心IMAP函数是否可用
-- CLI和Web环境配置差异
-- 具体的错误类型和解决方案
+### 1. Python 依赖安装失败
 
 **解决方法**：
-1. 宝塔面板 → PHP → 安装扩展 → IMAP
-2. 重启PHP服务
-3. 使用新增的IMAP诊断页面验证安装状态
+1. 更新 pip：`pip install --upgrade pip`
+2. 使用清华源：`pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple`
+3. 系统包安装：`sudo apt install python3-flask python3-flask-session`
 
-**诊断工具**：访问 `admin/imap_diagnostic.php` 获取详细的扩展状态报告
-
-### 2. 数据库文件权限问题
-
-**错误信息**：`数据库连接失败`
-
-**解决方法**：
-1. 设置 `db/` 目录权限为 777
-2. 确保 `db/` 目录存在且可写
-
-### 3. 邮箱连接失败
+### 2. 邮箱连接失败
 
 **常见原因**：
 1. 未开启IMAP/POP3服务
 2. 密码错误（需要使用授权码）
 3. 服务器地址或端口错误
 4. SSL设置不正确
-
-**新增功能 - 智能诊断**：
-- 自动检测具体失败原因（SSL证书、认证失败、服务器拒绝等）
-- 提供针对性的解决建议
-- 显示详细的连接参数和错误分类
+5. 防火墙阻止连接
 
 **解决方法**：
 1. 登录邮箱开启IMAP/POP3服务
 2. 获取并使用授权码（不是登录密码）
 3. 检查服务器配置信息
 4. 根据邮箱服务商要求设置SSL
-5. **新增**：使用邮箱管理页面的"测试连接"功能获取详细诊断信息
+5. 检查网络和防火墙设置
 
-### 4. 前端无法访问API
-
-**可能原因**：
-1. 跨域问题
-2. 文件路径不正确
+### 3. 代理连接问题
 
 **解决方法**：
-1. 确保API文件路径正确
-2. 检查服务器配置
+1. 验证代理服务器可用性
+2. 检查代理认证信息
+3. 确认代理协议类型（HTTP/SOCKS5）
+4. 测试代理连接
+
+### 4. 权限问题
+
+**解决方法**：
+1. 确保数据库文件有写权限
+2. 检查 `db/` 目录权限
+3. 确保 Flask 应用有文件系统访问权限
 
 ## 安全建议
 
 1. **修改默认密码**：登录后立即修改管理员密码
 2. **使用HTTPS**：生产环境建议开启SSL证书
 3. **定期备份**：定期备份 `db/` 目录下的数据库文件
-4. **访问控制**：可通过宝塔面板设置IP白名单
+4. **访问控制**：配置防火墙和访问控制列表
 5. **邮箱授权码**：使用专门的授权码，不要使用邮箱登录密码
+6. **更新依赖**：定期更新 Python 依赖包
 
-## 更新说明
+## 更新日志
 
-### 版本 1.0.0
+### 版本 2.0.0 (Python Flask 版)
+- 完全重写为 Python Flask 应用
+- 保持与原PHP版本完全一致的UI和功能
+- 新增代理池支持
+- 优化邮件处理性能
+- 改进错误处理和日志记录
+- 响应式设计优化
+
+### 版本 1.0.0 (PHP 版)
 - 支持IMAP/POP3协议
 - 完整的管理员后台
 - 响应式前端界面
@@ -232,12 +319,16 @@ CREATE TABLE mail_accounts (
 
 如遇到问题，请检查：
 
-1. PHP版本和扩展
-2. 文件权限设置
-3. 数据库文件状态
-4. 邮箱服务器配置
-5. 网络连接状况
+1. Python 版本和依赖包
+2. 数据库文件权限
+3. 邮箱服务器配置
+4. 网络连接状况
+5. 防火墙和安全组设置
+
+## 许可证
+
+本项目基于 MIT 许可证开源。
 
 ---
 
-**注意**：本项目专为宝塔面板环境设计，确保按照部署指南正确配置环境。
+**注意**：这是基于 Python Flask 重构的全新版本，保持了与原PHP版本完全一致的界面和功能。
