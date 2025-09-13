@@ -396,6 +396,8 @@
             border-radius: 10px;
             margin-bottom: 20px;
             font-weight: 500;
+            white-space: pre-line;
+            line-height: 1.5;
         }
         
         .message.success {
@@ -666,39 +668,34 @@
                 
                 const data = await response.json();
                 
-                // 显示代理状态信息（使用toast通知）
-                if (data.proxy) {
-                    displayProxyStatusToast(data.proxy);
-                }
-                
                 if (data.success) {
                     if (data.mail) {
                         displayMail(data.mail);
-                        // 组合成功消息包含连接状态
-                        let successMessage = '邮件获取成功';
+                        // 合并邮件获取状态和连接状态为单一通知
+                        let successMessage = '✅ 邮件获取成功';
                         if (data.proxy && data.proxy.enabled && data.proxy.info) {
-                            successMessage += ` (通过代理: ${data.proxy.info.name})`;
+                            successMessage += `\n🔒 连接方式：通过代理 ${data.proxy.info.name} (${data.proxy.info.type.toUpperCase()})`;
                         } else {
-                            successMessage += ' (直连)';
+                            successMessage += '\n🌐 连接方式：直接连接';
                         }
                         showMessage(successMessage, 'success');
                     } else {
-                        // 组合无邮件消息包含连接状态
-                        let noMailMessage = '邮箱中暂无邮件';
+                        // 合并无邮件状态和连接状态为单一通知
+                        let noMailMessage = '📭 邮箱中暂无邮件';
                         if (data.proxy && data.proxy.enabled && data.proxy.info) {
-                            noMailMessage += ` (通过代理: ${data.proxy.info.name})`;
+                            noMailMessage += `\n🔒 连接方式：通过代理 ${data.proxy.info.name} (${data.proxy.info.type.toUpperCase()})`;
                         } else {
-                            noMailMessage += ' (直连)';
+                            noMailMessage += '\n🌐 连接方式：直接连接';
                         }
                         showMessage(noMailMessage, 'info');
                     }
                 } else {
-                    // 组合失败消息包含连接状态
-                    let errorMessage = data.message || '获取邮件失败';
+                    // 合并失败状态和连接状态为单一通知
+                    let errorMessage = `❌ ${data.message || '获取邮件失败'}`;
                     if (data.proxy && data.proxy.enabled && data.proxy.info) {
-                        errorMessage += ` (代理连接: ${data.proxy.info.name})`;
+                        errorMessage += `\n🔒 连接方式：通过代理 ${data.proxy.info.name} (${data.proxy.info.type.toUpperCase()})`;
                     } else {
-                        errorMessage += ' (直连)';
+                        errorMessage += '\n🌐 连接方式：直接连接';
                     }
                     showMessage(errorMessage, 'error');
                 }

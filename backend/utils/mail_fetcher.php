@@ -124,20 +124,40 @@ class MailFetcher {
             } else {
                 $proxyUrl = "http://{$this->proxyInfo['host']}:{$this->proxyInfo['port']}";
             }
-        } else if ($this->proxyInfo['type'] === 'socks5') {
-            if (!empty($this->proxyInfo['username']) && !empty($this->proxyInfo['password'])) {
-                $proxyUrl = "socks5://{$this->proxyInfo['username']}:{$this->proxyInfo['password']}@{$this->proxyInfo['host']}:{$this->proxyInfo['port']}";
-            } else {
-                $proxyUrl = "socks5://{$this->proxyInfo['host']}:{$this->proxyInfo['port']}";
-            }
-        }
-        
-        if ($proxyUrl) {
+            
             // 设置HTTP和HTTPS代理环境变量
             putenv("http_proxy={$proxyUrl}");
             putenv("https_proxy={$proxyUrl}");
             putenv("HTTP_PROXY={$proxyUrl}");
             putenv("HTTPS_PROXY={$proxyUrl}");
+            
+            // 记录代理配置
+            error_log("已配置HTTP代理环境变量: {$proxyUrl}");
+            
+        } else if ($this->proxyInfo['type'] === 'socks5') {
+            // SOCKS5代理环境变量设置
+            if (!empty($this->proxyInfo['username']) && !empty($this->proxyInfo['password'])) {
+                $proxyUrl = "socks5h://{$this->proxyInfo['username']}:{$this->proxyInfo['password']}@{$this->proxyInfo['host']}:{$this->proxyInfo['port']}";
+            } else {
+                $proxyUrl = "socks5h://{$this->proxyInfo['host']}:{$this->proxyInfo['port']}";
+            }
+            
+            // 尝试设置SOCKS代理环境变量
+            putenv("ALL_PROXY={$proxyUrl}");
+            putenv("all_proxy={$proxyUrl}");
+            putenv("http_proxy={$proxyUrl}");
+            putenv("https_proxy={$proxyUrl}");
+            putenv("HTTP_PROXY={$proxyUrl}");
+            putenv("HTTPS_PROXY={$proxyUrl}");
+            
+            // 记录SOCKS5代理配置警告
+            error_log("已配置SOCKS5代理环境变量: {$proxyUrl}");
+            error_log("注意: PHP IMAP扩展对SOCKS5代理支持有限，如果连接失败请尝试使用HTTP代理");
+        }
+        
+        // 设置代理超时
+        if (isset($this->proxyInfo['timeout'])) {
+            putenv("PROXY_TIMEOUT={$this->proxyInfo['timeout']}");
         }
     }
     
@@ -206,6 +226,15 @@ class MailFetcher {
             throw new Exception('PHP IMAP 扩展的 imap_open 函数不可用，可能是扩展安装不完整');
         }
         
+        // 如果启用了SOCKS5代理，尝试使用cURL或其他方法预先测试连接
+        if ($this->proxyEnabled && $this->proxyInfo['type'] === 'socks5') {
+            $preTestResult = $this->preTestProxyConnection();
+            if (!$preTestResult['success']) {
+                throw new Exception("SOCKS5代理连接测试失败: " . $preTestResult['message'] . 
+                    " [建议: 尝试使用HTTP代理或直连模式]");
+            }
+        }
+        
         $flags = '/imap';
         if ($this->ssl) {
             $flags .= '/ssl';
@@ -222,31 +251,104 @@ class MailFetcher {
         // 清除之前的IMAP错误
         imap_errors();
         
+        // 如果使用代理，设置额外的IMAP选项
+        if ($this->proxyEnabled) {
+            // 增加超时时间
+            ini_set('default_socket_timeout', 60);
+        }
+        
         $this->connection = @imap_open($mailbox, $this->username, $this->password);
         
         if (!$this->connection) {
             $errors = imap_errors();
             $lastError = imap_last_error();
             
-            // 提供更具体的错误信息
+            // 提供更具体的错误信息，特别是代理相关的错误
             if ($lastError) {
-                if (strpos($lastError, 'Certificate failure') !== false) {
-                    throw new Exception('SSL证书验证失败，请检查服务器SSL配置或尝试关闭SSL');
-                } elseif (strpos($lastError, 'Connection refused') !== false) {
-                    throw new Exception('连接被拒绝，请检查服务器地址和端口是否正确');
-                } elseif (strpos($lastError, 'Login failed') !== false || strpos($lastError, 'Authentication failed') !== false) {
-                    throw new Exception('邮箱用户名或密码错误，请检查登录凭据');
-                } elseif (strpos($lastError, 'host not found') !== false || strpos($lastError, 'Unknown host') !== false) {
-                    throw new Exception('服务器地址无法解析，请检查服务器地址是否正确');
-                } else {
-                    throw new Exception('IMAP连接失败: ' . $lastError);
-                }
+                $errorMessage = $this->analyzeImapError($lastError);
+                throw new Exception($errorMessage);
             } else {
-                throw new Exception('IMAP连接失败: 未知错误，请检查网络连接和服务器配置');
+                $errorMessage = 'IMAP连接失败: 未知错误，请检查网络连接和服务器配置';
+                if ($this->proxyEnabled) {
+                    $proxyType = $this->proxyInfo['type'];
+                    $errorMessage .= " (当前使用{$proxyType}代理，如果连接失败请尝试关闭代理或使用其他代理类型)";
+                }
+                throw new Exception($errorMessage);
             }
         }
         
         return true;
+    }
+    
+    /**
+     * 预先测试代理连接能力
+     */
+    private function preTestProxyConnection() {
+        if (!$this->proxyEnabled || !$this->proxyInfo) {
+            return ['success' => true];
+        }
+        
+        // 对于SOCKS5代理，尝试简单的连接测试
+        if ($this->proxyInfo['type'] === 'socks5') {
+            // 使用fsockopen测试基本连接能力
+            $timeout = 10;
+            $errno = 0;
+            $errstr = '';
+            
+            // 尝试直接连接到代理服务器
+            $proxySocket = @fsockopen($this->proxyInfo['host'], $this->proxyInfo['port'], $errno, $errstr, $timeout);
+            
+            if (!$proxySocket) {
+                return [
+                    'success' => false,
+                    'message' => "无法连接到SOCKS5代理服务器 {$this->proxyInfo['host']}:{$this->proxyInfo['port']} - {$errstr} ({$errno})"
+                ];
+            }
+            
+            fclose($proxySocket);
+            return ['success' => true];
+        }
+        
+        return ['success' => true];
+    }
+    
+    /**
+     * 分析IMAP错误并提供有用的建议
+     */
+    private function analyzeImapError($lastError) {
+        if (strpos($lastError, 'Certificate failure') !== false) {
+            return 'SSL证书验证失败，请检查服务器SSL配置或尝试关闭SSL';
+        } elseif (strpos($lastError, 'Connection refused') !== false) {
+            $message = '连接被拒绝，请检查服务器地址和端口是否正确';
+            if ($this->proxyEnabled) {
+                $proxyType = $this->proxyInfo['type'];
+                $message .= " (当前使用{$proxyType}代理，请检查代理配置是否正确)";
+            }
+            return $message;
+        } elseif (strpos($lastError, 'Login failed') !== false || strpos($lastError, 'Authentication failed') !== false) {
+            return '邮箱用户名或密码错误，请检查登录凭据';
+        } elseif (strpos($lastError, 'host not found') !== false || strpos($lastError, 'Unknown host') !== false) {
+            $message = '服务器地址无法解析，请检查服务器地址是否正确';
+            if ($this->proxyEnabled) {
+                $proxyType = $this->proxyInfo['type'];
+                $message .= " (当前使用{$proxyType}代理，DNS解析可能受代理影响)";
+            }
+            return $message;
+        } elseif (strpos($lastError, 'Connection timed out') !== false) {
+            $message = '连接超时，请检查网络连接';
+            if ($this->proxyEnabled) {
+                $proxyType = $this->proxyInfo['type'];
+                $message .= " (当前使用{$proxyType}代理，代理可能响应缓慢或不稳定)";
+            }
+            return $message;
+        } else {
+            $message = 'IMAP连接失败: ' . $lastError;
+            if ($this->proxyEnabled) {
+                $proxyType = $this->proxyInfo['type'];
+                $message .= " (当前使用{$proxyType}代理)";
+            }
+            return $message;
+        }
     }
     
     /**
@@ -260,6 +362,15 @@ class MailFetcher {
         
         if (!function_exists('imap_open')) {
             throw new Exception('PHP IMAP 扩展的 imap_open 函数不可用，可能是扩展安装不完整');
+        }
+        
+        // 如果启用了SOCKS5代理，尝试预先测试连接
+        if ($this->proxyEnabled && $this->proxyInfo['type'] === 'socks5') {
+            $preTestResult = $this->preTestProxyConnection();
+            if (!$preTestResult['success']) {
+                throw new Exception("SOCKS5代理连接测试失败: " . $preTestResult['message'] . 
+                    " [建议: 尝试使用HTTP代理或直连模式]");
+            }
         }
         
         $flags = '/pop3';
@@ -278,31 +389,72 @@ class MailFetcher {
         // 清除之前的IMAP错误
         imap_errors();
         
+        // 如果使用代理，设置额外的选项
+        if ($this->proxyEnabled) {
+            // 增加超时时间
+            ini_set('default_socket_timeout', 60);
+        }
+        
         $this->connection = @imap_open($mailbox, $this->username, $this->password);
         
         if (!$this->connection) {
             $errors = imap_errors();
             $lastError = imap_last_error();
             
-            // 提供更具体的错误信息
+            // 提供更具体的错误信息，特别是代理相关的错误
             if ($lastError) {
-                if (strpos($lastError, 'Certificate failure') !== false) {
-                    throw new Exception('SSL证书验证失败，请检查服务器SSL配置或尝试关闭SSL');
-                } elseif (strpos($lastError, 'Connection refused') !== false) {
-                    throw new Exception('连接被拒绝，请检查服务器地址和端口是否正确');
-                } elseif (strpos($lastError, 'Login failed') !== false || strpos($lastError, 'Authentication failed') !== false) {
-                    throw new Exception('邮箱用户名或密码错误，请检查登录凭据');
-                } elseif (strpos($lastError, 'host not found') !== false || strpos($lastError, 'Unknown host') !== false) {
-                    throw new Exception('服务器地址无法解析，请检查服务器地址是否正确');
-                } else {
-                    throw new Exception('POP3连接失败: ' . $lastError);
-                }
+                $errorMessage = $this->analyzePop3Error($lastError);
+                throw new Exception($errorMessage);
             } else {
-                throw new Exception('POP3连接失败: 未知错误，请检查网络连接和服务器配置');
+                $errorMessage = 'POP3连接失败: 未知错误，请检查网络连接和服务器配置';
+                if ($this->proxyEnabled) {
+                    $proxyType = $this->proxyInfo['type'];
+                    $errorMessage .= " (当前使用{$proxyType}代理，如果连接失败请尝试关闭代理或使用其他代理类型)";
+                }
+                throw new Exception($errorMessage);
             }
         }
         
         return true;
+    }
+    
+    /**
+     * 分析POP3错误并提供有用的建议
+     */
+    private function analyzePop3Error($lastError) {
+        if (strpos($lastError, 'Certificate failure') !== false) {
+            return 'SSL证书验证失败，请检查服务器SSL配置或尝试关闭SSL';
+        } elseif (strpos($lastError, 'Connection refused') !== false) {
+            $message = '连接被拒绝，请检查服务器地址和端口是否正确';
+            if ($this->proxyEnabled) {
+                $proxyType = $this->proxyInfo['type'];
+                $message .= " (当前使用{$proxyType}代理，请检查代理配置是否正确)";
+            }
+            return $message;
+        } elseif (strpos($lastError, 'Login failed') !== false || strpos($lastError, 'Authentication failed') !== false) {
+            return '邮箱用户名或密码错误，请检查登录凭据';
+        } elseif (strpos($lastError, 'host not found') !== false || strpos($lastError, 'Unknown host') !== false) {
+            $message = '服务器地址无法解析，请检查服务器地址是否正确';
+            if ($this->proxyEnabled) {
+                $proxyType = $this->proxyInfo['type'];
+                $message .= " (当前使用{$proxyType}代理，DNS解析可能受代理影响)";
+            }
+            return $message;
+        } elseif (strpos($lastError, 'Connection timed out') !== false) {
+            $message = '连接超时，请检查网络连接';
+            if ($this->proxyEnabled) {
+                $proxyType = $this->proxyInfo['type'];
+                $message .= " (当前使用{$proxyType}代理，代理可能响应缓慢或不稳定)";
+            }
+            return $message;
+        } else {
+            $message = 'POP3连接失败: ' . $lastError;
+            if ($this->proxyEnabled) {
+                $proxyType = $this->proxyInfo['type'];
+                $message .= " (当前使用{$proxyType}代理)";
+            }
+            return $message;
+        }
     }
     
     /**
