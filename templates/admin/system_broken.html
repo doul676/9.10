@@ -285,3 +285,37 @@
     console.log('系统设置页面已加载');
 </script>
 {% endblock %}
+        </a>
+        <a href="{{ url_for('admin_shoujian') }}" class="nav-item">
+            <i>📧</i> 收件日志
+        </a>
+        <a href="{{ url_for('admin_system') }}" class="nav-item active">
+            <i>⚙️</i> 系统设置
+        </a>
+    </nav>
+</div>
+
+<div class="main-content">
+    <div class="header">
+        <h1 class="header-title">系统设置</h1>
+        <div class="header-actions">
+            <div class="user-info">
+                <span>欢迎，{{ admin_username }}</span>
+            </div>
+            <a href="{{ url_for('admin_logout') }}" class="logout-btn">退出登录</a>
+        </div>
+    </div>
+    
+    <div class="content">
+        <div class="card">
+            <div class="card-header">
+                <h2 class="card-title">系统配置</h2>
+            </div>
+            <div class="card-body">
+                <p>系统设置功能正在开发中...</p>
+                <p>将包含管理员密码修改、系统参数配置等功能。</p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
