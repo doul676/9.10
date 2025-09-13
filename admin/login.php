@@ -15,13 +15,23 @@ if ($_POST) {
     
     if ($username && $password) {
         try {
-            $db = new SQLite3('../db/admin.sqlite');
-            $stmt = $db->prepare('SELECT * FROM admins WHERE username = ?');
+            $db = new SQLite3('../db/mail.sqlite');
+            
+            // 检查是否存在admin_users表，如果不存在则创建
+            $db->exec('CREATE TABLE IF NOT EXISTS admin_users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT, 
+                username TEXT NOT NULL UNIQUE, 
+                password TEXT NOT NULL, 
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )');
+            
+            $stmt = $db->prepare('SELECT * FROM admin_users WHERE username = ?');
             $stmt->bindValue(1, $username);
             $result = $stmt->execute();
             $admin = $result->fetchArray();
             
-            if ($admin && password_verify($password, $admin['password'])) {
+            // 简单密码验证，在生产环境中应该使用password_hash
+            if ($admin && $admin['password'] === $password) {
                 $_SESSION['admin_logged_in'] = true;
                 $_SESSION['admin_id'] = $admin['id'];
                 $_SESSION['admin_username'] = $admin['username'];
