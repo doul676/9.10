@@ -3,16 +3,529 @@
 {% block title %}代理池管理 - 邮件查看系统{% endblock %}
 
 {% block head %}
-<!-- 这里将复制与 mailbox.html 相同的CSS样式 -->
 <style>
-    /* 与 mailbox.html 相同的基础样式 */
-    /* ... */
-    /* 样式内容将在后续完善时添加 */
+    * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+    }
+    
+    :root {
+        --primary-color: #667eea;
+        --secondary-color: #764ba2;
+        --sidebar-width: 280px;
+        --header-height: 70px;
+        --transition: all 0.3s ease;
+    }
+    
+    body {
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        background: #f8fafc;
+        line-height: 1.6;
+        color: #334155;
+        transition: var(--transition);
+    }
+    
+    /* Sidebar Styles */
+    .sidebar {
+        position: fixed;
+        left: 0;
+        top: 0;
+        width: var(--sidebar-width);
+        height: 100vh;
+        background: linear-gradient(135deg, var(--primary-color) 0%, var(--secondary-color) 100%);
+        z-index: 1000;
+        transition: var(--transition);
+        box-shadow: 4px 0 15px rgba(0,0,0,0.1);
+    }
+    
+    .sidebar-header {
+        padding: 20px;
+        border-bottom: 1px solid rgba(255,255,255,0.1);
+    }
+    
+    .sidebar-logo {
+        color: white;
+        font-size: 20px;
+        font-weight: 700;
+        text-decoration: none;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+    
+    .sidebar-nav {
+        padding: 20px 0;
+    }
+    
+    .nav-item {
+        display: flex;
+        align-items: center;
+        padding: 15px 25px;
+        color: rgba(255,255,255,0.8);
+        text-decoration: none;
+        transition: var(--transition);
+        gap: 15px;
+        font-weight: 500;
+    }
+    
+    .nav-item:hover {
+        background: rgba(255,255,255,0.1);
+        color: white;
+        transform: translateX(5px);
+    }
+    
+    .nav-item.active {
+        background: rgba(255,255,255,0.2);
+        color: white;
+        border-right: 4px solid white;
+    }
+    
+    /* Main Content */
+    .main-content {
+        margin-left: var(--sidebar-width);
+        min-height: 100vh;
+        transition: var(--transition);
+    }
+    
+    .header {
+        background: white;
+        height: var(--header-height);
+        box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 30px;
+        position: sticky;
+        top: 0;
+        z-index: 999;
+    }
+    
+    .header-title {
+        font-size: 24px;
+        font-weight: 600;
+        color: #1e293b;
+    }
+    
+    .header-actions {
+        display: flex;
+        align-items: center;
+        gap: 20px;
+    }
+    
+    .user-info {
+        display: flex;
+        align-items: center;
+        gap: 15px;
+        color: #64748b;
+    }
+    
+    .logout-btn {
+        background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+        color: white;
+        text-decoration: none;
+        padding: 8px 16px;
+        border-radius: 8px;
+        font-size: 14px;
+        font-weight: 500;
+        transition: var(--transition);
+    }
+    
+    .logout-btn:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 5px 15px rgba(239, 68, 68, 0.3);
+    }
+    
+    /* Content Area */
+    .content {
+        padding: 30px;
+    }
+    
+    /* Cards */
+    .card {
+        background: white;
+        border-radius: 15px;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.05), 0 1px 3px rgba(0,0,0,0.1);
+        overflow: hidden;
+        margin-bottom: 25px;
+        transition: var(--transition);
+    }
+    
+    .card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 25px rgba(0,0,0,0.1), 0 4px 10px rgba(0,0,0,0.06);
+    }
+    
+    .card-header {
+        padding: 20px 25px;
+        border-bottom: 1px solid #f1f5f9;
+        background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+    
+    .card-title {
+        font-size: 18px;
+        font-weight: 600;
+        color: #1e293b;
+        margin: 0;
+    }
+    
+    .card-body {
+        padding: 25px;
+    }
+    
+    .btn {
+        padding: 10px 20px;
+        border: none;
+        border-radius: 8px;
+        font-size: 14px;
+        font-weight: 500;
+        cursor: pointer;
+        transition: var(--transition);
+        text-decoration: none;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        text-align: center;
+    }
+    
+    .btn-primary {
+        background: linear-gradient(135deg, var(--primary-color) 0%, var(--secondary-color) 100%);
+        color: white;
+    }
+    
+    .btn-primary:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 5px 15px rgba(102, 126, 234, 0.3);
+    }
+    
+    .btn-success {
+        background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+        color: white;
+    }
+    
+    .btn-success:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 5px 15px rgba(16, 185, 129, 0.3);
+    }
+    
+    .btn-danger {
+        background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+        color: white;
+    }
+    
+    .btn-danger:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 5px 15px rgba(239, 68, 68, 0.3);
+    }
+    
+    .btn-warning {
+        background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+        color: white;
+    }
+    
+    .btn-warning:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 5px 15px rgba(245, 158, 11, 0.3);
+    }
+    
+    /* Form Styles */
+    .form-group {
+        margin-bottom: 20px;
+    }
+    
+    .form-group label {
+        display: block;
+        margin-bottom: 8px;
+        font-weight: 500;
+        color: #374151;
+    }
+    
+    .form-group input,
+    .form-group select,
+    .form-group textarea {
+        width: 100%;
+        padding: 12px 15px;
+        border: 2px solid #e5e7eb;
+        border-radius: 8px;
+        font-size: 14px;
+        transition: var(--transition);
+        background: white;
+    }
+    
+    .form-group input:focus,
+    .form-group select:focus,
+    .form-group textarea:focus {
+        outline: none;
+        border-color: var(--primary-color);
+        box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+    }
+    
+    .checkbox-group {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+    
+    .checkbox-group input[type="checkbox"] {
+        width: auto;
+        margin: 0;
+    }
+    
+    /* Table Styles */
+    .table-container {
+        overflow-x: auto;
+        border-radius: 10px;
+        border: 1px solid #e5e7eb;
+    }
+    
+    table {
+        width: 100%;
+        border-collapse: collapse;
+        background: white;
+    }
+    
+    table th,
+    table td {
+        padding: 15px;
+        text-align: left;
+        border-bottom: 1px solid #f1f5f9;
+    }
+    
+    table th {
+        background: #f8fafc;
+        font-weight: 600;
+        color: #374151;
+        border-bottom: 2px solid #e5e7eb;
+    }
+    
+    table tbody tr:hover {
+        background: #f8fafc;
+    }
+    
+    /* Modal Styles */
+    .modal {
+        display: none;
+        position: fixed;
+        z-index: 2000;
+        left: 0;
+        top: 0;
+        width: 100%;
+        height: 100%;
+        background-color: rgba(0, 0, 0, 0.5);
+        animation: fadeIn 0.3s ease;
+    }
+    
+    .modal.show {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+    
+    .modal-content {
+        background: white;
+        border-radius: 15px;
+        width: 90%;
+        max-width: 600px;
+        max-height: 80vh;
+        overflow-y: auto;
+        animation: slideInUp 0.3s ease;
+    }
+    
+    .modal-header {
+        padding: 20px 25px;
+        border-bottom: 1px solid #e5e7eb;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+    
+    .modal-title {
+        font-size: 18px;
+        font-weight: 600;
+        color: #1e293b;
+    }
+    
+    .modal-close {
+        background: none;
+        border: none;
+        font-size: 24px;
+        cursor: pointer;
+        color: #6b7280;
+    }
+    
+    .modal-close:hover {
+        color: #374151;
+    }
+    
+    .modal-body {
+        padding: 25px;
+    }
+    
+    .modal-footer {
+        padding: 20px 25px;
+        border-top: 1px solid #e5e7eb;
+        display: flex;
+        justify-content: flex-end;
+        gap: 15px;
+    }
+    
+    /* Toast Notifications */
+    .toast-container {
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        z-index: 3000;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        max-width: 400px;
+    }
+    
+    .toast {
+        padding: 15px 20px;
+        border-radius: 10px;
+        color: white;
+        font-weight: 500;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+        transform: translateX(450px);
+        opacity: 0;
+        transition: all 0.3s ease;
+        position: relative;
+        overflow: hidden;
+    }
+    
+    .toast.show {
+        transform: translateX(0);
+        opacity: 1;
+    }
+    
+    .toast.success {
+        background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+    }
+    
+    .toast.error {
+        background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+    }
+    
+    .toast.info {
+        background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+    }
+    
+    /* Proxy Type Tabs */
+    .proxy-tabs {
+        display: flex;
+        margin-bottom: 25px;
+        background: #f1f5f9;
+        border-radius: 10px;
+        padding: 5px;
+    }
+    
+    .proxy-tab {
+        flex: 1;
+        padding: 12px 20px;
+        text-align: center;
+        background: transparent;
+        border: none;
+        border-radius: 8px;
+        cursor: pointer;
+        font-weight: 500;
+        transition: var(--transition);
+        color: #64748b;
+    }
+    
+    .proxy-tab.active {
+        background: white;
+        color: var(--primary-color);
+        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+    
+    /* Status Badge */
+    .status-badge {
+        padding: 4px 12px;
+        border-radius: 20px;
+        font-size: 12px;
+        font-weight: 500;
+        text-transform: uppercase;
+    }
+    
+    .status-badge.active {
+        background: #dcfce7;
+        color: #166534;
+    }
+    
+    .status-badge.inactive {
+        background: #fee2e2;
+        color: #991b1b;
+    }
+    
+    /* Responsive */
+    @media (max-width: 768px) {
+        .sidebar {
+            transform: translateX(-100%);
+        }
+        
+        .sidebar.mobile-open {
+            transform: translateX(0);
+        }
+        
+        .main-content {
+            margin-left: 0;
+        }
+        
+        .header-title {
+            font-size: 20px;
+        }
+        
+        .content {
+            padding: 20px;
+        }
+        
+        .card-header {
+            flex-direction: column;
+            gap: 15px;
+            align-items: flex-start;
+        }
+        
+        .modal-content {
+            width: 95%;
+            margin: 20px;
+        }
+        
+        .table-container {
+            font-size: 12px;
+        }
+        
+        .proxy-tabs {
+            flex-direction: column;
+        }
+    }
+    
+    @keyframes fadeIn {
+        from { opacity: 0; }
+        to { opacity: 1; }
+    }
+    
+    @keyframes slideInUp {
+        from {
+            transform: translate(-50%, -50%) translateY(100px);
+            opacity: 0;
+        }
+        to {
+            transform: translate(-50%, -50%) translateY(0);
+            opacity: 1;
+        }
+    }
 </style>
 {% endblock %}
 
 {% block body %}
-<!-- 代理池管理页面 -->
+<!-- Toast notification container -->
+<div id="toast-container" class="toast-container"></div>
+
+<!-- Sidebar -->
 <div class="sidebar">
     <div class="sidebar-header">
         <div class="sidebar-logo">📧 邮件管理系统</div>
@@ -42,6 +555,7 @@
     </nav>
 </div>
 
+<!-- Main Content -->
 <div class="main-content">
     <div class="header">
         <h1 class="header-title">代理池管理</h1>
@@ -54,15 +568,526 @@
     </div>
     
     <div class="content">
+        <!-- 代理类型选择 -->
         <div class="card">
             <div class="card-header">
-                <h2 class="card-title">代理池功能</h2>
+                <h2 class="card-title">代理管理</h2>
+                <button class="btn btn-primary" onclick="showAddModal()">
+                    ➕ 添加代理
+                </button>
             </div>
             <div class="card-body">
-                <p>代理池管理功能正在开发中...</p>
-                <p>将包含HTTP代理和SOCKS5代理的添加、编辑、删除和测试功能。</p>
+                <div class="proxy-tabs">
+                    <button class="proxy-tab active" data-type="http" onclick="switchProxyType('http')">
+                        HTTP代理
+                    </button>
+                    <button class="proxy-tab" data-type="socks5" onclick="switchProxyType('socks5')">
+                        SOCKS5代理
+                    </button>
+                    <button class="proxy-tab" data-type="config" onclick="switchProxyType('config')">
+                        全局设置
+                    </button>
+                </div>
+                
+                <!-- HTTP代理表格 -->
+                <div id="http-proxies" class="proxy-content">
+                    <div class="table-container">
+                        <table id="httpProxyTable">
+                            <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>名称</th>
+                                    <th>主机</th>
+                                    <th>端口</th>
+                                    <th>用户名</th>
+                                    <th>状态</th>
+                                    <th>响应时间</th>
+                                    <th>成功/失败</th>
+                                    <th>最后检查</th>
+                                    <th>操作</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <!-- HTTP代理列表将通过JavaScript加载 -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                
+                <!-- SOCKS5代理表格 -->
+                <div id="socks5-proxies" class="proxy-content" style="display: none;">
+                    <div class="table-container">
+                        <table id="socks5ProxyTable">
+                            <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>名称</th>
+                                    <th>主机</th>
+                                    <th>端口</th>
+                                    <th>用户名</th>
+                                    <th>状态</th>
+                                    <th>响应时间</th>
+                                    <th>成功/失败</th>
+                                    <th>最后检查</th>
+                                    <th>操作</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <!-- SOCKS5代理列表将通过JavaScript加载 -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                
+                <!-- 全局设置 -->
+                <div id="proxy-config" class="proxy-content" style="display: none;">
+                    <div class="form-group">
+                        <label>
+                            <input type="checkbox" id="proxyEnabled"> 启用全局代理
+                        </label>
+                    </div>
+                    <div class="form-group">
+                        <label for="activeProxyType">当前激活的代理类型</label>
+                        <select id="activeProxyType">
+                            <option value="">请选择</option>
+                            <option value="http">HTTP代理</option>
+                            <option value="socks5">SOCKS5代理</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="activeProxyId">当前激活的代理</label>
+                        <select id="activeProxyId">
+                            <option value="0">请选择</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="proxyTimeout">代理连接超时时间（秒）</label>
+                        <input type="number" id="proxyTimeout" min="5" max="300" value="30">
+                    </div>
+                    <button class="btn btn-success" onclick="saveProxyConfig()">保存配置</button>
+                </div>
             </div>
         </div>
     </div>
 </div>
+
+<!-- 添加/编辑代理模态框 -->
+<div id="proxyModal" class="modal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3 class="modal-title" id="modalTitle">添加代理</h3>
+            <button class="modal-close" onclick="closeModal()">&times;</button>
+        </div>
+        <div class="modal-body">
+            <form id="proxyForm">
+                <input type="hidden" id="proxyId" name="id">
+                <input type="hidden" id="proxyType" name="type" value="http">
+                <input type="hidden" id="formAction" name="action" value="add">
+                
+                <div class="form-group">
+                    <label for="proxyName">代理名称 *</label>
+                    <input type="text" id="proxyName" name="name" required>
+                </div>
+                
+                <div class="form-group">
+                    <label for="proxyHost">主机地址 *</label>
+                    <input type="text" id="proxyHost" name="host" required 
+                           placeholder="例: 127.0.0.1">
+                </div>
+                
+                <div class="form-group">
+                    <label for="proxyPort">端口 *</label>
+                    <input type="number" id="proxyPort" name="port" required 
+                           min="1" max="65535" placeholder="例: 8080">
+                </div>
+                
+                <div class="form-group">
+                    <label for="proxyUsername">用户名</label>
+                    <input type="text" id="proxyUsername" name="username" 
+                           placeholder="可选：代理认证用户名">
+                </div>
+                
+                <div class="form-group">
+                    <label for="proxyPassword">密码</label>
+                    <input type="password" id="proxyPassword" name="password" 
+                           placeholder="可选：代理认证密码">
+                </div>
+                
+                <div class="form-group">
+                    <label for="proxyRemarks">备注</label>
+                    <input type="text" id="proxyRemarks" name="remarks" 
+                           placeholder="可选：备注信息">
+                </div>
+            </form>
+        </div>
+        <div class="modal-footer">
+            <button type="button" class="btn" onclick="closeModal()">取消</button>
+            <button type="button" class="btn btn-primary" onclick="saveProxy()">保存</button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    let currentProxyType = 'http';
+    
+    // 页面加载时初始化
+    document.addEventListener('DOMContentLoaded', function() {
+        loadProxies('http');
+        loadProxyConfig();
+    });
+    
+    // 切换代理类型
+    function switchProxyType(type) {
+        currentProxyType = type;
+        
+        // 更新标签状态
+        document.querySelectorAll('.proxy-tab').forEach(tab => {
+            tab.classList.remove('active');
+        });
+        document.querySelector(`[data-type="${type}"]`).classList.add('active');
+        
+        // 显示对应内容
+        document.querySelectorAll('.proxy-content').forEach(content => {
+            content.style.display = 'none';
+        });
+        
+        if (type === 'config') {
+            document.getElementById('proxy-config').style.display = 'block';
+        } else {
+            document.getElementById(`${type}-proxies`).style.display = 'block';
+            loadProxies(type);
+        }
+    }
+    
+    // 加载代理列表
+    async function loadProxies(type) {
+        try {
+            const response = await fetch(`/admin/api/proxy/${type}`, {
+                method: 'GET',
+                headers: {
+                    'Content-Type': 'application/json',
+                }
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                renderProxyTable(data.data, type);
+            } else {
+                showToast(`加载${type.toUpperCase()}代理列表失败`, 'error');
+            }
+        } catch (error) {
+            console.error(`加载${type}代理列表失败:`, error);
+            showToast('网络错误，请稍后重试', 'error');
+        }
+    }
+    
+    // 渲染代理表格
+    function renderProxyTable(proxies, type) {
+        const tbody = document.querySelector(`#${type}ProxyTable tbody`);
+        tbody.innerHTML = '';
+        
+        if (proxies.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="10" style="text-align: center; color: #6b7280;">暂无${type.toUpperCase()}代理</td></tr>`;
+            return;
+        }
+        
+        proxies.forEach(proxy => {
+            const row = document.createElement('tr');
+            row.innerHTML = `
+                <td>${proxy.id}</td>
+                <td>${escapeHtml(proxy.name)}</td>
+                <td>${escapeHtml(proxy.host)}</td>
+                <td>${proxy.port}</td>
+                <td>${escapeHtml(proxy.username || '-')}</td>
+                <td><span class="status-badge ${proxy.status ? 'active' : 'inactive'}">${proxy.status ? '活跃' : '不活跃'}</span></td>
+                <td>${proxy.response_time || 0}ms</td>
+                <td>${proxy.success_count || 0}/${proxy.fail_count || 0}</td>
+                <td>${formatDateTime(proxy.last_check)}</td>
+                <td>
+                    <button class="btn btn-warning" onclick="testProxy('${type}', ${proxy.id})" style="margin-right: 5px;">测试</button>
+                    <button class="btn btn-success" onclick="editProxy('${type}', ${proxy.id})" style="margin-right: 5px;">编辑</button>
+                    <button class="btn btn-danger" onclick="deleteProxy('${type}', ${proxy.id})">删除</button>
+                </td>
+            `;
+            tbody.appendChild(row);
+        });
+    }
+    
+    // 显示添加代理模态框
+    function showAddModal() {
+        document.getElementById('modalTitle').textContent = `添加${currentProxyType.toUpperCase()}代理`;
+        document.getElementById('formAction').value = 'add';
+        document.getElementById('proxyType').value = currentProxyType;
+        document.getElementById('proxyForm').reset();
+        document.getElementById('proxyId').value = '';
+        document.getElementById('proxyModal').classList.add('show');
+    }
+    
+    // 编辑代理
+    async function editProxy(type, id) {
+        try {
+            const response = await fetch(`/admin/api/proxy/${type}`);
+            const data = await response.json();
+            
+            if (data.success) {
+                const proxy = data.data.find(p => p.id === id);
+                if (proxy) {
+                    document.getElementById('modalTitle').textContent = `编辑${type.toUpperCase()}代理`;
+                    document.getElementById('formAction').value = 'edit';
+                    document.getElementById('proxyType').value = type;
+                    document.getElementById('proxyId').value = proxy.id;
+                    document.getElementById('proxyName').value = proxy.name;
+                    document.getElementById('proxyHost').value = proxy.host;
+                    document.getElementById('proxyPort').value = proxy.port;
+                    document.getElementById('proxyUsername').value = proxy.username || '';
+                    document.getElementById('proxyPassword').value = proxy.password || '';
+                    document.getElementById('proxyRemarks').value = proxy.remarks || '';
+                    document.getElementById('proxyModal').classList.add('show');
+                }
+            }
+        } catch (error) {
+            console.error('获取代理信息失败:', error);
+            showToast('获取代理信息失败', 'error');
+        }
+    }
+    
+    // 删除代理
+    async function deleteProxy(type, id) {
+        if (!confirm(`确定要删除这个${type.toUpperCase()}代理吗？`)) {
+            return;
+        }
+        
+        try {
+            const response = await fetch(`/admin/api/proxy/${type}`, {
+                method: 'DELETE',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ id: id })
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                showToast('代理删除成功', 'success');
+                loadProxies(type);
+            } else {
+                showToast(data.message || '删除失败', 'error');
+            }
+        } catch (error) {
+            console.error('删除代理失败:', error);
+            showToast('网络错误，请稍后重试', 'error');
+        }
+    }
+    
+    // 测试代理
+    async function testProxy(type, id) {
+        try {
+            showToast('正在测试代理连接...', 'info');
+            
+            const response = await fetch(`/admin/api/proxy/${type}/test`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ id: id })
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                showToast(`代理测试成功，响应时间: ${data.response_time}ms`, 'success');
+                loadProxies(type);
+            } else {
+                showToast(data.message || '代理测试失败', 'error');
+            }
+        } catch (error) {
+            console.error('测试代理失败:', error);
+            showToast('网络错误，请稍后重试', 'error');
+        }
+    }
+    
+    // 保存代理
+    async function saveProxy() {
+        const form = document.getElementById('proxyForm');
+        const formData = new FormData(form);
+        
+        const data = {
+            action: formData.get('action'),
+            type: formData.get('type'),
+            name: formData.get('name'),
+            host: formData.get('host'),
+            port: parseInt(formData.get('port')),
+            username: formData.get('username'),
+            password: formData.get('password'),
+            remarks: formData.get('remarks')
+        };
+        
+        if (data.action === 'edit') {
+            data.id = parseInt(formData.get('id'));
+        }
+        
+        try {
+            const response = await fetch(`/admin/api/proxy/${data.type}`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(data)
+            });
+            
+            const result = await response.json();
+            
+            if (result.success) {
+                showToast(result.message || '保存成功', 'success');
+                closeModal();
+                loadProxies(data.type);
+            } else {
+                showToast(result.message || '保存失败', 'error');
+            }
+        } catch (error) {
+            console.error('保存代理失败:', error);
+            showToast('网络错误，请稍后重试', 'error');
+        }
+    }
+    
+    // 加载代理配置
+    async function loadProxyConfig() {
+        try {
+            const response = await fetch('/admin/api/proxy/config', {
+                method: 'GET',
+                headers: {
+                    'Content-Type': 'application/json',
+                }
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                const config = data.data;
+                document.getElementById('proxyEnabled').checked = config.proxy_enabled === '1';
+                document.getElementById('activeProxyType').value = config.active_proxy_type || '';
+                document.getElementById('activeProxyId').value = config.active_proxy_id || '0';
+                document.getElementById('proxyTimeout').value = config.proxy_timeout || '30';
+                
+                // 根据代理类型加载对应的代理列表到下拉框
+                updateActiveProxyOptions(config.active_proxy_type);
+            }
+        } catch (error) {
+            console.error('加载代理配置失败:', error);
+        }
+    }
+    
+    // 更新活跃代理选项
+    async function updateActiveProxyOptions(type) {
+        const select = document.getElementById('activeProxyId');
+        select.innerHTML = '<option value="0">请选择</option>';
+        
+        if (!type) return;
+        
+        try {
+            const response = await fetch(`/admin/api/proxy/${type}`);
+            const data = await response.json();
+            
+            if (data.success) {
+                data.data.forEach(proxy => {
+                    const option = document.createElement('option');
+                    option.value = proxy.id;
+                    option.textContent = `${proxy.name} (${proxy.host}:${proxy.port})`;
+                    select.appendChild(option);
+                });
+            }
+        } catch (error) {
+            console.error('加载代理选项失败:', error);
+        }
+    }
+    
+    // 代理类型改变时更新选项
+    document.getElementById('activeProxyType').addEventListener('change', function() {
+        updateActiveProxyOptions(this.value);
+    });
+    
+    // 保存代理配置
+    async function saveProxyConfig() {
+        const config = {
+            proxy_enabled: document.getElementById('proxyEnabled').checked ? '1' : '0',
+            active_proxy_type: document.getElementById('activeProxyType').value,
+            active_proxy_id: document.getElementById('activeProxyId').value,
+            proxy_timeout: document.getElementById('proxyTimeout').value
+        };
+        
+        try {
+            const response = await fetch('/admin/api/proxy/config', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(config)
+            });
+            
+            const result = await response.json();
+            
+            if (result.success) {
+                showToast('代理配置保存成功', 'success');
+            } else {
+                showToast(result.message || '保存失败', 'error');
+            }
+        } catch (error) {
+            console.error('保存代理配置失败:', error);
+            showToast('网络错误，请稍后重试', 'error');
+        }
+    }
+    
+    // 关闭模态框
+    function closeModal() {
+        document.getElementById('proxyModal').classList.remove('show');
+    }
+    
+    // 点击模态框外部关闭
+    document.getElementById('proxyModal').addEventListener('click', function(e) {
+        if (e.target === this) {
+            closeModal();
+        }
+    });
+    
+    // Toast通知系统
+    function showToast(message, type = 'info', duration = 3000) {
+        const container = document.getElementById('toast-container');
+        
+        const toast = document.createElement('div');
+        toast.className = `toast ${type}`;
+        toast.textContent = message;
+        
+        container.appendChild(toast);
+        
+        setTimeout(() => {
+            toast.classList.add('show');
+        }, 10);
+        
+        setTimeout(() => {
+            toast.classList.remove('show');
+            setTimeout(() => {
+                if (container.contains(toast)) {
+                    container.removeChild(toast);
+                }
+            }, 300);
+        }, duration);
+    }
+    
+    // 工具函数
+    function escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+    
+    function formatDateTime(dateString) {
+        if (!dateString) return '-';
+        return new Date(dateString).toLocaleString('zh-CN');
+    }
+</script>
+{% endblock %}
 {% endblock %}
