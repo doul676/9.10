@@ -861,8 +861,11 @@ $socks5Proxies = array_filter($allProxies, function($proxy) { return $proxy['pro
                         <button type="button" class="btn btn-success" onclick="toggleGlobalProxy()" id="globalProxyBtn">
                             🔧 开启代理
                         </button>
+                        <button type="button" class="btn btn-info" onclick="showProxySelectionModal()" id="manualSelectBtn">
+                            📋 手动选择代理
+                        </button>
                     </div>
-                    <p style="margin-top: 15px; color: #64748b;">管理HTTP和SOCKS5代理服务器配置，统一展示所有代理类型</p>
+                    <p style="margin-top: 15px; color: #64748b;">管理HTTP和SOCKS5代理服务器配置，统一展示所有代理类型。点击"开启代理"将自动选择最快的代理，或点击"手动选择代理"进行手动选择。</p>
                 </div>
             </div>
             
@@ -1089,14 +1092,18 @@ $socks5Proxies = array_filter($allProxies, function($proxy) { return $proxy['pro
         // 更新全局代理按钮状态
         function updateGlobalProxyButton() {
             const btn = document.getElementById('globalProxyBtn');
+            const manualBtn = document.getElementById('manualSelectBtn');
+            
             if (globalProxyStatus.enabled && globalProxyStatus.activeProxy) {
                 btn.textContent = '🔴 关闭代理';
                 btn.className = 'btn btn-danger';
                 btn.title = `当前启用: ${globalProxyStatus.activeProxy.name} (${globalProxyStatus.activeProxy.host}:${globalProxyStatus.activeProxy.port})`;
+                manualBtn.style.display = 'none'; // 隐藏手动选择按钮
             } else {
-                btn.textContent = '🔧 开启代理';
+                btn.textContent = '🔧 开启代理 (自动选择最快)';
                 btn.className = 'btn btn-success';
-                btn.title = '点击启用全局代理';
+                btn.title = '点击自动选择最快的代理并启用';
+                manualBtn.style.display = 'inline-block'; // 显示手动选择按钮
             }
         }
         
@@ -1106,9 +1113,59 @@ $socks5Proxies = array_filter($allProxies, function($proxy) { return $proxy['pro
                 // 当前已启用，直接禁用
                 disableGlobalProxy();
             } else {
-                // 当前未启用，显示代理选择窗口
-                showProxySelectionModal();
+                // 当前未启用，自动选择最快的代理
+                autoSelectFastestProxy();
             }
+        }
+        
+        // 自动选择最快的代理
+        function autoSelectFastestProxy() {
+            const btn = document.getElementById('globalProxyBtn');
+            const originalText = btn.textContent;
+            
+            btn.disabled = true;
+            btn.textContent = '正在选择最快代理...';
+            
+            // 获取代理列表
+            fetch('api.php?action=refresh_proxies', {
+                method: 'GET'
+            })
+            .then(response => response.json())
+            .then(result => {
+                if (result.success) {
+                    // 筛选状态正常的代理
+                    const availableProxies = result.proxies.filter(proxy => proxy.status == 1);
+                    
+                    if (availableProxies.length === 0) {
+                        showToast('暂无状态正常的代理，请先测试代理连接', 'error');
+                        btn.disabled = false;
+                        btn.textContent = originalText;
+                        return;
+                    }
+                    
+                    // 按响应时间排序，选择最快的代理
+                    availableProxies.sort((a, b) => {
+                        const timeA = parseInt(a.response_time) || 99999;
+                        const timeB = parseInt(b.response_time) || 99999;
+                        return timeA - timeB;
+                    });
+                    
+                    const fastestProxy = availableProxies[0];
+                    
+                    // 启用最快的代理
+                    enableSpecificProxy(fastestProxy.proxy_type, fastestProxy.id, fastestProxy.name, true);
+                } else {
+                    showToast('获取代理列表失败：' + result.message, 'error');
+                    btn.disabled = false;
+                    btn.textContent = originalText;
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                showToast('获取代理列表失败：' + error.message, 'error');
+                btn.disabled = false;
+                btn.textContent = originalText;
+            });
         }
         
         // 禁用全局代理
@@ -1222,12 +1279,12 @@ $socks5Proxies = array_filter($allProxies, function($proxy) { return $proxy['pro
         }
         
         // 启用指定代理
-        function enableSpecificProxy(proxyType, proxyId, proxyName) {
-            const btn = event.target;
+        function enableSpecificProxy(proxyType, proxyId, proxyName, isAutoSelection = false) {
+            const btn = isAutoSelection ? document.getElementById('globalProxyBtn') : event.target;
             const originalText = btn.textContent;
             
             btn.disabled = true;
-            btn.textContent = '启用中...';
+            btn.textContent = isAutoSelection ? '正在启用最快代理...' : '启用中...';
             
             fetch('api.php?action=toggle_proxy', {
                 method: 'POST',
@@ -1242,8 +1299,16 @@ $socks5Proxies = array_filter($allProxies, function($proxy) { return $proxy['pro
                     globalProxyStatus.enabled = true;
                     globalProxyStatus.activeProxy = result.activeProxy;
                     updateGlobalProxyButton();
-                    closeProxySelectionModal();
-                    showToast(result.message, 'success');
+                    if (!isAutoSelection) {
+                        closeProxySelectionModal();
+                    }
+                    
+                    // 显示更详细的成功消息
+                    if (isAutoSelection) {
+                        showToast(`✅ 已自动启用最快代理：${proxyName}\n响应时间：${result.activeProxy.response_time || 0}ms\n地址：${result.activeProxy.host}:${result.activeProxy.port}`, 'success', 6000);
+                    } else {
+                        showToast(result.message, 'success');
+                    }
                 } else {
                     showToast(result.message, 'error');
                 }
@@ -1254,7 +1319,11 @@ $socks5Proxies = array_filter($allProxies, function($proxy) { return $proxy['pro
             })
             .finally(() => {
                 btn.disabled = false;
-                btn.textContent = originalText;
+                if (!isAutoSelection) {
+                    btn.textContent = originalText;
+                } else {
+                    updateGlobalProxyButton();
+                }
             });
         }
         

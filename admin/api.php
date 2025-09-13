@@ -1586,7 +1586,7 @@ function getGlobalProxyStatus() {
             
             if (!empty($proxyType) && $proxyId > 0) {
                 $tableName = $proxyType === 'socks5' ? 'socks5_proxies' : 'http_proxies';
-                $stmt = $db->prepare("SELECT id, name, host, port, status FROM {$tableName} WHERE id = ?");
+                $stmt = $db->prepare("SELECT id, name, host, port, status, response_time FROM {$tableName} WHERE id = ?");
                 $stmt->bindValue(1, $proxyId);
                 $proxyResult = $stmt->execute();
                 $activeProxy = $proxyResult->fetchArray(SQLITE3_ASSOC);
