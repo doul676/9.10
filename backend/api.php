@@ -393,35 +393,61 @@ function testProxyConnection() {
         exit();
     }
     
-    // 获取请求数据
-    $input = json_decode(file_get_contents('php://input'), true);
-    
-    // 检查是否通过proxy_id测试现有代理
-    $proxyId = $_POST['proxy_id'] ?? null;
-    $proxyType = $_POST['proxy_type'] ?? $input['proxy_type'] ?? 'http';
-    
-    if ($proxyId) {
-        testExistingProxy($proxyId, $proxyType);
-        return;
+    // 清理输出缓冲区，确保JSON响应纯净
+    if (ob_get_level()) {
+        ob_clean();
     }
     
-    // 从表单数据或JSON数据中获取参数
-    $name = $input['name'] ?? $_POST['name'] ?? '';
-    $host = $input['host'] ?? $_POST['host'] ?? '';
-    $port = (int)($input['port'] ?? $_POST['port'] ?? 0);
-    $username = $input['username'] ?? $_POST['username'] ?? '';
-    $password = $input['password'] ?? $_POST['password'] ?? '';
-    
-    // 验证必需参数（名称可以为空，会自动生成）
-    if (empty($host) || $port <= 0) {
+    try {
+        // 获取请求数据 - 支持JSON和表单两种格式
+        $input = null;
+        $contentType = $_SERVER['CONTENT_TYPE'] ?? '';
+        
+        if (strpos($contentType, 'application/json') !== false) {
+            $rawInput = file_get_contents('php://input');
+            $input = json_decode($rawInput, true);
+            if (json_last_error() !== JSON_ERROR_NONE) {
+                echo json_encode([
+                    'success' => false,
+                    'message' => 'JSON数据格式错误：' . json_last_error_msg()
+                ]);
+                exit();
+            }
+        }
+        
+        // 检查是否通过proxy_id测试现有代理
+        $proxyId = $_POST['proxy_id'] ?? null;
+        $proxyType = $_POST['proxy_type'] ?? $input['proxy_type'] ?? 'http';
+        
+        if ($proxyId) {
+            testExistingProxy($proxyId, $proxyType);
+            return;
+        }
+        
+        // 从表单数据或JSON数据中获取参数
+        $name = $input['name'] ?? $_POST['name'] ?? '';
+        $host = $input['host'] ?? $_POST['host'] ?? '';
+        $port = (int)($input['port'] ?? $_POST['port'] ?? 0);
+        $username = $input['username'] ?? $_POST['username'] ?? '';
+        $password = $input['password'] ?? $_POST['password'] ?? '';
+        
+        // 验证必需参数（名称可以为空，会自动生成）
+        if (empty($host) || $port <= 0) {
+            echo json_encode([
+                'success' => false,
+                'message' => '请填写代理地址和端口'
+            ]);
+            exit();
+        }
+        
+        performProxyTest($name, $host, $port, $username, $password, $proxyType);
+        
+    } catch (Exception $e) {
         echo json_encode([
             'success' => false,
-            'message' => '请填写代理地址和端口'
+            'message' => '请求处理失败：' . $e->getMessage()
         ]);
-        exit();
     }
-    
-    performProxyTest($name, $host, $port, $username, $password, $proxyType);
 }
 
 /**
@@ -430,31 +456,39 @@ function testProxyConnection() {
 function testExistingProxy($proxyId, $proxyType) {
     try {
         $db = new SQLite3(__DIR__ . '/../db/mail.sqlite');
+        
+        // 验证代理类型
         $tableName = $proxyType === 'socks5' ? 'socks5_proxies' : 'http_proxies';
+        
         $stmt = $db->prepare("SELECT * FROM {$tableName} WHERE id = ?");
-        $stmt->bindValue(1, $proxyId);
+        $stmt->bindValue(1, (int)$proxyId);
         $result = $stmt->execute();
-        $proxy = $result->fetchArray();
+        $proxy = $result->fetchArray(SQLITE3_ASSOC);
+        
+        $db->close();
         
         if (!$proxy) {
             echo json_encode([
                 'success' => false,
                 'message' => '代理不存在'
             ]);
-            $db->close();
             return;
+        }
+        
+        // 确保代理名称不为空
+        if (empty($proxy['name'])) {
+            $proxy['name'] = "代理 {$proxy['host']}:{$proxy['port']}";
         }
         
         performProxyTest(
             $proxy['name'],
             $proxy['host'],
             $proxy['port'],
-            $proxy['username'],
-            $proxy['password'],
-            $proxyType
+            $proxy['username'] ?? '',
+            $proxy['password'] ?? '',
+            $proxyType,
+            $proxyId  // 传递代理ID用于更新数据库
         );
-        
-        $db->close();
         
     } catch (Exception $e) {
         echo json_encode([
@@ -467,7 +501,7 @@ function testExistingProxy($proxyId, $proxyType) {
 /**
  * 执行代理测试
  */
-function performProxyTest($name, $host, $port, $username, $password, $proxyType) {
+function performProxyTest($name, $host, $port, $username, $password, $proxyType, $proxyId = null) {
     try {
         $startTime = microtime(true);
         
@@ -485,7 +519,7 @@ function performProxyTest($name, $host, $port, $username, $password, $proxyType)
         
         if (!$socket) {
             // 更新数据库中的测试结果
-            updateProxyTestResult($name, $host, $port, $proxyType, false, 0);
+            updateProxyTestResult($name, $host, $port, $proxyType, false, 0, $proxyId);
             
             echo json_encode([
                 'success' => false,
@@ -518,11 +552,12 @@ function performProxyTest($name, $host, $port, $username, $password, $proxyType)
             $connectivityResults = testProxyConnectivity($host, $port, $username, $password, $proxyType);
             
             // 更新数据库中的测试结果
-            updateProxyTestResult($name, $host, $port, $proxyType, true, $totalLatency);
+            updateProxyTestResult($name, $host, $port, $proxyType, true, $totalLatency, $proxyId);
             
             // 构建成功消息，包含IP和延迟信息
             $message = "✅ {$name} 测试成功\n";
             $message .= "服务器: {$hostInfo}:{$port}\n";
+            $message .= "解析IP: {$resolvedIp}\n";
             $message .= "连接延迟: {$basicLatency}ms\n";
             $message .= "总响应时间: {$totalLatency}ms";
             
@@ -532,6 +567,8 @@ function performProxyTest($name, $host, $port, $username, $password, $proxyType)
                 foreach ($connectivityResults as $site => $result) {
                     if ($result['status'] === 'success') {
                         $message .= "\n✅ {$site}: {$result['ip']} ({$result['latency']})";
+                    } else {
+                        $message .= "\n❌ {$site}: 连接失败";
                     }
                 }
             }
@@ -554,10 +591,11 @@ function performProxyTest($name, $host, $port, $username, $password, $proxyType)
             ]);
         } else {
             // 端口通但代理功能异常
-            updateProxyTestResult($name, $host, $port, $proxyType, false, $totalLatency);
+            updateProxyTestResult($name, $host, $port, $proxyType, false, $totalLatency, $proxyId);
             
             $message = "❌ {$name} 功能测试失败\n";
             $message .= "服务器: {$hostInfo}:{$port}\n";
+            $message .= "解析IP: {$resolvedIp}\n";
             $message .= "连接延迟: {$basicLatency}ms\n";
             $message .= "错误: {$proxyFunctional['message']}";
             
@@ -579,7 +617,7 @@ function performProxyTest($name, $host, $port, $username, $password, $proxyType)
         
     } catch (Exception $e) {
         // 更新数据库中的测试结果
-        updateProxyTestResult($name, $host, $port, $proxyType, false, 0);
+        updateProxyTestResult($name, $host, $port, $proxyType, false, 0, $proxyId);
         
         echo json_encode([
             'success' => false,
@@ -912,31 +950,50 @@ function testSocks5ProxyToSite($proxyHost, $proxyPort, $username, $password, $ta
 /**
  * 更新代理测试结果
  */
-function updateProxyTestResult($name, $host, $port, $proxyType, $success, $responseTime) {
+function updateProxyTestResult($name, $host, $port, $proxyType, $success, $responseTime, $proxyId = null) {
     try {
         $db = new SQLite3(__DIR__ . '/../db/mail.sqlite');
         $tableName = $proxyType === 'socks5' ? 'socks5_proxies' : 'http_proxies';
         $beijingTime = new DateTime('now', new DateTimeZone('Asia/Shanghai'));
         
-        // 首先检查代理是否存在于数据库中
-        $checkStmt = $db->prepare("SELECT id FROM {$tableName} WHERE host=? AND port=?");
-        $checkStmt->bindValue(1, $host);
-        $checkStmt->bindValue(2, $port);
+        // 如果提供了proxyId，直接使用ID更新；否则通过host和port查找
+        if ($proxyId) {
+            $checkStmt = $db->prepare("SELECT id FROM {$tableName} WHERE id = ?");
+            $checkStmt->bindValue(1, (int)$proxyId);
+        } else {
+            $checkStmt = $db->prepare("SELECT id FROM {$tableName} WHERE host=? AND port=?");
+            $checkStmt->bindValue(1, $host);
+            $checkStmt->bindValue(2, $port);
+        }
+        
         $checkResult = $checkStmt->execute();
         $exists = $checkResult->fetchArray();
         
         if ($exists) {
             // 代理存在，更新测试结果
             if ($success) {
-                $stmt = $db->prepare("UPDATE {$tableName} SET status=1, last_check=?, response_time=?, success_count=success_count+1 WHERE host=? AND port=?");
+                if ($proxyId) {
+                    $stmt = $db->prepare("UPDATE {$tableName} SET status=1, last_check=?, response_time=?, success_count=success_count+1, updated_at=? WHERE id=?");
+                    $stmt->bindValue(4, (int)$proxyId);
+                } else {
+                    $stmt = $db->prepare("UPDATE {$tableName} SET status=1, last_check=?, response_time=?, success_count=success_count+1, updated_at=? WHERE host=? AND port=?");
+                    $stmt->bindValue(4, $host);
+                    $stmt->bindValue(5, $port);
+                }
             } else {
-                $stmt = $db->prepare("UPDATE {$tableName} SET status=0, last_check=?, response_time=?, fail_count=fail_count+1 WHERE host=? AND port=?");
+                if ($proxyId) {
+                    $stmt = $db->prepare("UPDATE {$tableName} SET status=0, last_check=?, response_time=?, fail_count=fail_count+1, updated_at=? WHERE id=?");
+                    $stmt->bindValue(4, (int)$proxyId);
+                } else {
+                    $stmt = $db->prepare("UPDATE {$tableName} SET status=0, last_check=?, response_time=?, fail_count=fail_count+1, updated_at=? WHERE host=? AND port=?");
+                    $stmt->bindValue(4, $host);
+                    $stmt->bindValue(5, $port);
+                }
             }
             
             $stmt->bindValue(1, $beijingTime->format('Y-m-d H:i:s'));
             $stmt->bindValue(2, $responseTime);
-            $stmt->bindValue(3, $host);
-            $stmt->bindValue(4, $port);
+            $stmt->bindValue(3, $beijingTime->format('Y-m-d H:i:s'));
             $stmt->execute();
         }
         // 如果代理不存在于数据库中（如新添加时测试），不进行数据库更新
@@ -946,4 +1003,3 @@ function updateProxyTestResult($name, $host, $port, $proxyType, $success, $respo
         error_log('Failed to update proxy test result: ' . $e->getMessage());
     }
 }
-?>
