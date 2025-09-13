@@ -1067,7 +1067,7 @@
         document.getElementById('mailboxForm').reset();
         document.getElementById('mailboxId').value = '';
         document.getElementById('ssl').checked = true;
-        document.getElementById('testBtn').style.display = 'none';
+        document.getElementById('testBtn').style.display = 'inline-block';
         loadServerOptions();
         updatePortByProtocol();
         document.getElementById('mailboxModal').classList.add('show');
@@ -1132,7 +1132,46 @@
         const targetId = id || document.getElementById('mailboxId').value;
         
         if (!targetId) {
-            showToast('请先保存邮箱后再测试', 'error');
+            // 如果没有ID，使用当前表单数据进行测试
+            const form = document.getElementById('mailboxForm');
+            const formData = new FormData(form);
+            
+            const testData = {
+                action: 'test_new',
+                email: formData.get('email'),
+                password: formData.get('password'),
+                server: formData.get('server'),
+                port: parseInt(formData.get('port')),
+                protocol: formData.get('protocol'),
+                ssl: formData.get('ssl') === 'on'
+            };
+            
+            // 验证必填字段
+            if (!testData.email || !testData.password || !testData.server || !testData.port) {
+                showToast('请填写完整的邮箱信息后再测试', 'error');
+                return;
+            }
+            
+            try {
+                const response = await fetch('/admin/api/mailbox', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(testData)
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    showToast('邮箱连接测试成功', 'success');
+                } else {
+                    showToast(data.message || '邮箱连接测试失败', 'error');
+                }
+            } catch (error) {
+                console.error('测试邮箱失败:', error);
+                showToast('网络错误，请稍后重试', 'error');
+            }
             return;
         }
         
