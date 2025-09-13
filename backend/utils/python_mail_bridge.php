@@ -27,7 +27,7 @@ class PythonMailFetcher {
             }
             
             // Execute Python script
-            $command = "python3 " . escapeshellarg($this->pythonScript) . " " . escapeshellarg($this->email) . " 2>&1";
+            $command = "python3 " . escapeshellarg($this->pythonScript) . " " . escapeshellarg($this->email) . " 2>/dev/null";
             $output = shell_exec($command);
             
             if ($output === null) {
@@ -37,11 +37,33 @@ class PythonMailFetcher {
                 ];
             }
             
+            // Clean up any extra output and get only the JSON
+            $lines = explode("\n", trim($output));
+            $jsonOutput = '';
+            
+            // Find the JSON output (should be the last non-empty line)
+            for ($i = count($lines) - 1; $i >= 0; $i--) {
+                $line = trim($lines[$i]);
+                if (!empty($line) && (substr($line, 0, 1) === '{' || substr($line, 0, 1) === '[')) {
+                    $jsonOutput = $line;
+                    break;
+                }
+            }
+            
+            if (empty($jsonOutput)) {
+                error_log("Python mail fetcher raw output: " . $output);
+                return [
+                    'success' => false,
+                    'message' => 'Python邮件服务未返回有效数据'
+                ];
+            }
+            
             // Parse JSON output
-            $result = json_decode($output, true);
+            $result = json_decode($jsonOutput, true);
             
             if (json_last_error() !== JSON_ERROR_NONE) {
-                error_log("Python mail fetcher output: " . $output);
+                error_log("Python mail fetcher JSON error: " . json_last_error_msg());
+                error_log("Python mail fetcher JSON output: " . $jsonOutput);
                 return [
                     'success' => false,
                     'message' => 'Python邮件服务返回格式错误: ' . json_last_error_msg()

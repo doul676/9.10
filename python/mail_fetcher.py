@@ -309,9 +309,22 @@ class ProxyMailFetcher:
         
         if email_message.is_multipart():
             for part in email_message.walk():
-                self._process_part(part, body_text, body_html, images, attachments)
+                result = self._process_part(part)
+                if result['type'] == 'text' and not body_text:
+                    body_text = result['content']
+                elif result['type'] == 'html' and not body_html:
+                    body_html = result['content']
+                elif result['type'] == 'image':
+                    if result['disposition'] == 'attachment':
+                        attachments.append(result['data'])
+                    else:
+                        images.append(result['data'])
+                elif result['type'] == 'attachment':
+                    attachments.append(result['data'])
         else:
-            body_text, body_html = self._process_simple_part(email_message)
+            result = self._process_simple_part(email_message)
+            body_text = result[0]
+            body_html = result[1]
             
         # Determine main content
         main_content = body_html or body_text
@@ -327,6 +340,61 @@ class ProxyMailFetcher:
             'attachments': attachments
         }
         
+    def _process_part(self, part):
+        """Process individual email part and return result"""
+        content_type = part.get_content_type()
+        content_disposition = part.get('Content-Disposition', '')
+        
+        if content_type == 'text/plain' and 'attachment' not in content_disposition:
+            payload = part.get_payload(decode=True)
+            if payload:
+                charset = part.get_content_charset() or 'utf-8'
+                try:
+                    content = payload.decode(charset, errors='ignore')
+                except:
+                    content = payload.decode('utf-8', errors='ignore')
+                return {'type': 'text', 'content': content}
+                    
+        elif content_type == 'text/html' and 'attachment' not in content_disposition:
+            payload = part.get_payload(decode=True)
+            if payload:
+                charset = part.get_content_charset() or 'utf-8'
+                try:
+                    content = payload.decode(charset, errors='ignore')
+                except:
+                    content = payload.decode('utf-8', errors='ignore')
+                return {'type': 'html', 'content': content}
+                    
+        elif content_type.startswith('image/'):
+            filename = part.get_filename() or f'image.{content_type.split("/")[1]}'
+            payload = part.get_payload(decode=True)
+            if payload:
+                image_info = {
+                    'filename': filename,
+                    'mime_type': content_type,
+                    'size': len(payload),
+                    'content': base64.b64encode(payload).decode('ascii')
+                }
+                
+                disposition = 'attachment' if 'attachment' in content_disposition else 'inline'
+                return {'type': 'image', 'data': image_info, 'disposition': disposition}
+                    
+        else:
+            # Other attachments
+            filename = part.get_filename()
+            if filename or 'attachment' in content_disposition:
+                payload = part.get_payload(decode=True)
+                if payload:
+                    attachment_info = {
+                        'filename': filename or 'attachment',
+                        'mime_type': content_type,
+                        'size': len(payload),
+                        'content': base64.b64encode(payload).decode('ascii')
+                    }
+                    return {'type': 'attachment', 'data': attachment_info}
+                    
+        return {'type': 'none'}
+    
     def _process_simple_part(self, part):
         """Process simple non-multipart email"""
         body_text = ''
@@ -350,60 +418,6 @@ class ProxyMailFetcher:
                 body_text = content  # Fallback to text
                 
         return body_text, body_html
-        
-    def _process_part(self, part, body_text, body_html, images, attachments):
-        """Process individual email part"""
-        content_type = part.get_content_type()
-        content_disposition = part.get('Content-Disposition', '')
-        
-        if content_type == 'text/plain' and 'attachment' not in content_disposition:
-            if not body_text:
-                payload = part.get_payload(decode=True)
-                if payload:
-                    charset = part.get_content_charset() or 'utf-8'
-                    try:
-                        body_text = payload.decode(charset, errors='ignore')
-                    except:
-                        body_text = payload.decode('utf-8', errors='ignore')
-                    
-        elif content_type == 'text/html' and 'attachment' not in content_disposition:
-            if not body_html:
-                payload = part.get_payload(decode=True)
-                if payload:
-                    charset = part.get_content_charset() or 'utf-8'
-                    try:
-                        body_html = payload.decode(charset, errors='ignore')
-                    except:
-                        body_html = payload.decode('utf-8', errors='ignore')
-                    
-        elif content_type.startswith('image/'):
-            filename = part.get_filename() or f'image.{content_type.split("/")[1]}'
-            payload = part.get_payload(decode=True)
-            if payload:
-                image_info = {
-                    'filename': filename,
-                    'mime_type': content_type,
-                    'size': len(payload),
-                    'content': base64.b64encode(payload).decode('ascii')
-                }
-                
-                if 'attachment' in content_disposition:
-                    attachments.append(image_info)
-                else:
-                    images.append(image_info)
-                    
-        else:
-            # Other attachments
-            filename = part.get_filename()
-            if filename or 'attachment' in content_disposition:
-                payload = part.get_payload(decode=True)
-                if payload:
-                    attachments.append({
-                        'filename': filename or 'attachment',
-                        'mime_type': content_type,
-                        'size': len(payload),
-                        'content': base64.b64encode(payload).decode('ascii')
-                    })
                     
     def close(self):
         """Close connection"""
@@ -508,14 +522,14 @@ def main():
         conn.close()
         
         # Output JSON result
-        print(json.dumps(result, ensure_ascii=False, indent=2))
+        print(json.dumps(result, ensure_ascii=False))
         
     except Exception as e:
         result = {
             'success': False,
             'message': f'服务器错误: {str(e)}'
         }
-        print(json.dumps(result, ensure_ascii=False, indent=2))
+        print(json.dumps(result, ensure_ascii=False))
 
 
 if __name__ == '__main__':
