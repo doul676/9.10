@@ -128,24 +128,7 @@
             margin-left: 10px;
         }
         
-        .test-connection-btn {
-            background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
-            color: white;
-            border: none;
-            padding: 18px 25px;
-            border-radius: 12px;
-            font-size: 16px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.3s ease;
-            white-space: nowrap;
-            position: relative;
-            overflow: hidden;
-            margin-left: 10px;
-        }
-        
-        .get-mail-btn::before,
-        .test-connection-btn::before {
+        .get-mail-btn::before {
             content: '';
             position: absolute;
             top: 0;
@@ -156,28 +139,20 @@
             transition: left 0.5s;
         }
         
-        .get-mail-btn:hover::before,
-        .test-connection-btn:hover::before {
+        .get-mail-btn:hover::before {
             left: 100%;
         }
         
-        .get-mail-btn:hover,
-        .test-connection-btn:hover {
+        .get-mail-btn:hover {
             transform: translateY(-3px);
             box-shadow: 0 8px 25px rgba(102, 126, 234, 0.4);
         }
         
-        .test-connection-btn:hover {
-            box-shadow: 0 8px 25px rgba(40, 167, 69, 0.4);
-        }
-        
-        .get-mail-btn:active,
-        .test-connection-btn:active {
+        .get-mail-btn:active {
             transform: translateY(-1px);
         }
         
-        .get-mail-btn:disabled,
-        .test-connection-btn:disabled {
+        .get-mail-btn:disabled {
             background: #ccc;
             cursor: not-allowed;
             transform: none;
@@ -596,7 +571,6 @@
         <div class="mail-input-card">
             <div class="input-group">
                 <input type="email" id="emailInput" placeholder="请输入邮箱地址 (例: user@example.com)" required>
-                <button class="test-connection-btn" onclick="testConnection()">测试连接</button>
                 <button class="get-mail-btn" onclick="getMail()">获取邮件</button>
             </div>
             
@@ -658,125 +632,6 @@
             }
         });
         
-        async function testConnection() {
-            const emailInput = document.getElementById('emailInput');
-            const loading = document.getElementById('loading');
-            const message = document.getElementById('message');
-            const mailDisplay = document.getElementById('mailDisplay');
-            const testBtn = document.querySelector('.test-connection-btn');
-            const getMailBtn = document.querySelector('.get-mail-btn');
-            
-            const email = emailInput.value.trim();
-            
-            if (!email) {
-                showMessage('请输入邮箱地址', 'error');
-                return;
-            }
-            
-            if (!isValidEmail(email)) {
-                showMessage('请输入有效的邮箱地址', 'error');
-                return;
-            }
-            
-            // 显示加载状态
-            loading.style.display = 'block';
-            loading.textContent = '正在测试连接，请稍候...';
-            testBtn.disabled = true;
-            testBtn.textContent = '测试中...';
-            getMailBtn.disabled = true;
-            mailDisplay.style.display = 'none';
-            
-            try {
-                const response = await fetch('backend/api/test_connection.php', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({ email: email })
-                });
-                
-                const data = await response.json();
-                
-                if (data.success) {
-                    let successMessage = '✅ 连接测试成功！';
-                    if (data.proxy && data.proxy.enabled && data.proxy.info) {
-                        successMessage += ` (通过代理: ${data.proxy.info.name})`;
-                    } else {
-                        successMessage += ' (直连)';
-                    }
-                    showMessage(successMessage, 'success');
-                    
-                    // 显示详细诊断信息
-                    if (data.diagnostics) {
-                        displayConnectionDiagnostics(data.diagnostics);
-                    }
-                } else {
-                    let errorMessage = data.message || '连接测试失败';
-                    if (data.proxy && data.proxy.enabled && data.proxy.info) {
-                        errorMessage += ` (代理: ${data.proxy.info.name})`;
-                    } else if (data.proxy && data.proxy.enabled === false) {
-                        errorMessage += ' (直连)';
-                    }
-                    showMessage(errorMessage, 'error');
-                    
-                    // 显示详细诊断信息
-                    if (data.diagnostics) {
-                        displayConnectionDiagnostics(data.diagnostics);
-                    }
-                }
-            } catch (error) {
-                console.error('Connection test error:', error);
-                showMessage('网络请求失败，请检查网络连接', 'error');
-            } finally {
-                // 隐藏加载状态
-                loading.style.display = 'none';
-                loading.textContent = '正在获取邮件，请稍候...';
-                testBtn.disabled = false;
-                testBtn.textContent = '测试连接';
-                getMailBtn.disabled = false;
-            }
-        }
-        
-        function displayConnectionDiagnostics(diagnostics) {
-            // Create a more detailed diagnostic display
-            let diagnosticHtml = '<div style="margin-top: 15px; padding: 15px; background: #f8f9fa; border-radius: 8px; border-left: 4px solid #667eea;">';
-            diagnosticHtml += '<h4 style="margin: 0 0 10px 0; color: #667eea;">🔍 连接诊断信息</h4>';
-            diagnosticHtml += '<div style="font-size: 14px; line-height: 1.6;">';
-            
-            for (const [key, value] of Object.entries(diagnostics)) {
-                const label = getDiagnosticLabel(key);
-                const statusIcon = value.includes('✅') ? '✅' : value.includes('❌') ? '❌' : '🔍';
-                diagnosticHtml += `<div style="margin: 5px 0;"><strong>${label}:</strong> ${value}</div>`;
-            }
-            
-            diagnosticHtml += '</div></div>';
-            
-            // Add to message area
-            const messageDiv = document.getElementById('message');
-            setTimeout(() => {
-                messageDiv.innerHTML += diagnosticHtml;
-            }, 500);
-        }
-        
-        function getDiagnosticLabel(key) {
-            const labels = {
-                'server_info': '服务器信息',
-                'protocol_info': '协议信息',
-                'proxy_status': '代理状态',
-                'proxy_info': '代理信息',
-                'dns_resolution': 'DNS解析',
-                'tcp_connection': 'TCP连接',
-                'imap_connection': 'IMAP连接',
-                'auth_status': '身份验证',
-                'mailbox_access': '邮箱访问',
-                'ssl_status': 'SSL状态',
-                'connection_status': '连接状态',
-                'python_service': 'Python服务',
-                'error_details': '错误详情'
-            };
-            return labels[key] || key;
-        }
-        
         async function getMail() {
             const emailInput = document.getElementById('emailInput');
             const loading = document.getElementById('loading');
@@ -801,8 +656,6 @@
             loading.textContent = '正在获取邮件，请稍候...';
             getMailBtn.disabled = true;
             getMailBtn.textContent = '获取中...';
-            const testBtn = document.querySelector('.test-connection-btn');
-            testBtn.disabled = true;
             mailDisplay.style.display = 'none';
             
             try {
@@ -856,7 +709,6 @@
                 loading.style.display = 'none';
                 getMailBtn.disabled = false;
                 getMailBtn.textContent = '获取邮件';
-                testBtn.disabled = false;
             }
         }
         

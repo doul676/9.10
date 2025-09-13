@@ -111,11 +111,14 @@ class ProxyMailFetcher:
         
     def connect(self):
         """Connect to mail server"""
+        connection_method = "未知"
         try:
             if self.proxy_enabled:
+                connection_method = f"代理 ({self.proxy_info['type']} - {self.proxy_info['name']})"
                 logger.info(f"Attempting connection with proxy: {self.proxy_info['name']} ({self.proxy_info['type']})")
                 return self._connect_with_proxy()
             else:
+                connection_method = "直连"
                 logger.info("Connecting directly to mail server")
                 
             if self.protocol == 'imap':
@@ -128,10 +131,14 @@ class ProxyMailFetcher:
                 
         except Exception as e:
             error_message = str(e)
-            if self.proxy_enabled:
-                error_message += f" (proxy: {self.proxy_info['type']} - {self.proxy_info['name']})"
-            else:
-                error_message += " (direct connection)"
+            
+            # Don't double-wrap error messages that already contain connection info
+            if "代理" not in error_message and "直连" not in error_message:
+                if self.proxy_enabled:
+                    error_message += f" (通过{connection_method}连接)"
+                else:
+                    error_message += f" ({connection_method})"
+            
             logger.error(f"Connection failed: {error_message}")
             raise Exception(error_message)
     
@@ -158,34 +165,65 @@ class ProxyMailFetcher:
     
     def _connect_socks5_proxy(self, proxy_host, proxy_port, proxy_username, proxy_password):
         """Connect using SOCKS5 proxy"""
+        original_socket = socket.socket
+        
         try:
             # Configure SOCKS5 proxy
-            original_socket = socket.socket
+            logger.info(f"Configuring SOCKS5 proxy: {proxy_host}:{proxy_port}")
+            
+            # Test SOCKS5 proxy connectivity first
+            try:
+                test_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                test_socket.settimeout(10)
+                test_result = test_socket.connect_ex((proxy_host, proxy_port))
+                test_socket.close()
+                
+                if test_result != 0:
+                    raise Exception(f"无法连接到SOCKS5代理服务器 {proxy_host}:{proxy_port}")
+                    
+            except socket.error as e:
+                raise Exception(f"SOCKS5代理服务器连接失败: {str(e)}")
             
             # Set up SOCKS5 proxy
-            if proxy_username and proxy_password:
-                socks.set_default_proxy(socks.SOCKS5, proxy_host, proxy_port, 
-                                       username=proxy_username, password=proxy_password)
-            else:
-                socks.set_default_proxy(socks.SOCKS5, proxy_host, proxy_port)
-            
-            # Monkey patch socket to use SOCKS5
-            socket.socket = socks.socksocket
-            
-            logger.info(f"Configured SOCKS5 proxy: {proxy_host}:{proxy_port}")
-            
             try:
+                if proxy_username and proxy_password:
+                    socks.set_default_proxy(socks.SOCKS5, proxy_host, proxy_port, 
+                                           username=proxy_username, password=proxy_password)
+                else:
+                    socks.set_default_proxy(socks.SOCKS5, proxy_host, proxy_port)
+                
+                # Monkey patch socket to use SOCKS5
+                socket.socket = socks.socksocket
+                
+                logger.info(f"SOCKS5 proxy configured successfully")
+                
                 # Now connect via IMAP with the proxied socket
                 result = self._connect_imap()
                 return result
-            finally:
-                # Restore original socket
-                socket.socket = original_socket
+                
+            except socks.ProxyError as e:
+                raise Exception(f"SOCKS5代理配置错误: {str(e)}")
+            except socks.GeneralProxyError as e:
+                raise Exception(f"SOCKS5代理一般错误: {str(e)}")
+            except socks.ProxyConnectionError as e:
+                raise Exception(f"SOCKS5代理连接错误: {str(e)}")
+            except Exception as e:
+                error_msg = str(e)
+                if "邮箱" in error_msg or "IMAP" in error_msg:
+                    # This is an IMAP-related error, not proxy error
+                    raise e
+                else:
+                    raise Exception(f"通过SOCKS5代理连接失败: {error_msg}")
                 
         except Exception as e:
-            # Restore original socket in case of error
+            error_msg = str(e)
+            if "SOCKS5代理" in error_msg or "无法连接到SOCKS5" in error_msg or "通过SOCKS5代理连接失败" in error_msg:
+                raise e
+            else:
+                raise Exception(f"SOCKS5 proxy connection failed: {error_msg}")
+        finally:
+            # Always restore original socket
             socket.socket = original_socket
-            raise Exception(f"SOCKS5 proxy connection failed: {str(e)}")
     
     def _connect_http_proxy(self, proxy_host, proxy_port, proxy_username, proxy_password):
         """Connect using HTTP proxy with CONNECT tunneling"""
@@ -193,70 +231,75 @@ class ProxyMailFetcher:
             # For HTTP proxy, we need to establish a CONNECT tunnel to the IMAP server
             logger.info(f"Establishing HTTP CONNECT tunnel via {proxy_host}:{proxy_port}")
             
-            # Create a custom IMAP class that can use a pre-established socket
-            class ProxiedIMAP4_SSL(imaplib.IMAP4_SSL):
-                def __init__(self, server, port, proxy_socket):
-                    self.proxy_socket = proxy_socket
-                    super().__init__(server, port, keyfile=None, certfile=None, ssl_context=None, timeout=None)
+            # Create connection to proxy with better error handling
+            try:
+                proxy_conn = http.client.HTTPConnection(proxy_host, proxy_port, timeout=30)
                 
-                def _create_socket(self):
-                    # Use the provided proxy socket instead of creating a new one
-                    return self.proxy_socket
-            
-            class ProxiedIMAP4(imaplib.IMAP4):
-                def __init__(self, server, port, proxy_socket):
-                    self.proxy_socket = proxy_socket
-                    super().__init__(server, port, timeout=None)
-                    
-                def _create_socket(self):
-                    # Use the provided proxy socket instead of creating a new one
-                    return self.proxy_socket
-            
-            # Create connection to proxy
-            proxy_conn = http.client.HTTPConnection(proxy_host, proxy_port, timeout=30)
-            
-            # Set up authentication headers if needed
-            headers = {}
-            if proxy_username and proxy_password:
-                proxy_auth = base64.b64encode(f"{proxy_username}:{proxy_password}".encode()).decode()
-                headers["Proxy-Authorization"] = f"Basic {proxy_auth}"
-            
-            # Establish CONNECT tunnel
-            proxy_conn.set_tunnel(self.server, self.port, headers)
-            proxy_conn.connect()
-            
-            # Get the underlying socket from the HTTP connection
-            proxy_socket = proxy_conn.sock
+                # Set up authentication headers if needed
+                headers = {}
+                if proxy_username and proxy_password:
+                    proxy_auth = base64.b64encode(f"{proxy_username}:{proxy_password}".encode()).decode()
+                    headers["Proxy-Authorization"] = f"Basic {proxy_auth}"
+                
+                # Establish CONNECT tunnel
+                proxy_conn.set_tunnel(self.server, self.port, headers)
+                proxy_conn.connect()
+                
+                # Get the underlying socket from the HTTP connection
+                proxy_socket = proxy_conn.sock
+                
+            except (http.client.HTTPException, socket.error, OSError) as e:
+                raise Exception(f"HTTP代理连接失败: {str(e)}")
             
             # Create IMAP connection using the proxied socket
-            if self.use_ssl:
-                # For SSL, we need to wrap the socket
-                ssl_context = ssl.create_default_context()
-                ssl_context.check_hostname = False
-                ssl_context.verify_mode = ssl.CERT_NONE
+            try:
+                if self.use_ssl:
+                    # For SSL, we need to wrap the socket
+                    ssl_context = ssl.create_default_context()
+                    ssl_context.check_hostname = False
+                    ssl_context.verify_mode = ssl.CERT_NONE
+                    
+                    # Wrap the proxy socket with SSL
+                    ssl_socket = ssl_context.wrap_socket(proxy_socket, server_hostname=self.server)
+                    
+                    # Create IMAP connection manually with the SSL socket
+                    self.connection = imaplib.IMAP4(self.server, self.port)
+                    self.connection.sock = ssl_socket
+                    self.connection.file = ssl_socket.makefile('rb')
+                    
+                    # Send capability command to verify connection
+                    self.connection._cmd('OK', 'CAPABILITY')
+                else:
+                    # For non-SSL connections
+                    self.connection = imaplib.IMAP4(self.server, self.port)
+                    self.connection.sock = proxy_socket
+                    self.connection.file = proxy_socket.makefile('rb')
+                    
+                    # Send capability command to verify connection
+                    self.connection._cmd('OK', 'CAPABILITY')
                 
-                # Wrap the proxy socket with SSL
-                ssl_socket = ssl_context.wrap_socket(proxy_socket, server_hostname=self.server)
+                # Login to IMAP server
+                self.connection.login(self.username, self.password)
                 
-                # Create a custom IMAP SSL connection
-                self.connection = imaplib.IMAP4_SSL(self.server, self.port)
-                self.connection.sock = ssl_socket
-            else:
-                # For non-SSL connections
-                self.connection = imaplib.IMAP4(self.server, self.port)
-                self.connection.sock = proxy_socket
-            
-            # Login to IMAP server
-            self.connection.login(self.username, self.password)
-            
-            # Select INBOX
-            self.connection.select('INBOX')
-            
-            logger.info("HTTP proxy tunnel established successfully")
-            return True
+                # Select INBOX
+                self.connection.select('INBOX')
+                
+                logger.info("HTTP proxy tunnel established successfully")
+                return True
+                
+            except (imaplib.IMAP4.error, socket.error, ssl.SSLError) as e:
+                try:
+                    proxy_conn.close()
+                except:
+                    pass
+                raise Exception(f"通过HTTP代理连接IMAP服务器失败: {str(e)}")
             
         except Exception as e:
-            raise Exception(f"HTTP proxy tunnel failed: {str(e)}")
+            error_msg = str(e)
+            if "代理连接失败" in error_msg or "IMAP服务器失败" in error_msg:
+                raise e
+            else:
+                raise Exception(f"HTTP proxy tunnel failed: {error_msg}")
             
     def _connect_imap(self):
         """Connect using IMAP protocol"""
@@ -266,32 +309,71 @@ class ProxyMailFetcher:
             socket.setdefaulttimeout(30)  # 30 second timeout
             
             try:
+                # Test basic connectivity first
+                logger.info(f"Testing connectivity to {self.server}:{self.port}")
+                test_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                test_socket.settimeout(10)
+                
+                try:
+                    test_result = test_socket.connect_ex((self.server, self.port))
+                    test_socket.close()
+                    
+                    if test_result != 0:
+                        raise Exception(f"无法连接到邮件服务器 {self.server}:{self.port} (错误码: {test_result})")
+                        
+                except socket.gaierror as e:
+                    raise Exception(f"无法解析邮件服务器地址 {self.server}: {str(e)}")
+                except socket.timeout:
+                    raise Exception(f"连接邮件服务器 {self.server}:{self.port} 超时")
+                except Exception as e:
+                    raise Exception(f"网络连接测试失败: {str(e)}")
+                
+                logger.info("Basic connectivity test passed")
+                
                 # Create IMAP connection
-                logger.info(f"Connecting to {self.server}:{self.port} (SSL: {self.use_ssl})")
+                logger.info(f"Establishing IMAP connection to {self.server}:{self.port} (SSL: {self.use_ssl})")
                 
                 if self.use_ssl:
-                    # Create SSL context with more permissive settings for compatibility
-                    ssl_context = ssl.create_default_context()
-                    ssl_context.check_hostname = False
-                    ssl_context.verify_mode = ssl.CERT_NONE
-                    
-                    self.connection = imaplib.IMAP4_SSL(
-                        self.server, 
-                        self.port,
-                        ssl_context=ssl_context
-                    )
+                    try:
+                        # Create SSL context with more permissive settings for compatibility
+                        ssl_context = ssl.create_default_context()
+                        ssl_context.check_hostname = False
+                        ssl_context.verify_mode = ssl.CERT_NONE
+                        
+                        self.connection = imaplib.IMAP4_SSL(
+                            self.server, 
+                            self.port,
+                            ssl_context=ssl_context
+                        )
+                    except ssl.SSLError as e:
+                        raise Exception(f"SSL连接失败: {str(e)}，请检查服务器SSL配置或尝试关闭SSL")
+                    except Exception as e:
+                        raise Exception(f"SSL IMAP连接失败: {str(e)}")
                 else:
-                    self.connection = imaplib.IMAP4(self.server, self.port)
+                    try:
+                        self.connection = imaplib.IMAP4(self.server, self.port)
+                    except Exception as e:
+                        raise Exception(f"IMAP连接失败: {str(e)}")
                 
                 logger.info("IMAP connection established, attempting login...")
                 
-                # Login
-                self.connection.login(self.username, self.password)
-                logger.info("Login successful")
+                # Login with better error handling
+                try:
+                    self.connection.login(self.username, self.password)
+                    logger.info("Login successful")
+                except imaplib.IMAP4.error as e:
+                    error_msg = str(e).lower()
+                    if "authentication" in error_msg or "login" in error_msg or "invalid" in error_msg:
+                        raise Exception("邮箱用户名或密码错误，请检查登录凭据")
+                    else:
+                        raise Exception(f"登录失败: {str(e)}")
                 
                 # Select INBOX
-                self.connection.select('INBOX')
-                logger.info("INBOX selected successfully")
+                try:
+                    self.connection.select('INBOX')
+                    logger.info("INBOX selected successfully")
+                except Exception as e:
+                    raise Exception(f"无法选择INBOX邮箱: {str(e)}")
                 
                 return True
                 
@@ -303,7 +385,11 @@ class ProxyMailFetcher:
             error_str = str(e).lower()
             logger.error(f"IMAP connection error: {str(e)}")
             
-            # Provide more specific error messages
+            # Check if it's already a specific error message
+            if any(keyword in str(e) for keyword in ["邮箱", "SSL连接失败", "无法连接到", "无法解析", "连接", "超时", "登录失败", "无法选择"]):
+                raise e
+            
+            # Provide more specific error messages for generic errors
             if "authentication" in error_str or "login" in error_str or "invalid credentials" in error_str:
                 raise Exception("邮箱用户名或密码错误，请检查登录凭据")
             elif "certificate" in error_str or "ssl" in error_str or "handshake" in error_str:
@@ -597,86 +683,116 @@ class ProxyMailFetcher:
             diagnostics['proxy_status'] = f"Enabled - {self.proxy_info['type']} ({self.proxy_info['name']})"
             diagnostics['proxy_info'] = f"{self.proxy_info['host']}:{self.proxy_info['port']}"
         
+        connection_method = "直连"
+        if self.proxy_enabled:
+            connection_method = f"代理 ({self.proxy_info['type']} - {self.proxy_info['name']})"
+        
         try:
-            logger.info("Starting connection test...")
+            logger.info(f"Starting connection test via {connection_method}...")
             
-            # Test DNS resolution first
-            try:
-                import socket
-                socket.gethostbyname(self.server)
-                diagnostics['dns_resolution'] = '✅ 服务器地址解析成功'
-            except Exception as e:
-                diagnostics['dns_resolution'] = f'❌ DNS解析失败: {str(e)}'
-                return {
-                    'success': False,
-                    'message': f'❌ DNS解析失败: {str(e)}',
-                    'diagnostics': diagnostics,
-                    'error_type': 'dns_error'
-                }
-            
-            # Test basic TCP connection
-            try:
-                test_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                test_socket.settimeout(10)
-                result = test_socket.connect_ex((self.server, self.port))
-                test_socket.close()
-                
-                if result == 0:
-                    diagnostics['tcp_connection'] = '✅ TCP连接测试成功'
-                else:
-                    diagnostics['tcp_connection'] = f'❌ TCP连接失败 (错误码: {result})'
-            except Exception as e:
-                diagnostics['tcp_connection'] = f'❌ TCP连接测试失败: {str(e)}'
-            
-            # Test full IMAP connection
-            if self.connect():
-                self.close()
-                diagnostics['imap_connection'] = '✅ IMAP连接成功'
-                diagnostics['auth_status'] = '✅ 身份验证成功'
-                diagnostics['mailbox_access'] = '✅ 邮箱访问正常'
-                
-                return {
-                    'success': True,
-                    'message': '✅ 邮箱连接测试成功！',
-                    'diagnostics': diagnostics
-                }
+            # Test DNS resolution first (only for direct connections)
+            if not self.proxy_enabled:
+                try:
+                    import socket
+                    resolved_ip = socket.gethostbyname(self.server)
+                    diagnostics['dns_resolution'] = f'✅ 服务器地址解析成功 (IP: {resolved_ip})'
+                except Exception as e:
+                    diagnostics['dns_resolution'] = f'❌ DNS解析失败: {str(e)}'
+                    return {
+                        'success': False,
+                        'message': f'❌ DNS解析失败: {str(e)} ({connection_method})',
+                        'diagnostics': diagnostics,
+                        'error_type': 'dns_error'
+                    }
             else:
-                diagnostics['imap_connection'] = '❌ IMAP连接失败'
+                diagnostics['dns_resolution'] = '⚠️ 通过代理连接，跳过DNS测试'
+            
+            # Test basic TCP connection (only for direct connections)
+            if not self.proxy_enabled:
+                try:
+                    test_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                    test_socket.settimeout(10)
+                    result = test_socket.connect_ex((self.server, self.port))
+                    test_socket.close()
+                    
+                    if result == 0:
+                        diagnostics['tcp_connection'] = '✅ TCP连接测试成功'
+                    else:
+                        diagnostics['tcp_connection'] = f'❌ TCP连接失败 (错误码: {result})'
+                except Exception as e:
+                    diagnostics['tcp_connection'] = f'❌ TCP连接测试失败: {str(e)}'
+            else:
+                diagnostics['tcp_connection'] = '⚠️ 通过代理连接，跳过TCP测试'
+            
+            # Test full connection
+            connection_success = False
+            try:
+                connection_success = self.connect()
+                if connection_success:
+                    self.close()
+                    diagnostics['connection_test'] = f'✅ 邮箱连接成功 (通过{connection_method})'
+                    diagnostics['auth_status'] = '✅ 身份验证成功'
+                    diagnostics['mailbox_access'] = '✅ 邮箱访问正常'
+                    
+                    return {
+                        'success': True,
+                        'message': f'✅ 邮箱连接测试成功！(通过{connection_method})',
+                        'diagnostics': diagnostics
+                    }
+                else:
+                    diagnostics['connection_test'] = f'❌ 邮箱连接失败 (通过{connection_method})'
+            except Exception as e:
+                error_message = str(e)
+                diagnostics['connection_test'] = f'❌ 连接失败: {error_message}'
+                
+                # Categorize error types for better user feedback
+                error_type = 'unknown'
+                if 'ssl' in error_message.lower() or 'certificate' in error_message.lower() or 'handshake' in error_message.lower():
+                    error_type = 'ssl_error'
+                    diagnostics['ssl_status'] = '❌ SSL连接失败'
+                elif 'authentication' in error_message.lower() or 'login' in error_message.lower() or 'credentials' in error_message.lower() or '用户名或密码' in error_message:
+                    error_type = 'auth_failed'
+                    diagnostics['auth_status'] = '❌ 身份验证失败'
+                elif 'connection' in error_message.lower() or 'refused' in error_message.lower() or '连接被拒绝' in error_message:
+                    error_type = 'connection_refused'
+                    diagnostics['connection_status'] = '❌ 连接被拒绝'
+                elif 'timeout' in error_message.lower() or '超时' in error_message:
+                    error_type = 'timeout'
+                    diagnostics['connection_status'] = '❌ 连接超时'
+                elif 'proxy' in error_message.lower() or '代理' in error_message:
+                    error_type = 'proxy_error'
+                    diagnostics['proxy_status'] = '❌ 代理连接失败'
+                elif 'dns' in error_message.lower() or '解析' in error_message:
+                    error_type = 'dns_error'
+                    diagnostics['dns_resolution'] = f'❌ {error_message}'
+                else:
+                    diagnostics['error_details'] = error_message
+                    
                 return {
                     'success': False,
-                    'message': '❌ 邮箱连接测试失败',
+                    'message': f'❌ 连接测试失败: {error_message}',
                     'diagnostics': diagnostics,
-                    'error_type': 'connection_failed'
+                    'error_type': error_type
                 }
+            
+            return {
+                'success': False,
+                'message': f'❌ 邮箱连接测试失败 (通过{connection_method})',
+                'diagnostics': diagnostics,
+                'error_type': 'connection_failed'
+            }
                 
         except Exception as e:
             error_message = str(e)
-            error_type = 'unknown'
+            logger.error(f"Connection test exception: {error_message}")
             
-            # Categorize error types for better user feedback
-            if 'ssl' in error_message.lower() or 'certificate' in error_message.lower() or 'handshake' in error_message.lower():
-                error_type = 'ssl_error'
-                diagnostics['ssl_status'] = '❌ SSL连接失败'
-            elif 'authentication' in error_message.lower() or 'login' in error_message.lower() or 'credentials' in error_message.lower():
-                error_type = 'auth_failed'
-                diagnostics['auth_status'] = '❌ 身份验证失败'
-            elif 'connection' in error_message.lower() or 'refused' in error_message.lower():
-                error_type = 'connection_refused'
-                diagnostics['connection_status'] = '❌ 连接被拒绝'
-            elif 'timeout' in error_message.lower():
-                error_type = 'timeout'
-                diagnostics['connection_status'] = '❌ 连接超时'
-            elif 'proxy' in error_message.lower():
-                error_type = 'proxy_error'
-                diagnostics['proxy_status'] = '❌ 代理连接失败'
-            else:
-                diagnostics['error_details'] = error_message
-                
+            diagnostics['exception_error'] = f'❌ 测试过程异常: {error_message}'
+            
             return {
                 'success': False,
-                'message': f'❌ 连接测试失败: {error_message}',
+                'message': f'❌ 连接测试异常: {error_message}',
                 'diagnostics': diagnostics,
-                'error_type': error_type
+                'error_type': 'test_exception'
             }
 
 
