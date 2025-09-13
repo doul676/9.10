@@ -1155,7 +1155,7 @@ def _perform_proxy_test(proxy, proxy_type):
         username = proxy['username'] or None
         password = proxy['password'] or None
         
-        # 测试目标
+        # 测试目标 - 优先测试baidu.com，163.com作为辅助测试
         test_urls = ['http://baidu.com', 'http://163.com']
         results = []
         
@@ -1183,6 +1183,14 @@ def _perform_proxy_test(proxy, proxy_type):
                         'response_time': response_time,
                         'ip': 'Unknown'  # 这里可以通过其他方式获取真实IP
                     })
+                elif response.status_code == 403 and '163.com' in url:
+                    # 163.com的403错误视为网站限制，不算失败
+                    results.append({
+                        'url': url,
+                        'success': True,  # 标记为成功，因为代理工作正常
+                        'response_time': response_time,
+                        'error': '网站限制(403) - 代理工作正常'
+                    })
                 else:
                     results.append({
                         'url': url,
@@ -1192,16 +1200,41 @@ def _perform_proxy_test(proxy, proxy_type):
                     })
                     
             except Exception as e:
-                results.append({
-                    'url': url,
-                    'success': False,
-                    'response_time': int((time.time() - start_time) * 1000),
-                    'error': str(e)
-                })
+                error_msg = str(e)
+                # 对于163.com的连接错误，给出更友好的提示
+                if '163.com' in url and ('403' in error_msg or 'Forbidden' in error_msg):
+                    results.append({
+                        'url': url,
+                        'success': True,
+                        'response_time': int((time.time() - start_time) * 1000),
+                        'error': '网站限制 - 代理工作正常'
+                    })
+                else:
+                    results.append({
+                        'url': url,
+                        'success': False,
+                        'response_time': int((time.time() - start_time) * 1000),
+                        'error': error_msg
+                    })
         
-        # 计算平均响应时间
+        # 计算平均响应时间（优先考虑baidu.com的结果）
         successful_tests = [r for r in results if r['success']]
-        if successful_tests:
+        baidu_success = [r for r in results if r['success'] and 'baidu.com' in r['url']]
+        
+        if baidu_success:
+            # 如果baidu.com成功，优先使用其结果
+            avg_response_time = sum(r['response_time'] for r in baidu_success) // len(baidu_success)
+            message = f"测试成功，平均延迟: {avg_response_time}ms"
+            if len(successful_tests) > 1:
+                message += f"，成功: {len(successful_tests)}/{len(results)}"
+            return {
+                'success': True,
+                'message': message,
+                'avg_response_time': avg_response_time,
+                'results': results
+            }
+        elif successful_tests:
+            # 如果只有其他网站成功
             avg_response_time = sum(r['response_time'] for r in successful_tests) // len(successful_tests)
             message = f"测试成功，平均延迟: {avg_response_time}ms"
             if len(successful_tests) > 1:

@@ -621,9 +621,9 @@
     </div>
     
     <div class="content">
-        <div class="card">
-            <div class="card-header">
-                <h2 class="card-title">邮箱账号管理</h2>
+        <!-- 左侧操作按钮 -->
+        <div class="card" style="margin-bottom: 15px;">
+            <div class="card-body" style="padding: 20px;">
                 <div class="button-group">
                     <button class="btn btn-primary" onclick="showAddModal()">
                         ➕ 添加邮箱
@@ -638,6 +638,12 @@
                         🗑️ 批量删除
                     </button>
                 </div>
+            </div>
+        </div>
+        
+        <div class="card">
+            <div class="card-header">
+                <h2 class="card-title">邮箱账号管理</h2>
             </div>
             <div class="card-body">
                 <!-- 搜索和分页控制 -->
@@ -698,16 +704,19 @@
                 <input type="hidden" id="mailboxId" name="id">
                 <input type="hidden" id="formAction" name="action" value="add">
                 
+                <!-- 邮箱地址 -->
                 <div class="form-group">
                     <label for="email">邮箱地址 *</label>
-                    <input type="email" id="email" name="email" required>
+                    <input type="email" id="email" name="email" required placeholder="例: user@example.com">
                 </div>
                 
+                <!-- 密码/授权码 -->
                 <div class="form-group">
                     <label for="password">密码/授权码 *</label>
-                    <input type="password" id="password" name="password" required>
+                    <input type="password" id="password" name="password" required placeholder="邮箱密码或授权码">
                 </div>
                 
+                <!-- 服务器地址 -->
                 <div class="form-group">
                     <label for="server">服务器地址 *</label>
                     <select id="serverSelect" onchange="selectServer()">
@@ -717,22 +726,23 @@
                            placeholder="例: imap.qq.com" style="margin-top: 8px;">
                 </div>
                 
-                <div class="form-row">
-                    <div class="form-group">
-                        <label for="port">端口 *</label>
-                        <input type="number" id="port" name="port" required 
-                               placeholder="例: 993">
-                    </div>
-                    
-                    <div class="form-group">
-                        <label for="protocol">协议</label>
-                        <select id="protocol" name="protocol" onchange="updatePortByProtocol()">
-                            <option value="imap">IMAP</option>
-                            <option value="pop3">POP3</option>
-                        </select>
-                    </div>
+                <!-- 端口 -->
+                <div class="form-group">
+                    <label for="port">端口 *</label>
+                    <input type="number" id="port" name="port" required 
+                           placeholder="例: 993">
                 </div>
                 
+                <!-- 协议 -->
+                <div class="form-group">
+                    <label for="protocol">协议 *</label>
+                    <select id="protocol" name="protocol" onchange="updatePortByProtocol()">
+                        <option value="imap">IMAP</option>
+                        <option value="pop3">POP3</option>
+                    </select>
+                </div>
+                
+                <!-- 启用SSL -->
                 <div class="form-group">
                     <div class="checkbox-group">
                         <input type="checkbox" id="ssl" name="ssl" checked onchange="updatePortBySSL()">
@@ -740,6 +750,7 @@
                     </div>
                 </div>
                 
+                <!-- 备注 -->
                 <div class="form-group">
                     <label for="remarks">备注</label>
                     <input type="text" id="remarks" name="remarks" 
@@ -764,6 +775,7 @@
         </div>
         <div class="modal-body">
             <form id="batchAddForm">
+                <!-- 批量邮箱内容 -->
                 <div class="form-group">
                     <label for="batchContent">批量邮箱内容 *</label>
                     <textarea id="batchContent" name="batch_content" rows="10" 
@@ -772,6 +784,7 @@
                     <small style="color: #6b7280;">请按照"账号----密码"的格式填写，每行一个账号</small>
                 </div>
                 
+                <!-- 服务器地址 -->
                 <div class="form-group">
                     <label for="batchServerSelect">服务器地址 *</label>
                     <select id="batchServerSelect" onchange="selectBatchServer()">
@@ -781,22 +794,23 @@
                            placeholder="例: imap.qq.com" style="margin-top: 8px;">
                 </div>
                 
-                <div class="form-row">
-                    <div class="form-group">
-                        <label for="batchPort">端口 *</label>
-                        <input type="number" id="batchPort" name="port" required 
-                               placeholder="例: 993">
-                    </div>
-                    
-                    <div class="form-group">
-                        <label for="batchProtocol">协议</label>
-                        <select id="batchProtocol" name="protocol" onchange="updateBatchPortByProtocol()">
-                            <option value="imap">IMAP</option>
-                            <option value="pop3">POP3</option>
-                        </select>
-                    </div>
+                <!-- 端口 -->
+                <div class="form-group">
+                    <label for="batchPort">端口 *</label>
+                    <input type="number" id="batchPort" name="port" required 
+                           placeholder="例: 993">
                 </div>
                 
+                <!-- 协议 -->
+                <div class="form-group">
+                    <label for="batchProtocol">协议 *</label>
+                    <select id="batchProtocol" name="protocol" onchange="updateBatchPortByProtocol()">
+                        <option value="imap">IMAP</option>
+                        <option value="pop3">POP3</option>
+                    </select>
+                </div>
+                
+                <!-- 启用SSL -->
                 <div class="form-group">
                     <div class="checkbox-group">
                         <input type="checkbox" id="batchSsl" name="ssl" checked onchange="updateBatchPortBySSL()">
@@ -804,6 +818,7 @@
                     </div>
                 </div>
                 
+                <!-- 备注 -->
                 <div class="form-group">
                     <label for="batchRemarks">备注</label>
                     <input type="text" id="batchRemarks" name="remarks" 
@@ -831,6 +846,7 @@
                 <input type="hidden" id="serverId" name="id">
                 <input type="hidden" id="serverAction" name="action" value="add">
                 
+                <!-- 仅保留上方：服务器名称、服务器地址 -->
                 <div class="form-row">
                     <div class="form-group">
                         <label for="serverName">服务器名称 *</label>
@@ -845,30 +861,11 @@
                     </div>
                 </div>
                 
-                <div class="form-row">
-                    <div class="form-group">
-                        <label for="defaultPortImap">IMAP端口</label>
-                        <input type="number" id="defaultPortImap" name="default_port_imap" value="993">
-                    </div>
-                    
-                    <div class="form-group">
-                        <label for="defaultPortPop3">POP3端口</label>
-                        <input type="number" id="defaultPortPop3" name="default_port_pop3" value="995">
-                    </div>
-                </div>
-                
-                <div class="form-group">
-                    <div class="checkbox-group">
-                        <input type="checkbox" id="serverSslEnabled" name="ssl_enabled" checked>
-                        <label for="serverSslEnabled">默认启用SSL</label>
-                    </div>
-                </div>
-                
-                <div class="form-group">
-                    <label for="serverRemarks">备注</label>
-                    <input type="text" id="serverRemarks" name="remarks" 
-                           placeholder="可选：服务器备注信息">
-                </div>
+                <!-- 隐藏字段保持默认值 -->
+                <input type="hidden" id="defaultPortImap" name="default_port_imap" value="993">
+                <input type="hidden" id="defaultPortPop3" name="default_port_pop3" value="995">
+                <input type="hidden" id="serverSslEnabled" name="ssl_enabled" value="true">
+                <input type="hidden" id="serverRemarks" name="remarks" value="">
                 
                 <div style="text-align: right; margin-top: 15px;">
                     <button type="button" class="btn btn-primary" onclick="saveServer()">
@@ -1075,7 +1072,11 @@
         document.getElementById('serverId').value = '';
         document.getElementById('serverAction').value = 'add';
         document.getElementById('serverSaveText').textContent = '添加服务器';
-        document.getElementById('serverSslEnabled').checked = true;
+        // 重置隐藏字段为默认值
+        document.getElementById('defaultPortImap').value = '993';
+        document.getElementById('defaultPortPop3').value = '995';
+        document.getElementById('serverSslEnabled').value = 'true';
+        document.getElementById('serverRemarks').value = '';
         loadServerList();
         document.getElementById('serverModal').classList.add('show');
     }
@@ -1579,7 +1580,7 @@
             server_address: formData.get('server_address'),
             default_port_imap: parseInt(formData.get('default_port_imap')),
             default_port_pop3: parseInt(formData.get('default_port_pop3')),
-            ssl_enabled: formData.get('ssl_enabled') === 'on',
+            ssl_enabled: formData.get('ssl_enabled') === 'true',
             remarks: formData.get('remarks')
         };
         
@@ -1604,7 +1605,11 @@
                 document.getElementById('serverId').value = '';
                 document.getElementById('serverAction').value = 'add';
                 document.getElementById('serverSaveText').textContent = '添加服务器';
-                document.getElementById('serverSslEnabled').checked = true;
+                // 重置隐藏字段为默认值
+                document.getElementById('defaultPortImap').value = '993';
+                document.getElementById('defaultPortPop3').value = '995';
+                document.getElementById('serverSslEnabled').value = 'true';
+                document.getElementById('serverRemarks').value = '';
                 loadServers();
                 loadServerList();
             } else {
@@ -1624,9 +1629,10 @@
             document.getElementById('serverAction').value = 'edit';
             document.getElementById('serverName').value = server.server_name;
             document.getElementById('serverAddress').value = server.server_address;
+            // 隐藏字段保持原值
             document.getElementById('defaultPortImap').value = server.default_port_imap;
             document.getElementById('defaultPortPop3').value = server.default_port_pop3;
-            document.getElementById('serverSslEnabled').checked = server.ssl_enabled;
+            document.getElementById('serverSslEnabled').value = server.ssl_enabled ? 'true' : 'false';
             document.getElementById('serverRemarks').value = server.remarks || '';
             document.getElementById('serverSaveText').textContent = '更新服务器';
         }

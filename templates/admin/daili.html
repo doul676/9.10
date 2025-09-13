@@ -690,9 +690,9 @@
     </div>
     
     <div class="content">
-        <div class="card">
-            <div class="card-header">
-                <h2 class="card-title">代理池管理</h2>
+        <!-- 左侧操作按钮 -->
+        <div class="card" style="margin-bottom: 15px;">
+            <div class="card-body" style="padding: 20px;">
                 <div class="button-group">
                     <button class="btn btn-primary" onclick="showAddProxyModal('http')">
                         ➕ 添加HTTP代理
@@ -705,105 +705,56 @@
                     </button>
                 </div>
             </div>
+        </div>
+        
+        <div class="card">
+            <div class="card-header">
+                <h2 class="card-title">代理池管理</h2>
+            </div>
             <div class="card-body">
-                <!-- 代理类型标签页 -->
-                <div class="proxy-tabs">
-                    <button class="proxy-tab active" onclick="switchProxyTab('http')">HTTP代理</button>
-                    <button class="proxy-tab" onclick="switchProxyTab('socks5')">SOCKS5代理</button>
-                </div>
-                
-                <!-- HTTP代理标签页内容 -->
-                <div id="httpTab" class="proxy-tab-content active">
-                    <!-- 搜索和分页控制 -->
-                    <div class="search-controls">
-                        <div class="search-box">
-                            <input type="text" id="httpSearchInput" placeholder="搜索代理名称、地址或备注..." onkeyup="searchProxies('http')">
-                            <button class="btn btn-primary" onclick="searchProxies('http')">🔍 搜索</button>
-                        </div>
-                        <div class="page-controls">
-                            <select id="httpPerPageSelect" onchange="changePerPage('http')">
-                                <option value="10">每页10条</option>
-                                <option value="20">每页20条</option>
-                                <option value="50">每页50条</option>
-                            </select>
-                        </div>
+                <!-- 搜索和分页控制 -->
+                <div class="search-controls">
+                    <div class="search-box">
+                        <input type="text" id="proxySearchInput" placeholder="搜索代理名称、地址或备注..." onkeyup="searchProxies()">
+                        <button class="btn btn-primary" onclick="searchProxies()">🔍 搜索</button>
                     </div>
-                    
-                    <div class="table-container">
-                        <table id="httpProxyTable">
-                            <thead>
-                                <tr>
-                                    <th><input type="checkbox" id="httpSelectAll" onchange="toggleSelectAll('http')"></th>
-                                    <th>序号ID</th>
-                                    <th>类型</th>
-                                    <th>代理名称</th>
-                                    <th>地址:端口</th>
-                                    <th>用户名</th>
-                                    <th>密码</th>
-                                    <th>状态</th>
-                                    <th>延迟</th>
-                                    <th>最后检测</th>
-                                    <th>备注</th>
-                                    <th>操作</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <!-- HTTP代理列表将通过JavaScript加载 -->
-                            </tbody>
-                        </table>
-                    </div>
-                    
-                    <!-- HTTP代理分页导航 -->
-                    <div class="pagination-container" id="httpPaginationContainer">
-                        <!-- 分页按钮将通过JavaScript生成 -->
+                    <div class="page-controls">
+                        <select id="proxyPerPageSelect" onchange="changePerPage()">
+                            <option value="10">每页10条</option>
+                            <option value="20">每页20条</option>
+                            <option value="50">每页50条</option>
+                        </select>
                     </div>
                 </div>
                 
-                <!-- SOCKS5代理标签页内容 -->
-                <div id="socks5Tab" class="proxy-tab-content">
-                    <!-- 搜索和分页控制 -->
-                    <div class="search-controls">
-                        <div class="search-box">
-                            <input type="text" id="socks5SearchInput" placeholder="搜索代理名称、地址或备注..." onkeyup="searchProxies('socks5')">
-                            <button class="btn btn-primary" onclick="searchProxies('socks5')">🔍 搜索</button>
-                        </div>
-                        <div class="page-controls">
-                            <select id="socks5PerPageSelect" onchange="changePerPage('socks5')">
-                                <option value="10">每页10条</option>
-                                <option value="20">每页20条</option>
-                                <option value="50">每页50条</option>
-                            </select>
-                        </div>
-                    </div>
-                    
-                    <div class="table-container">
-                        <table id="socks5ProxyTable">
-                            <thead>
-                                <tr>
-                                    <th><input type="checkbox" id="socks5SelectAll" onchange="toggleSelectAll('socks5')"></th>
-                                    <th>序号ID</th>
-                                    <th>类型</th>
-                                    <th>代理名称</th>
-                                    <th>地址:端口</th>
-                                    <th>用户名</th>
-                                    <th>密码</th>
-                                    <th>状态</th>
-                                    <th>延迟</th>
-                                    <th>最后检测</th>
-                                    <th>备注</th>
-                                    <th>操作</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <!-- SOCKS5代理列表将通过JavaScript加载 -->
-                            </tbody>
-                        </table>
-                    </div>
-                    
-                    <!-- SOCKS5代理分页导航 -->
-                    <div class="pagination-container" id="socks5PaginationContainer">
-                        <!-- 分页按钮将通过JavaScript生成 -->
-                    </div>
+                <!-- 统一代理列表 -->
+                <div class="table-container">
+                    <table id="proxyTable">
+                        <thead>
+                            <tr>
+                                <th><input type="checkbox" id="proxySelectAll" onchange="toggleSelectAll()"></th>
+                                <th>序号ID</th>
+                                <th>类型</th>
+                                <th>代理名称</th>
+                                <th>地址:端口</th>
+                                <th>用户名</th>
+                                <th>密码</th>
+                                <th>状态</th>
+                                <th>延迟</th>
+                                <th>最后检测</th>
+                                <th>备注</th>
+                                <th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <!-- 统一代理列表将通过JavaScript加载 -->
+                        </tbody>
+                    </table>
+                </div>
+                
+                <!-- 分页导航 -->
+                <div class="pagination-container" id="proxyPaginationContainer">
+                    <!-- 分页按钮将通过JavaScript生成 -->
                 </div>
             </div>
         </div>
@@ -868,7 +819,7 @@
         </div>
         <div class="modal-footer">
             <button type="button" class="btn" onclick="closeProxyModal()">取消</button>
-            <button type="button" class="btn btn-success" onclick="testProxy()" id="testProxyBtn" style="display: none;">测试代理</button>
+            <button type="button" class="btn btn-warning" onclick="testProxy()" id="testProxyBtn">测试代理</button>
             <button type="button" class="btn btn-primary" onclick="saveProxy()">保存</button>
         </div>
     </div>
@@ -878,40 +829,151 @@
 {% block scripts %}
 <script>
     // 全局变量
-    let currentProxyType = 'http';
-    let currentPages = { http: 1, socks5: 1 };
-    let perPages = { http: 10, socks5: 10 };
-    let searchQueries = { http: '', socks5: '' };
-    let totalPages = { http: 1, socks5: 1 };
-    let selectedProxies = { http: new Set(), socks5: new Set() };
+    let currentPage = 1;
+    let perPage = 10;
+    let searchQuery = '';
+    let totalPages = 1;
+    let selectedProxies = new Set();
+    let allProxies = [];
 
     // 页面加载时初始化
     document.addEventListener('DOMContentLoaded', function() {
-        loadProxies('http');
-        loadProxies('socks5');
+        loadAllProxies();
     });
     
-    // ========== 代理标签页管理 ==========
+    // ========== 统一代理管理功能 ==========
     
-    // 切换代理类型标签页
-    function switchProxyTab(type) {
-        // 更新标签页按钮状态
-        document.querySelectorAll('.proxy-tab').forEach(tab => {
-            tab.classList.remove('active');
-        });
-        event.target.classList.add('active');
+    // 加载所有代理列表（HTTP + SOCKS5）
+    async function loadAllProxies(page = null, search = null) {
+        try {
+            if (page !== null) currentPage = page;
+            if (search !== null) searchQuery = search;
+            
+            // 并行加载HTTP和SOCKS5代理
+            const [httpResponse, socks5Response] = await Promise.all([
+                fetch(`/admin/api/proxies/http?page=1&per_page=1000&search=${searchQuery}`),
+                fetch(`/admin/api/proxies/socks5?page=1&per_page=1000&search=${searchQuery}`)
+            ]);
+            
+            const httpData = await httpResponse.json();
+            const socks5Data = await socks5Response.json();
+            
+            if (httpData.success && socks5Data.success) {
+                // 合并代理数据，添加类型标识
+                allProxies = [
+                    ...httpData.data.map(proxy => ({ ...proxy, proxy_type: 'HTTP' })),
+                    ...socks5Data.data.map(proxy => ({ ...proxy, proxy_type: 'SOCKS5' }))
+                ];
+                
+                // 排序：按ID排序
+                allProxies.sort((a, b) => b.id - a.id);
+                
+                renderUnifiedProxyTable();
+                renderUnifiedPagination();
+            } else {
+                showToast('加载代理列表失败', 'error');
+            }
+        } catch (error) {
+            console.error('加载代理列表失败:', error);
+            showToast('网络错误，请稍后重试', 'error');
+        }
+    }
+    
+    // 渲染统一代理表格
+    function renderUnifiedProxyTable() {
+        const tbody = document.querySelector('#proxyTable tbody');
+        tbody.innerHTML = '';
         
-        // 更新标签页内容
-        document.querySelectorAll('.proxy-tab-content').forEach(content => {
-            content.classList.remove('active');
-        });
-        document.getElementById(type + 'Tab').classList.add('active');
+        // 分页处理
+        const startIndex = (currentPage - 1) * perPage;
+        const endIndex = startIndex + perPage;
+        const paginatedProxies = allProxies.slice(startIndex, endIndex);
         
-        currentProxyType = type;
+        if (paginatedProxies.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="12" style="text-align: center; color: #6b7280;">暂无代理配置</td></tr>';
+            return;
+        }
+        
+        paginatedProxies.forEach(proxy => {
+            const row = document.createElement('tr');
+            const statusBadge = getStatusBadge(proxy.status, proxy.response_time);
+            const proxyType = proxy.proxy_type.toLowerCase();
+            
+            row.innerHTML = `
+                <td><input type="checkbox" class="proxy-checkbox" value="${proxyType}-${proxy.id}" onchange="toggleProxySelection('${proxyType}', ${proxy.id})"></td>
+                <td>${proxy.id}</td>
+                <td><span style="background: ${proxyType === 'http' ? '#dbeafe' : '#fef3c7'}; color: ${proxyType === 'http' ? '#1e40af' : '#92400e'}; padding: 2px 6px; border-radius: 4px; font-size: 12px; font-weight: 500;">${proxy.proxy_type}</span></td>
+                <td>${escapeHtml(proxy.name)}</td>
+                <td>${escapeHtml(proxy.host)}:${proxy.port}</td>
+                <td>${escapeHtml(proxy.username || '-')}</td>
+                <td>${proxy.password ? '******' : '-'}</td>
+                <td>${statusBadge}</td>
+                <td>${proxy.response_time ? proxy.response_time + 'ms' : '-'}</td>
+                <td>${formatDateTime(proxy.last_check)}</td>
+                <td>${escapeHtml(proxy.remarks || '-')}</td>
+                <td>
+                    <div class="actions" style="display: flex; gap: 5px; flex-wrap: wrap;">
+                        <button class="btn btn-success btn-small" onclick="editProxy('${proxyType}', ${proxy.id})">编辑</button>
+                        <button class="btn btn-warning btn-small" onclick="testSingleProxy('${proxyType}', ${proxy.id})">测试</button>
+                        <button class="btn btn-danger btn-small" onclick="deleteProxy('${proxyType}', ${proxy.id})">删除</button>
+                    </div>
+                </td>
+            `;
+            tbody.appendChild(row);
+        });
+        
         updateBatchDeleteButton();
     }
     
-    // ========== 代理管理功能 ==========
+    // 渲染统一分页
+    function renderUnifiedPagination() {
+        const container = document.getElementById('proxyPaginationContainer');
+        const total = allProxies.length;
+        totalPages = Math.ceil(total / perPage);
+        
+        let html = `<div class="pagination-info">共 ${total} 条记录，第 ${currentPage} 页，共 ${totalPages} 页</div>`;
+        
+        if (totalPages > 1) {
+            html += '<div class="pagination-buttons">';
+            
+            // 上一页
+            if (currentPage > 1) {
+                html += `<button class="page-btn" onclick="loadAllProxies(${currentPage - 1})">« 上一页</button>`;
+            }
+            
+            // 页码按钮
+            let startPage = Math.max(1, currentPage - 2);
+            let endPage = Math.min(totalPages, currentPage + 2);
+            
+            if (startPage > 1) {
+                html += `<button class="page-btn" onclick="loadAllProxies(1)">1</button>`;
+                if (startPage > 2) {
+                    html += '<span class="page-btn" style="border: none; cursor: default;">...</span>';
+                }
+            }
+            
+            for (let i = startPage; i <= endPage; i++) {
+                const activeClass = i === currentPage ? 'active' : '';
+                html += `<button class="page-btn ${activeClass}" onclick="loadAllProxies(${i})">${i}</button>`;
+            }
+            
+            if (endPage < totalPages) {
+                if (endPage < totalPages - 1) {
+                    html += '<span class="page-btn" style="border: none; cursor: default;">...</span>';
+                }
+                html += `<button class="page-btn" onclick="loadAllProxies(${totalPages})">${totalPages}</button>`;
+            }
+            
+            // 下一页
+            if (currentPage < totalPages) {
+                html += `<button class="page-btn" onclick="loadAllProxies(${currentPage + 1})">下一页 »</button>`;
+            }
+            
+            html += '</div>';
+        }
+        
+        container.innerHTML = html;
+    }
     
     // 加载代理列表
     async function loadProxies(type, page = null, search = null) {
@@ -1046,15 +1108,15 @@
     }
     
     // 搜索代理
-    function searchProxies(type) {
-        const search = document.getElementById(`${type}SearchInput`).value.trim();
-        loadProxies(type, 1, search);
+    function searchProxies() {
+        const search = document.getElementById('proxySearchInput').value.trim();
+        loadAllProxies(1, search);
     }
     
     // 改变每页显示数量
-    function changePerPage(type) {
-        perPages[type] = parseInt(document.getElementById(`${type}PerPageSelect`).value);
-        loadProxies(type, 1, searchQueries[type]);
+    function changePerPage() {
+        perPage = parseInt(document.getElementById('proxyPerPageSelect').value);
+        loadAllProxies(1, searchQuery);
     }
     
     // 显示添加代理模态框
@@ -1064,7 +1126,6 @@
         document.getElementById('proxyType').value = type;
         document.getElementById('proxyForm').reset();
         document.getElementById('proxyId').value = '';
-        document.getElementById('testProxyBtn').style.display = 'none';
         document.getElementById('proxyModal').classList.add('show');
     }
     
@@ -1087,7 +1148,6 @@
                     document.getElementById('proxyUsername').value = proxy.username || '';
                     document.getElementById('proxyPassword').value = proxy.password || '';
                     document.getElementById('proxyRemarks').value = proxy.remarks || '';
-                    document.getElementById('testProxyBtn').style.display = 'inline-block';
                     document.getElementById('proxyModal').classList.add('show');
                 }
             }
@@ -1134,7 +1194,7 @@
                 }
                 
                 showToast(message, 'success', 5000);
-                loadProxies(type, currentPages[type], searchQueries[type]);
+                loadAllProxies(currentPage, searchQuery);
             } else {
                 showToast(data.message || '代理测试失败', 'error');
             }
@@ -1176,7 +1236,7 @@
             
             if (data.success) {
                 showToast('代理删除成功', 'success');
-                loadProxies(type, currentPages[type], searchQueries[type]);
+                loadAllProxies(currentPage, searchQuery);
             } else {
                 showToast(data.message || '删除失败', 'error');
             }
@@ -1220,7 +1280,7 @@
             if (result.success) {
                 showToast(result.message || '保存成功', 'success');
                 closeProxyModal();
-                loadProxies(type, currentPages[type], searchQueries[type]);
+                loadAllProxies(currentPage, searchQuery);
             } else {
                 showToast(result.message || '保存失败', 'error');
             }
@@ -1233,16 +1293,17 @@
     // ========== 选择管理功能 ==========
     
     // 全选/取消全选
-    function toggleSelectAll(type) {
-        const selectAll = document.getElementById(`${type}SelectAll`);
-        const checkboxes = document.querySelectorAll(`.${type}-proxy-checkbox`);
+    function toggleSelectAll() {
+        const selectAll = document.getElementById('proxySelectAll');
+        const checkboxes = document.querySelectorAll('.proxy-checkbox');
         
         checkboxes.forEach(checkbox => {
             checkbox.checked = selectAll.checked;
+            const [type, id] = checkbox.value.split('-');
             if (selectAll.checked) {
-                selectedProxies[type].add(parseInt(checkbox.value));
+                selectedProxies.add(checkbox.value);
             } else {
-                selectedProxies[type].delete(parseInt(checkbox.value));
+                selectedProxies.delete(checkbox.value);
             }
         });
         
@@ -1251,10 +1312,11 @@
     
     // 切换代理选择状态
     function toggleProxySelection(type, id) {
-        if (selectedProxies[type].has(id)) {
-            selectedProxies[type].delete(id);
+        const key = `${type}-${id}`;
+        if (selectedProxies.has(key)) {
+            selectedProxies.delete(key);
         } else {
-            selectedProxies[type].add(id);
+            selectedProxies.add(key);
         }
         updateBatchDeleteButton();
     }
@@ -1262,7 +1324,7 @@
     // 更新批量删除按钮状态
     function updateBatchDeleteButton() {
         const btn = document.getElementById('batchDeleteBtn');
-        const selectedCount = selectedProxies[currentProxyType].size;
+        const selectedCount = selectedProxies.size;
         
         if (selectedCount > 0) {
             btn.style.display = 'inline-block';
@@ -1274,38 +1336,62 @@
     
     // 批量删除代理
     async function batchDeleteProxies() {
-        const type = currentProxyType;
-        const selectedIds = Array.from(selectedProxies[type]);
-        
-        if (selectedIds.length === 0) {
+        if (selectedProxies.size === 0) {
             showToast('请选择要删除的代理', 'error');
             return;
         }
         
-        if (!confirm(`确定要删除选中的 ${selectedIds.length} 个${type.toUpperCase()}代理吗？`)) {
+        if (!confirm(`确定要删除选中的 ${selectedProxies.size} 个代理吗？`)) {
             return;
         }
         
         try {
-            const response = await fetch(`/admin/api/proxies/${type}`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({ 
-                    action: 'batch_delete',
-                    ids: selectedIds
-                })
+            // 按类型分组选中的代理
+            const httpIds = [];
+            const socks5Ids = [];
+            
+            selectedProxies.forEach(key => {
+                const [type, id] = key.split('-');
+                if (type === 'http') {
+                    httpIds.push(parseInt(id));
+                } else if (type === 'socks5') {
+                    socks5Ids.push(parseInt(id));
+                }
             });
             
-            const data = await response.json();
+            // 并行删除
+            const promises = [];
+            if (httpIds.length > 0) {
+                promises.push(
+                    fetch('/admin/api/proxies/http', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ action: 'batch_delete', ids: httpIds })
+                    })
+                );
+            }
+            if (socks5Ids.length > 0) {
+                promises.push(
+                    fetch('/admin/api/proxies/socks5', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ action: 'batch_delete', ids: socks5Ids })
+                    })
+                );
+            }
             
-            if (data.success) {
-                showToast(data.message || '批量删除成功', 'success');
-                selectedProxies[type].clear();
-                loadProxies(type, currentPages[type], searchQueries[type]);
+            const responses = await Promise.all(promises);
+            const results = await Promise.all(responses.map(r => r.json()));
+            
+            const allSuccess = results.every(r => r.success);
+            
+            if (allSuccess) {
+                showToast(`批量删除成功`, 'success');
+                selectedProxies.clear();
+                loadAllProxies(currentPage, searchQuery);
             } else {
-                showToast(data.message || '批量删除失败', 'error');
+                showToast('部分删除失败', 'error');
+                loadAllProxies(currentPage, searchQuery);
             }
         } catch (error) {
             console.error('批量删除失败:', error);
@@ -1335,9 +1421,8 @@
         
         if (e.key === 'Enter') {
             const activeInput = document.activeElement;
-            if (activeInput && activeInput.id.includes('SearchInput')) {
-                const type = activeInput.id.replace('SearchInput', '');
-                searchProxies(type);
+            if (activeInput && activeInput.id === 'proxySearchInput') {
+                searchProxies();
             }
         }
     });

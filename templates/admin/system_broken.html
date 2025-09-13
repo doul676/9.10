@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}收件日志 - 邮件查看系统{% endblock %}
+{% block title %}系统设置 - 邮件查看系统{% endblock %}
 
 {% block head %}
 <style>
@@ -237,10 +237,10 @@
         <a href="{{ url_for('admin_kamirizhi') }}" class="nav-item">
             <i>📝</i> 卡密日志
         </a>
-        <a href="{{ url_for('admin_shoujian') }}" class="nav-item active">
+        <a href="{{ url_for('admin_shoujian') }}" class="nav-item">
             <i>📧</i> 收件日志
         </a>
-        <a href="{{ url_for('admin_system') }}" class="nav-item">
+        <a href="{{ url_for('admin_system') }}" class="nav-item active">
             <i>⚙️</i> 系统设置
         </a>
     </nav>
@@ -249,7 +249,7 @@
 <!-- Main Content -->
 <div class="main-content">
     <div class="header">
-        <h1 class="header-title">收件日志</h1>
+        <h1 class="header-title">系统设置</h1>
         <div class="header-actions">
             <div class="user-info">
                 <span>欢迎，{{ admin_username }}</span>
@@ -261,16 +261,16 @@
     <div class="content">
         <div class="card">
             <div class="card-header">
-                <h2 class="card-title">邮件收件日志</h2>
+                <h2 class="card-title">系统配置设置</h2>
             </div>
             <div class="card-body">
                 <div class="feature-intro">
-                    <div class="feature-icon">📧</div>
-                    <h3>收件日志系统</h3>
-                    <p>实时记录所有邮件收取操作和处理结果</p>
-                    <p>详细记录邮件获取时间、状态、错误信息等</p>
-                    <p>支持按邮箱、时间、状态等条件筛选查询</p>
-                    <p>提供邮件收取成功率统计和趋势分析</p>
+                    <div class="feature-icon">⚙️</div>
+                    <h3>系统设置中心</h3>
+                    <p>提供系统全局配置和参数设置功能</p>
+                    <p>支持数据库配置、邮件服务器设置、安全选项等</p>
+                    <p>实时保存配置更改，支持配置备份和恢复</p>
+                    <p>系统监控和性能优化配置</p>
                     <p>功能完善中，敬请期待...</p>
                 </div>
             </div>
@@ -282,14 +282,14 @@
 {% block scripts %}
 <script>
     // 页面脚本
-    console.log('收件日志页面已加载');
+    console.log('系统设置页面已加载');
 </script>
 {% endblock %}
         </a>
-        <a href="{{ url_for('admin_shoujian') }}" class="nav-item active">
+        <a href="{{ url_for('admin_shoujian') }}" class="nav-item">
             <i>📧</i> 收件日志
         </a>
-        <a href="{{ url_for('admin_system') }}" class="nav-item">
+        <a href="{{ url_for('admin_system') }}" class="nav-item active">
             <i>⚙️</i> 系统设置
         </a>
     </nav>
@@ -297,7 +297,7 @@
 
 <div class="main-content">
     <div class="header">
-        <h1 class="header-title">收件日志</h1>
+        <h1 class="header-title">系统设置</h1>
         <div class="header-actions">
             <div class="user-info">
                 <span>欢迎，{{ admin_username }}</span>
@@ -309,11 +309,11 @@
     <div class="content">
         <div class="card">
             <div class="card-header">
-                <h2 class="card-title">邮件接收日志</h2>
+                <h2 class="card-title">系统配置</h2>
             </div>
             <div class="card-body">
-                <p>邮件接收日志功能正在开发中...</p>
-                <p>将显示邮件查看的历史记录和访问统计。</p>
+                <p>系统设置功能正在开发中...</p>
+                <p>将包含管理员密码修改、系统参数配置等功能。</p>
             </div>
         </div>
     </div>
