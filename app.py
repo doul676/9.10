@@ -392,6 +392,186 @@ def api_admin_mailbox():
                 'message': f'删除失败: {str(e)}'
             })
 
+@app.route('/admin/api/mailbox/batch', methods=['POST'])
+@admin_required
+def api_admin_mailbox_batch():
+    """批量添加邮箱 API"""
+    db = get_db()
+    data = request.get_json()
+    
+    mailboxes = data.get('mailboxes', [])
+    skip_existing = data.get('skipExisting', True)
+    
+    if not mailboxes:
+        return jsonify({
+            'success': False,
+            'message': '没有要添加的邮箱数据'
+        })
+    
+    added_count = 0
+    skipped_count = 0
+    error_count = 0
+    errors = []
+    
+    for mailbox in mailboxes:
+        try:
+            email = mailbox.get('email', '').strip()
+            password = mailbox.get('password', '').strip()
+            server = mailbox.get('server', '').strip()
+            port = int(mailbox.get('port', 0))
+            protocol = mailbox.get('protocol', 'imap')
+            ssl = 1 if mailbox.get('ssl') else 0
+            remarks = mailbox.get('remarks', '').strip()
+            
+            if not all([email, password, server, port]):
+                errors.append(f'邮箱 {email}: 缺少必需字段')
+                error_count += 1
+                continue
+            
+            # 检查邮箱是否已存在
+            existing = db.execute('SELECT id FROM mail_accounts WHERE email = ?', (email,)).fetchone()
+            if existing:
+                if skip_existing:
+                    skipped_count += 1
+                    continue
+                else:
+                    errors.append(f'邮箱 {email}: 已存在')
+                    error_count += 1
+                    continue
+            
+            # 插入新邮箱
+            now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            db.execute('''
+                INSERT INTO mail_accounts (email, username, password, server, port, protocol, ssl, remarks, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (email, email, password, server, port, protocol, ssl, remarks, now, now))
+            
+            added_count += 1
+            
+        except Exception as e:
+            errors.append(f'邮箱 {mailbox.get("email", "未知")}: {str(e)}')
+            error_count += 1
+    
+    try:
+        db.commit()
+        
+        message = f'批量添加完成：成功 {added_count} 个'
+        if skipped_count > 0:
+            message += f'，跳过 {skipped_count} 个'
+        if error_count > 0:
+            message += f'，失败 {error_count} 个'
+        
+        return jsonify({
+            'success': True,
+            'message': message,
+            'details': {
+                'added': added_count,
+                'skipped': skipped_count,
+                'errors': error_count,
+                'error_list': errors
+            }
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': f'批量添加失败: {str(e)}'
+        })
+
+@app.route('/admin/api/server-address', methods=['GET', 'POST', 'DELETE'])
+@admin_required  
+def api_admin_server_address():
+    """服务器地址管理 API"""
+    db = get_db()
+    
+    if request.method == 'GET':
+        # 获取服务器地址列表
+        servers = db.execute('''
+            SELECT * FROM server_addresses 
+            ORDER BY created_at DESC
+        ''').fetchall()
+        
+        return jsonify({
+            'success': True,
+            'data': [dict(server) for server in servers]
+        })
+    
+    elif request.method == 'POST':
+        # 添加服务器地址
+        data = request.get_json()
+        
+        server_name = data.get('serverName', '').strip()
+        server_address = data.get('serverAddress', '').strip()
+        default_port_imap = int(data.get('defaultPortImap', 993))
+        default_port_pop3 = int(data.get('defaultPortPop3', 995))
+        ssl_enabled = 1 if data.get('sslEnabled') else 0
+        remarks = data.get('remarks', '').strip()
+        
+        if not all([server_name, server_address]):
+            return jsonify({
+                'success': False,
+                'message': '请填写服务器名称和地址'
+            })
+        
+        try:
+            # 检查服务器是否已存在
+            existing = db.execute(
+                'SELECT id FROM server_addresses WHERE server_name = ? OR server_address = ?', 
+                (server_name, server_address)
+            ).fetchone()
+            
+            if existing:
+                return jsonify({
+                    'success': False,
+                    'message': '服务器名称或地址已存在'
+                })
+            
+            # 插入新服务器地址
+            now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            db.execute('''
+                INSERT INTO server_addresses (server_name, server_address, default_port_imap, default_port_pop3, ssl_enabled, remarks, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (server_name, server_address, default_port_imap, default_port_pop3, ssl_enabled, remarks, now, now))
+            
+            db.commit()
+            
+            return jsonify({
+                'success': True,
+                'message': '服务器地址添加成功'
+            })
+            
+        except Exception as e:
+            return jsonify({
+                'success': False,
+                'message': f'添加失败: {str(e)}'
+            })
+    
+    elif request.method == 'DELETE':
+        # 删除服务器地址
+        data = request.get_json()
+        server_id = data.get('id')
+        
+        if not server_id:
+            return jsonify({
+                'success': False,
+                'message': '缺少服务器ID'
+            })
+        
+        try:
+            db.execute('DELETE FROM server_addresses WHERE id = ?', (server_id,))
+            db.commit()
+            
+            return jsonify({
+                'success': True,
+                'message': '服务器地址删除成功'
+            })
+            
+        except Exception as e:
+            return jsonify({
+                'success': False,
+                'message': f'删除失败: {str(e)}'
+            })
+
 if __name__ == '__main__':
     # 初始化数据库
     with app.app_context():

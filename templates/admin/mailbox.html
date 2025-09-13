@@ -181,6 +181,12 @@
         align-items: center;
     }
     
+    .header-buttons {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+    }
+    
     .card-title {
         font-size: 18px;
         font-weight: 600;
@@ -229,9 +235,43 @@
         color: white;
     }
     
-    .btn-success:hover {
+    .btn-secondary {
+        background: linear-gradient(135deg, #6b7280 0%, #4b5563 100%);
+        color: white;
+    }
+    
+    .btn-secondary:hover {
         transform: translateY(-2px);
-        box-shadow: 0 5px 15px rgba(16, 185, 129, 0.3);
+        box-shadow: 0 5px 15px rgba(107, 114, 128, 0.3);
+    }
+    
+    .btn-warning {
+        background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+        color: white;
+    }
+    
+    .btn-warning:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 5px 15px rgba(245, 158, 11, 0.3);
+    }
+    
+    /* Textarea styles */
+    .form-group textarea {
+        width: 100%;
+        padding: 12px 16px;
+        border: 2px solid #e5e7eb;
+        border-radius: 8px;
+        font-size: 14px;
+        transition: var(--transition);
+        min-height: 120px;
+        resize: vertical;
+        font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+    }
+    
+    .form-group textarea:focus {
+        outline: none;
+        border-color: var(--primary-color);
+        box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
     }
     
     /* Form Styles */
@@ -500,9 +540,17 @@
         <div class="card">
             <div class="card-header">
                 <h2 class="card-title">邮箱账号管理</h2>
-                <button class="btn btn-primary" onclick="showAddModal()">
-                    ➕ 添加邮箱
-                </button>
+                <div class="header-buttons">
+                    <button class="btn btn-primary" onclick="showAddModal()">
+                        ➕ 添加邮箱
+                    </button>
+                    <button class="btn btn-success" onclick="showBatchAddModal()">
+                        📦 批量添加邮箱
+                    </button>
+                    <button class="btn btn-secondary" onclick="showServerModal()">
+                        🌐 添加服务器地址
+                    </button>
+                </div>
             </div>
             <div class="card-body">
                 <div class="table-container">
@@ -592,6 +640,116 @@
         </div>
     </div>
 </div>
+
+<!-- 批量添加邮箱模态框 -->
+<div id="batchAddModal" class="modal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3 class="modal-title">批量添加邮箱</h3>
+            <button class="modal-close" onclick="closeBatchModal()">&times;</button>
+        </div>
+        <div class="modal-body">
+            <form id="batchAddForm">
+                <div class="form-group">
+                    <label for="batchEmails">邮箱列表 *</label>
+                    <textarea id="batchEmails" name="batchEmails" required 
+                              placeholder="请输入邮箱列表，每行一个，格式：
+邮箱|密码|服务器|端口|协议|SSL|备注
+example1@qq.com|password1|imap.qq.com|993|imap|1|测试邮箱1
+example2@163.com|password2|imap.163.com|993|imap|1|测试邮箱2"></textarea>
+                    <small style="color: #6b7280; font-size: 12px;">
+                        支持格式：邮箱|密码|服务器|端口|协议|SSL|备注（用|分隔，协议可选imap/pop3，SSL填1或0）
+                    </small>
+                </div>
+                
+                <div class="form-group">
+                    <div class="checkbox-group">
+                        <input type="checkbox" id="skipExisting" name="skipExisting" checked>
+                        <label for="skipExisting">跳过已存在的邮箱</label>
+                    </div>
+                </div>
+            </form>
+        </div>
+        <div class="modal-footer">
+            <button type="button" class="btn" onclick="closeBatchModal()">取消</button>
+            <button type="button" class="btn btn-warning" onclick="previewBatch()">预览</button>
+            <button type="button" class="btn btn-primary" onclick="saveBatchMailboxes()">批量添加</button>
+        </div>
+    </div>
+</div>
+
+<!-- 添加服务器地址模态框 -->
+<div id="serverModal" class="modal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3 class="modal-title">添加服务器地址</h3>
+            <button class="modal-close" onclick="closeServerModal()">&times;</button>
+        </div>
+        <div class="modal-body">
+            <form id="serverForm">
+                <div class="form-group">
+                    <label for="serverName">服务器名称 *</label>
+                    <input type="text" id="serverName" name="serverName" required 
+                           placeholder="例: QQ邮箱">
+                </div>
+                
+                <div class="form-group">
+                    <label for="serverAddress">服务器地址 *</label>
+                    <input type="text" id="serverAddress" name="serverAddress" required 
+                           placeholder="例: imap.qq.com">
+                </div>
+                
+                <div class="form-group">
+                    <label for="defaultPortImap">IMAP默认端口</label>
+                    <input type="number" id="defaultPortImap" name="defaultPortImap" 
+                           value="993" placeholder="993">
+                </div>
+                
+                <div class="form-group">
+                    <label for="defaultPortPop3">POP3默认端口</label>
+                    <input type="number" id="defaultPortPop3" name="defaultPortPop3" 
+                           value="995" placeholder="995">
+                </div>
+                
+                <div class="form-group">
+                    <div class="checkbox-group">
+                        <input type="checkbox" id="serverSslEnabled" name="serverSslEnabled" checked>
+                        <label for="serverSslEnabled">默认启用SSL</label>
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <label for="serverRemarks">备注</label>
+                    <input type="text" id="serverRemarks" name="serverRemarks" 
+                           placeholder="可选：服务器备注信息">
+                </div>
+            </form>
+        </div>
+        <div class="modal-footer">
+            <button type="button" class="btn" onclick="closeServerModal()">取消</button>
+            <button type="button" class="btn btn-primary" onclick="saveServerAddress()">保存</button>
+        </div>
+    </div>
+</div>
+
+<!-- 批量预览模态框 -->
+<div id="previewModal" class="modal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3 class="modal-title">批量添加预览</h3>
+            <button class="modal-close" onclick="closePreviewModal()">&times;</button>
+        </div>
+        <div class="modal-body">
+            <div id="previewContent">
+                <!-- 预览内容将动态加载 -->
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button type="button" class="btn" onclick="closePreviewModal()">关闭</button>
+            <button type="button" class="btn btn-primary" onclick="confirmBatchAdd()">确认添加</button>
+        </div>
+    </div>
+</div>
 {% endblock %}
 
 {% block scripts %}
@@ -662,6 +820,206 @@
         document.getElementById('mailboxId').value = '';
         document.getElementById('ssl').checked = true;
         document.getElementById('mailboxModal').classList.add('show');
+    }
+    
+    // 显示批量添加邮箱模态框
+    function showBatchAddModal() {
+        document.getElementById('batchAddForm').reset();
+        document.getElementById('skipExisting').checked = true;
+        document.getElementById('batchAddModal').classList.add('show');
+    }
+    
+    // 显示服务器地址模态框  
+    function showServerModal() {
+        document.getElementById('serverForm').reset();
+        document.getElementById('defaultPortImap').value = '993';
+        document.getElementById('defaultPortPop3').value = '995';
+        document.getElementById('serverSslEnabled').checked = true;
+        document.getElementById('serverModal').classList.add('show');
+    }
+    
+    // 关闭批量添加模态框
+    function closeBatchModal() {
+        document.getElementById('batchAddModal').classList.remove('show');
+    }
+    
+    // 关闭服务器地址模态框
+    function closeServerModal() {
+        document.getElementById('serverModal').classList.remove('show');
+    }
+    
+    // 关闭预览模态框
+    function closePreviewModal() {
+        document.getElementById('previewModal').classList.remove('show');
+    }
+    
+    // 预览批量添加
+    function previewBatch() {
+        const batchEmails = document.getElementById('batchEmails').value.trim();
+        if (!batchEmails) {
+            showToast('请输入邮箱列表', 'error');
+            return;
+        }
+        
+        const lines = batchEmails.split('\n').filter(line => line.trim());
+        const parsed = [];
+        const errors = [];
+        
+        lines.forEach((line, index) => {
+            const parts = line.trim().split('|');
+            if (parts.length < 2) {
+                errors.push(`第${index + 1}行：格式错误，至少需要邮箱和密码`);
+                return;
+            }
+            
+            const [email, password, server, port, protocol, ssl, remarks] = parts;
+            
+            if (!email || !password) {
+                errors.push(`第${index + 1}行：邮箱和密码不能为空`);
+                return;
+            }
+            
+            parsed.push({
+                email: email.trim(),
+                password: password.trim(),
+                server: server ? server.trim() : 'imap.qq.com',
+                port: port ? parseInt(port) : 993,
+                protocol: protocol ? protocol.trim() : 'imap',
+                ssl: ssl ? (ssl.trim() === '1') : true,
+                remarks: remarks ? remarks.trim() : ''
+            });
+        });
+        
+        if (errors.length > 0) {
+            showToast('格式错误：\\n' + errors.join('\\n'), 'error');
+            return;
+        }
+        
+        // 显示预览
+        let previewHtml = `
+            <div style="margin-bottom: 15px;">
+                <strong>将要添加 ${parsed.length} 个邮箱账号：</strong>
+            </div>
+            <div class="table-container">
+                <table style="font-size: 12px;">
+                    <thead>
+                        <tr>
+                            <th>邮箱</th>
+                            <th>服务器</th>
+                            <th>端口</th>
+                            <th>协议</th>
+                            <th>SSL</th>
+                            <th>备注</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+        `;
+        
+        parsed.forEach(item => {
+            previewHtml += `
+                <tr>
+                    <td>${escapeHtml(item.email)}</td>
+                    <td>${escapeHtml(item.server)}</td>
+                    <td>${item.port}</td>
+                    <td>${item.protocol.toUpperCase()}</td>
+                    <td>${item.ssl ? '✅' : '❌'}</td>
+                    <td>${escapeHtml(item.remarks)}</td>
+                </tr>
+            `;
+        });
+        
+        previewHtml += `
+                    </tbody>
+                </table>
+            </div>
+        `;
+        
+        document.getElementById('previewContent').innerHTML = previewHtml;
+        document.getElementById('previewModal').classList.add('show');
+        
+        // 存储解析的数据供确认时使用
+        window.batchParsedData = parsed;
+    }
+    
+    // 确认批量添加
+    async function confirmBatchAdd() {
+        if (!window.batchParsedData) {
+            showToast('没有要添加的数据', 'error');
+            return;
+        }
+        
+        const skipExisting = document.getElementById('skipExisting').checked;
+        
+        try {
+            const response = await fetch('/admin/api/mailbox/batch', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    mailboxes: window.batchParsedData,
+                    skipExisting: skipExisting
+                })
+            });
+            
+            const result = await response.json();
+            
+            if (result.success) {
+                showToast(result.message || '批量添加成功', 'success');
+                closePreviewModal();
+                closeBatchModal();
+                loadMailboxes();
+                window.batchParsedData = null;
+            } else {
+                showToast(result.message || '批量添加失败', 'error');
+            }
+        } catch (error) {
+            console.error('批量添加失败:', error);
+            showToast('网络错误，请稍后重试', 'error');
+        }
+    }
+    
+    // 批量添加邮箱
+    async function saveBatchMailboxes() {
+        previewBatch(); // 先预览，然后用户可以确认
+    }
+    
+    // 保存服务器地址
+    async function saveServerAddress() {
+        const form = document.getElementById('serverForm');
+        const formData = new FormData(form);
+        
+        const data = {
+            serverName: formData.get('serverName'),
+            serverAddress: formData.get('serverAddress'),
+            defaultPortImap: parseInt(formData.get('defaultPortImap')) || 993,
+            defaultPortPop3: parseInt(formData.get('defaultPortPop3')) || 995,
+            sslEnabled: formData.get('serverSslEnabled') === 'on',
+            remarks: formData.get('serverRemarks')
+        };
+        
+        try {
+            const response = await fetch('/admin/api/server-address', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(data)
+            });
+            
+            const result = await response.json();
+            
+            if (result.success) {
+                showToast(result.message || '服务器地址保存成功', 'success');
+                closeServerModal();
+                // 可以刷新服务器列表或更新UI
+            } else {
+                showToast(result.message || '保存失败', 'error');
+            }
+        } catch (error) {
+            console.error('保存服务器地址失败:', error);
+            showToast('网络错误，请稍后重试', 'error');
+        }
     }
     
     // 编辑邮箱
@@ -774,6 +1132,24 @@
     document.getElementById('mailboxModal').addEventListener('click', function(e) {
         if (e.target === this) {
             closeModal();
+        }
+    });
+    
+    document.getElementById('batchAddModal').addEventListener('click', function(e) {
+        if (e.target === this) {
+            closeBatchModal();
+        }
+    });
+    
+    document.getElementById('serverModal').addEventListener('click', function(e) {
+        if (e.target === this) {
+            closeServerModal();
+        }
+    });
+    
+    document.getElementById('previewModal').addEventListener('click', function(e) {
+        if (e.target === this) {
+            closePreviewModal();
         }
     });
     
