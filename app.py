@@ -303,7 +303,7 @@ def api_get_mail():
                 sys.executable, 
                 os.path.join(os.path.dirname(__file__), 'python', 'mail_fetcher.py'),
                 email
-            ], capture_output=True, text=True, timeout=60)
+            ], capture_output=True, text=True, timeout=120)  # Increased timeout from 60 to 120 seconds
             
             if result.returncode == 0:
                 # 解析JSON输出
@@ -698,14 +698,24 @@ def _test_mailbox(db, data):
         
         try:
             # 使用邮箱ID进行连接测试
-            email_address = account['email'] if app.config['DATABASE_TYPE'] == 'sqlite' else account[1]  # email column
+            if app.config['DATABASE_TYPE'] == 'sqlite':
+                email_address = account['email']
+            else:
+                # For MySQL/PostgreSQL, get email from tuple/dict based on structure
+                if hasattr(account, '_mapping'):  # RealDictCursor result
+                    email_address = account['email']
+                elif isinstance(account, dict):
+                    email_address = account['email'] 
+                else:
+                    # Tuple result - email is typically the second column (index 1)
+                    email_address = account[1] if len(account) > 1 else account[0]
             
             result = subprocess.run([
                 sys.executable, 
                 os.path.join(os.path.dirname(__file__), 'python', 'mail_fetcher.py'),
                 email_address,
                 '--test-connection'
-            ], capture_output=True, text=True, timeout=30)
+            ], capture_output=True, text=True, timeout=60)  # Increased timeout from 30 to 60 seconds
             
             if result.returncode == 0:
                 # 解析JSON输出
@@ -777,26 +787,97 @@ def _test_new_mailbox(data):
         })
     
     try:
-        # 使用Python邮件获取器进行实际测试
+        # Use direct import and create a temporary test instance
         import sys
-        sys.path.append(os.path.join(os.path.dirname(__file__), 'python'))
+        import tempfile
+        import sqlite3
         
-        from mail_fetcher import ProxyMailFetcher
+        # Create temporary database for testing
+        temp_fd, temp_db_path = tempfile.mkstemp(suffix='.sqlite')
+        os.close(temp_fd)
         
-        # 创建邮件获取器实例进行测试
-        fetcher = ProxyMailFetcher(
-            server=server,
-            port=port,
-            username=email,  # 使用邮箱作为用户名
-            password=password,
-            protocol=protocol,
-            use_ssl=ssl
-        )
-        
-        # 执行连接测试
-        test_result = fetcher.test_connection()
-        
-        return jsonify(test_result)
+        try:
+            # Set up temporary database with test account
+            conn = sqlite3.connect(temp_db_path)
+            cursor = conn.cursor()
+            
+            # Create mail_accounts table
+            cursor.execute('''
+                CREATE TABLE mail_accounts (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    email TEXT NOT NULL,
+                    username TEXT NOT NULL,
+                    password TEXT NOT NULL,
+                    server TEXT NOT NULL,
+                    port INTEGER NOT NULL,
+                    protocol TEXT NOT NULL DEFAULT 'imap',
+                    ssl INTEGER NOT NULL DEFAULT 1
+                )
+            ''')
+            
+            # Insert test account
+            cursor.execute('''
+                INSERT INTO mail_accounts (email, username, password, server, port, protocol, ssl)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            ''', (email, email, password, server, port, protocol, 1 if ssl else 0))
+            
+            # Copy proxy configuration from main database if it exists
+            main_db_path = os.path.join(os.path.dirname(__file__), 'db', 'mail.sqlite')
+            if os.path.exists(main_db_path):
+                main_conn = sqlite3.connect(main_db_path)
+                main_cursor = main_conn.cursor()
+                
+                # Copy proxy tables if they exist
+                for table in ['proxy_config', 'http_proxies', 'socks5_proxies']:
+                    try:
+                        main_cursor.execute(f"SELECT name FROM sqlite_master WHERE type='table' AND name='{table}'")
+                        if main_cursor.fetchone():
+                            # Get table schema
+                            main_cursor.execute(f"SELECT sql FROM sqlite_master WHERE type='table' AND name='{table}'")
+                            create_sql = main_cursor.fetchone()[0]
+                            cursor.execute(create_sql)
+                            
+                            # Copy data
+                            main_cursor.execute(f"SELECT * FROM {table}")
+                            rows = main_cursor.fetchall()
+                            if rows:
+                                placeholders = ','.join(['?' for _ in rows[0]])
+                                cursor.executemany(f"INSERT INTO {table} VALUES ({placeholders})", rows)
+                    except Exception:
+                        pass  # Skip if error
+                
+                main_conn.close()
+            
+            conn.commit()
+            conn.close()
+            
+            # Now run the test using subprocess with temporary database
+            result = subprocess.run([
+                sys.executable, 
+                os.path.join(os.path.dirname(__file__), 'python', 'mail_fetcher.py'),
+                email,
+                '--test-connection'
+            ], capture_output=True, text=True, timeout=45, 
+            env={**os.environ, 'MAIL_DB_PATH': temp_db_path})
+            
+            if result.returncode == 0:
+                # Parse JSON output
+                response_data = json.loads(result.stdout)
+                return jsonify(response_data)
+            else:
+                error_msg = result.stderr or '连接测试失败'
+                return jsonify({
+                    'success': False,
+                    'message': f'邮箱测试失败: {error_msg}'
+                })
+                
+        finally:
+            # Clean up temporary database
+            try:
+                if os.path.exists(temp_db_path):
+                    os.unlink(temp_db_path)
+            except:
+                pass
         
     except Exception as e:
         return jsonify({

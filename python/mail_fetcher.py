@@ -108,7 +108,10 @@ class ProxyMailFetcher:
     def _check_proxy_status(self):
         """Check proxy configuration from database"""
         try:
-            db_path = os.path.join(os.path.dirname(__file__), '..', 'db', 'mail.sqlite')
+            # Use environment variable if set, otherwise use default path
+            db_path = os.environ.get('MAIL_DB_PATH')
+            if not db_path:
+                db_path = os.path.join(os.path.dirname(__file__), '..', 'db', 'mail.sqlite')
             
             if not os.path.exists(db_path):
                 return
@@ -177,35 +180,79 @@ class ProxyMailFetcher:
     def connect(self):
         """Connect to mail server"""
         connection_method = "未知"
-        try:
-            if self.proxy_enabled:
-                connection_method = f"代理 ({self.proxy_info['type']} - {self.proxy_info['name']})"
-                logger.info(f"Attempting connection with proxy: {self.proxy_info['name']} ({self.proxy_info['type']})")
-                return self._connect_with_proxy()
-            else:
-                connection_method = "直连"
-                logger.info("Connecting directly to mail server")
-                
-            if self.protocol == 'imap':
-                return self._connect_imap()
-            elif self.protocol == 'pop3':
-                # POP3 support can be added later if needed
-                raise Exception("POP3 protocol not yet implemented in Python version")
-            else:
-                raise Exception(f"Unsupported protocol: {self.protocol}")
-                
-        except Exception as e:
-            error_message = str(e)
-            
-            # Don't double-wrap error messages that already contain connection info
-            if "代理" not in error_message and "直连" not in error_message:
+        max_retries = 3
+        retry_count = 0
+        
+        while retry_count < max_retries:
+            try:
                 if self.proxy_enabled:
-                    error_message += f" (通过{connection_method}连接)"
+                    connection_method = f"代理 ({self.proxy_info['type']} - {self.proxy_info['name']})"
+                    logger.info(f"Attempting connection with proxy: {self.proxy_info['name']} ({self.proxy_info['type']}) - Attempt {retry_count + 1}")
+                    return self._connect_with_proxy()
                 else:
-                    error_message += f" ({connection_method})"
-            
-            logger.error(f"Connection failed: {error_message}")
-            raise Exception(error_message)
+                    connection_method = "直连"
+                    logger.info(f"Connecting directly to mail server - Attempt {retry_count + 1}")
+                    
+                if self.protocol == 'imap':
+                    return self._connect_imap()
+                elif self.protocol == 'pop3':
+                    # POP3 support can be added later if needed
+                    raise Exception("POP3 protocol not yet implemented in Python version")
+                else:
+                    raise Exception(f"Unsupported protocol: {self.protocol}")
+                    
+            except Exception as e:
+                retry_count += 1
+                error_message = str(e)
+                
+                # Check if this is a retryable error
+                retryable_errors = [
+                    "timeout", "超时", "timed out",
+                    "connection reset", "连接被重置", 
+                    "connection refused", "连接被拒绝",
+                    "network is unreachable", "网络不可达",
+                    "temporary failure", "临时失败"
+                ]
+                
+                is_retryable = any(keyword in error_message.lower() for keyword in retryable_errors)
+                
+                # Don't retry for authentication or configuration errors
+                non_retryable_errors = [
+                    "authentication", "用户名或密码", "登录失败",
+                    "ssl", "certificate", "证书",
+                    "protocol", "协议",
+                    "unsupported", "不支持"
+                ]
+                
+                is_non_retryable = any(keyword in error_message.lower() for keyword in non_retryable_errors)
+                
+                if is_non_retryable or retry_count >= max_retries:
+                    # Don't double-wrap error messages that already contain connection info
+                    if "代理" not in error_message and "直连" not in error_message:
+                        if self.proxy_enabled:
+                            error_message += f" (通过{connection_method}连接)"
+                        else:
+                            error_message += f" ({connection_method})"
+                    
+                    logger.error(f"Connection failed after {retry_count} attempts: {error_message}")
+                    raise Exception(error_message)
+                
+                if is_retryable and retry_count < max_retries:
+                    logger.warning(f"Connection attempt {retry_count} failed with retryable error: {error_message}")
+                    logger.info(f"Retrying in 2 seconds... (attempt {retry_count + 1}/{max_retries})")
+                    import time
+                    time.sleep(2)
+                    continue
+                else:
+                    # Non-retryable error or max retries reached
+                    if "代理" not in error_message and "直连" not in error_message:
+                        if self.proxy_enabled:
+                            error_message += f" (通过{connection_method}连接)"
+                        else:
+                            error_message += f" ({connection_method})"
+                    
+                    logger.error(f"Connection failed: {error_message}")
+                    raise Exception(error_message)
     
     def _connect_with_proxy(self):
         """Connect to mail server through proxy"""
@@ -249,7 +296,7 @@ class ProxyMailFetcher:
             except socket.error as e:
                 raise Exception(f"SOCKS5代理服务器连接失败: {str(e)}")
             
-            # Set up SOCKS5 proxy
+            # Set up SOCKS5 proxy with timeout settings
             try:
                 if proxy_username and proxy_password:
                     socks.set_default_proxy(socks.SOCKS5, proxy_host, proxy_port, 
@@ -260,11 +307,19 @@ class ProxyMailFetcher:
                 # Monkey patch socket to use SOCKS5
                 socket.socket = socks.socksocket
                 
+                # Set socket timeout for SOCKS connections
+                original_timeout = socket.getdefaulttimeout()
+                socket.setdefaulttimeout(30)
+                
                 logger.info(f"SOCKS5 proxy configured successfully")
                 
                 # Now connect via IMAP with the proxied socket
-                result = self._connect_imap()
-                return result
+                try:
+                    result = self._connect_imap()
+                    return result
+                finally:
+                    # Restore original timeout
+                    socket.setdefaulttimeout(original_timeout)
                 
             except socks.ProxyError as e:
                 raise Exception(f"SOCKS5代理配置错误: {str(e)}")
@@ -274,15 +329,17 @@ class ProxyMailFetcher:
                 raise Exception(f"SOCKS5代理连接错误: {str(e)}")
             except Exception as e:
                 error_msg = str(e)
-                if "邮箱" in error_msg or "IMAP" in error_msg:
-                    # This is an IMAP-related error, not proxy error
+                # Check if this is an IMAP/email specific error that should be passed through
+                if any(keyword in error_msg for keyword in ["邮箱", "用户名或密码", "SSL连接失败", "IMAP连接失败", "登录失败"]):
+                    # This is an IMAP-related error, not proxy error - pass it through
                     raise e
                 else:
                     raise Exception(f"通过SOCKS5代理连接失败: {error_msg}")
                 
         except Exception as e:
             error_msg = str(e)
-            if "SOCKS5代理" in error_msg or "无法连接到SOCKS5" in error_msg or "通过SOCKS5代理连接失败" in error_msg:
+            # Only wrap the error if it's not already a specific error message
+            if any(keyword in error_msg for keyword in ["SOCKS5代理", "无法连接到SOCKS5", "通过SOCKS5代理连接失败", "邮箱", "SSL连接失败"]):
                 raise e
             else:
                 raise Exception(f"SOCKS5 proxy connection failed: {error_msg}")
@@ -292,9 +349,23 @@ class ProxyMailFetcher:
     
     def _connect_http_proxy(self, proxy_host, proxy_port, proxy_username, proxy_password):
         """Connect using HTTP proxy with CONNECT tunneling"""
+        proxy_conn = None
         try:
             # For HTTP proxy, we need to establish a CONNECT tunnel to the IMAP server
             logger.info(f"Establishing HTTP CONNECT tunnel via {proxy_host}:{proxy_port}")
+            
+            # Test proxy connectivity first
+            try:
+                test_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                test_socket.settimeout(10)
+                result = test_socket.connect_ex((proxy_host, proxy_port))
+                test_socket.close()
+                
+                if result != 0:
+                    raise Exception(f"无法连接到HTTP代理服务器 {proxy_host}:{proxy_port}")
+                    
+            except socket.error as e:
+                raise Exception(f"HTTP代理服务器连接失败: {str(e)}")
             
             # Create connection to proxy with better error handling
             try:
@@ -313,6 +384,10 @@ class ProxyMailFetcher:
                 # Get the underlying socket from the HTTP connection
                 proxy_socket = proxy_conn.sock
                 
+                # Verify socket is valid
+                if not proxy_socket:
+                    raise Exception("HTTP代理隧道建立失败：无法获取代理套接字")
+                
             except (http.client.HTTPException, socket.error, OSError) as e:
                 raise Exception(f"HTTP代理连接失败: {str(e)}")
             
@@ -328,20 +403,20 @@ class ProxyMailFetcher:
                     ssl_socket = ssl_context.wrap_socket(proxy_socket, server_hostname=self.server)
                     
                     # Create IMAP connection manually with the SSL socket
-                    self.connection = imaplib.IMAP4(self.server, self.port)
+                    self.connection = imaplib.IMAP4()
                     self.connection.sock = ssl_socket
                     self.connection.file = ssl_socket.makefile('rb')
                     
                     # Send capability command to verify connection
-                    self.connection._cmd('OK', 'CAPABILITY')
+                    self.connection._get_response()
                 else:
                     # For non-SSL connections
-                    self.connection = imaplib.IMAP4(self.server, self.port)
+                    self.connection = imaplib.IMAP4()
                     self.connection.sock = proxy_socket
                     self.connection.file = proxy_socket.makefile('rb')
                     
                     # Send capability command to verify connection
-                    self.connection._cmd('OK', 'CAPABILITY')
+                    self.connection._get_response()
                 
                 # Login to IMAP server
                 self.connection.login(self.username, self.password)
@@ -353,15 +428,24 @@ class ProxyMailFetcher:
                 return True
                 
             except (imaplib.IMAP4.error, socket.error, ssl.SSLError) as e:
+                error_msg = str(e).lower()
+                if 'authentication' in error_msg or 'login' in error_msg:
+                    raise Exception("邮箱用户名或密码错误，请检查登录凭据")
+                elif 'ssl' in error_msg or 'certificate' in error_msg:
+                    raise Exception("SSL连接失败，请检查服务器SSL配置或尝试关闭SSL")
+                else:
+                    raise Exception(f"通过HTTP代理连接IMAP服务器失败: {str(e)}")
+            
+        except Exception as e:
+            # Clean up proxy connection on error
+            if proxy_conn:
                 try:
                     proxy_conn.close()
                 except:
                     pass
-                raise Exception(f"通过HTTP代理连接IMAP服务器失败: {str(e)}")
             
-        except Exception as e:
             error_msg = str(e)
-            if "代理连接失败" in error_msg or "IMAP服务器失败" in error_msg:
+            if any(keyword in error_msg for keyword in ["HTTP代理", "无法连接到HTTP", "邮箱用户名", "SSL连接失败"]):
                 raise e
             else:
                 raise Exception(f"HTTP proxy tunnel failed: {error_msg}")
@@ -377,7 +461,7 @@ class ProxyMailFetcher:
                 # Test basic connectivity first
                 logger.info(f"Testing connectivity to {self.server}:{self.port}")
                 test_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                test_socket.settimeout(10)
+                test_socket.settimeout(15)  # Shorter timeout for connectivity test
                 
                 try:
                     test_result = test_socket.connect_ex((self.server, self.port))
@@ -883,7 +967,11 @@ def main():
     
     try:
         # Get email account from database
-        db_path = os.path.join(os.path.dirname(__file__), '..', 'db', 'mail.sqlite')
+        # Use environment variable if set, otherwise use default path
+        db_path = os.environ.get('MAIL_DB_PATH')
+        if not db_path:
+            db_path = os.path.join(os.path.dirname(__file__), '..', 'db', 'mail.sqlite')
+            
         conn = sqlite3.connect(db_path)
         cursor = conn.cursor()
         
