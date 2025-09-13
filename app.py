@@ -649,6 +649,241 @@ def api_proxy_config():
                 'message': f'保存配置失败: {str(e)}'
             })
 
+# ===============================
+# 卡密管理 API
+# ===============================
+
+@app.route('/admin/api/kami', methods=['GET', 'POST', 'DELETE'])
+@admin_required
+def api_admin_kami():
+    """卡密管理 API"""
+    db = get_db()
+    
+    if request.method == 'GET':
+        # 获取卡密列表
+        cards = db.execute('''
+            SELECT * FROM kami_cards 
+            ORDER BY created_at DESC
+        ''').fetchall()
+        
+        return jsonify({
+            'success': True,
+            'data': [dict(card) for card in cards]
+        })
+    
+    elif request.method == 'POST':
+        # 生成卡密
+        data = request.get_json()
+        action = data.get('action')
+        
+        if action == 'generate':
+            card_type = data.get('card_type', 'monthly')
+            duration = int(data.get('duration', 30))
+            price = float(data.get('price', 0.00))
+            count = int(data.get('count', 1))
+            remarks = data.get('remarks', '').strip()
+            
+            if count < 1 or count > 1000:
+                return jsonify({
+                    'success': False,
+                    'message': '生成数量必须在1-1000之间'
+                })
+            
+            try:
+                import secrets
+                import string
+                
+                generated_cards = []
+                for i in range(count):
+                    # 生成随机卡密
+                    card_key = f"CARD-{secrets.token_urlsafe(8).upper()}-{card_type.upper()}"
+                    
+                    # 插入数据库
+                    db.execute('''
+                        INSERT INTO kami_cards 
+                        (card_key, card_type, duration, price, remarks, created_at, updated_at) 
+                        VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                    ''', (card_key, card_type, duration, price, remarks))
+                    
+                    generated_cards.append(card_key)
+                
+                db.commit()
+                
+                return jsonify({
+                    'success': True,
+                    'message': f'成功生成{count}张卡密',
+                    'data': generated_cards
+                })
+                
+            except Exception as e:
+                return jsonify({
+                    'success': False,
+                    'message': f'生成失败: {str(e)}'
+                })
+    
+    elif request.method == 'DELETE':
+        # 删除卡密
+        data = request.get_json()
+        card_id = data.get('id')
+        
+        if not card_id:
+            return jsonify({
+                'success': False,
+                'message': '缺少卡密ID'
+            })
+        
+        try:
+            db.execute('DELETE FROM kami_cards WHERE id = ?', (card_id,))
+            db.commit()
+            
+            return jsonify({
+                'success': True,
+                'message': '卡密删除成功'
+            })
+            
+        except Exception as e:
+            return jsonify({
+                'success': False,
+                'message': f'删除失败: {str(e)}'
+            })
+
+@app.route('/admin/api/kami/batch', methods=['POST'])
+@admin_required
+def api_kami_batch():
+    """批量生成卡密"""
+    db = get_db()
+    data = request.get_json()
+    requests = data.get('requests', [])
+    
+    if not requests:
+        return jsonify({
+            'success': False,
+            'message': '没有有效的生成请求'
+        })
+    
+    try:
+        import secrets
+        total_count = 0
+        
+        for req in requests:
+            card_type = req.get('card_type', 'monthly')
+            count = int(req.get('count', 1))
+            price = float(req.get('price', 0.00))
+            remarks = req.get('remarks', '').strip()
+            
+            # 根据类型确定天数
+            duration_map = {
+                'daily': 1, 'weekly': 7, 'monthly': 30,
+                'quarterly': 90, 'yearly': 365
+            }
+            duration = duration_map.get(card_type, 30)
+            
+            # 生成卡密
+            for i in range(count):
+                card_key = f"CARD-{secrets.token_urlsafe(8).upper()}-{card_type.upper()}"
+                
+                db.execute('''
+                    INSERT INTO kami_cards 
+                    (card_key, card_type, duration, price, remarks, created_at, updated_at) 
+                    VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                ''', (card_key, card_type, duration, price, remarks))
+                
+                total_count += 1
+        
+        db.commit()
+        
+        return jsonify({
+            'success': True,
+            'message': f'批量生成完成',
+            'total_count': total_count
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': f'批量生成失败: {str(e)}'
+        })
+
+@app.route('/admin/api/kami/export', methods=['GET'])
+@admin_required
+def api_kami_export():
+    """导出卡密"""
+    db = get_db()
+    
+    try:
+        import csv
+        import io
+        
+        cards = db.execute('''
+            SELECT card_key, card_type, duration, price, status, 
+                   used_by, used_at, expires_at, created_at, remarks 
+            FROM kami_cards 
+            ORDER BY created_at DESC
+        ''').fetchall()
+        
+        output = io.StringIO()
+        writer = csv.writer(output)
+        
+        # 写入标题行
+        writer.writerow(['卡密', '类型', '时长(天)', '价格', '状态', '使用者', '使用时间', '过期时间', '创建时间', '备注'])
+        
+        # 写入数据行
+        for card in cards:
+            status_text = '可用'
+            if card['used_at']:
+                status_text = '已使用'
+            elif card['expires_at'] and card['expires_at'] < datetime.now(timezone.utc).isoformat():
+                status_text = '已过期'
+            
+            writer.writerow([
+                card['card_key'], card['card_type'], card['duration'], 
+                card['price'], status_text, card['used_by'] or '', 
+                card['used_at'] or '', card['expires_at'] or '', 
+                card['created_at'], card['remarks'] or ''
+            ])
+        
+        output.seek(0)
+        return app.response_class(
+            output.getvalue(),
+            mimetype='text/csv',
+            headers={'Content-Disposition': 'attachment; filename=kami_export.csv'}
+        )
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': f'导出失败: {str(e)}'
+        })
+
+@app.route('/admin/api/kami/cleanup', methods=['DELETE'])
+@admin_required
+def api_kami_cleanup():
+    """清理过期卡密"""
+    db = get_db()
+    
+    try:
+        # 删除过期的未使用卡密
+        result = db.execute('''
+            DELETE FROM kami_cards 
+            WHERE expires_at IS NOT NULL 
+            AND expires_at < CURRENT_TIMESTAMP 
+            AND used_at IS NULL
+        ''')
+        deleted_count = result.rowcount
+        db.commit()
+        
+        return jsonify({
+            'success': True,
+            'message': f'清理完成',
+            'deleted_count': deleted_count
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': f'清理失败: {str(e)}'
+        })
+
 if __name__ == '__main__':
     # 初始化数据库
     with app.app_context():
