@@ -86,10 +86,11 @@
             gap: 15px;
             margin-bottom: 20px;
             position: relative;
+            align-items: stretch;
         }
         
         .input-group input {
-            flex: 1;
+            flex: 2;
             padding: 18px 20px;
             border: 2px solid #e1e1e1;
             border-radius: 12px;
@@ -124,8 +125,8 @@
             white-space: nowrap;
             position: relative;
             overflow: hidden;
-            flex: 1;
-            margin-left: 10px;
+            flex: 0 0 auto;
+            min-width: 120px;
         }
         
         .get-mail-btn::before {
@@ -659,7 +660,7 @@
             mailDisplay.style.display = 'none';
             
             try {
-                const response = await fetch('backend/api/get_mail.php', {
+                const response = await fetch('../backend/api/get_mail.php', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',

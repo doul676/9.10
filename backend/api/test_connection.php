@@ -35,7 +35,19 @@ if (empty($email)) {
 
 try {
     // 连接数据库查找邮箱配置
-    $db = new SQLite3('../../db/mail.sqlite');
+    $db_path = __DIR__ . '/../../db/mail.sqlite';
+    
+    // 检查数据库文件是否存在
+    if (!file_exists($db_path)) {
+        echo json_encode([
+            'success' => false,
+            'message' => '数据库文件不存在，请检查系统配置',
+            'error_type' => 'database_missing'
+        ]);
+        exit();
+    }
+    
+    $db = new SQLite3($db_path);
     $stmt = $db->prepare('SELECT * FROM mail_accounts WHERE email = ?');
     $stmt->bindValue(1, $email);
     $result = $stmt->execute();

@@ -25,6 +25,71 @@ import logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Check and install missing dependencies
+def check_dependencies():
+    """Check if all required dependencies are installed and attempt to install if missing"""
+    missing_deps = []
+    
+    try:
+        import imapclient
+    except ImportError:
+        missing_deps.append('imapclient')
+    
+    try:
+        import requests
+    except ImportError:
+        missing_deps.append('requests')
+    
+    try:
+        import socks
+    except ImportError:
+        missing_deps.append('pysocks')
+    
+    if missing_deps:
+        logger.warning(f"Missing dependencies: {missing_deps}")
+        logger.info("Attempting to install missing dependencies...")
+        
+        try:
+            import subprocess
+            import sys
+            
+            for dep in missing_deps:
+                logger.info(f"Installing {dep}...")
+                result = subprocess.run([
+                    sys.executable, '-m', 'pip', 'install', '--user', dep
+                ], capture_output=True, text=True, timeout=60)
+                
+                if result.returncode != 0:
+                    logger.error(f"Failed to install {dep}: {result.stderr}")
+                    return False
+                else:
+                    logger.info(f"Successfully installed {dep}")
+            
+            # Try importing again after installation
+            if 'imapclient' in missing_deps:
+                import imapclient
+            if 'pysocks' in missing_deps:
+                import socks
+            if 'requests' in missing_deps:
+                import requests
+                
+            logger.info("All dependencies installed successfully")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Failed to install dependencies: {e}")
+            return False
+    
+    return True
+
+# Initialize dependencies
+if not check_dependencies():
+    print(json.dumps({
+        'success': False,
+        'message': '系统依赖包安装失败，请确保在root环境下运行或手动安装依赖包'
+    }, ensure_ascii=False))
+    sys.exit(1)
+
 class ProxyMailFetcher:
     def __init__(self, server, port, username, password, protocol='imap', use_ssl=True):
         self.server = server
