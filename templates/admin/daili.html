@@ -894,14 +894,15 @@
             return;
         }
         
-        paginatedProxies.forEach(proxy => {
+        paginatedProxies.forEach((proxy, index) => {
             const row = document.createElement('tr');
             const statusBadge = getStatusBadge(proxy.status, proxy.response_time);
             const proxyType = proxy.proxy_type.toLowerCase();
+            const rowNumber = (currentPage - 1) * perPage + index + 1;
             
             row.innerHTML = `
                 <td><input type="checkbox" class="proxy-checkbox" value="${proxyType}-${proxy.id}" onchange="toggleProxySelection('${proxyType}', ${proxy.id})"></td>
-                <td>${proxy.id}</td>
+                <td>${rowNumber}</td>
                 <td><span style="background: ${proxyType === 'http' ? '#dbeafe' : '#fef3c7'}; color: ${proxyType === 'http' ? '#1e40af' : '#92400e'}; padding: 2px 6px; border-radius: 4px; font-size: 12px; font-weight: 500;">${proxy.proxy_type}</span></td>
                 <td>${escapeHtml(proxy.name)}</td>
                 <td>${escapeHtml(proxy.host)}:${proxy.port}</td>
