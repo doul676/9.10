@@ -354,7 +354,81 @@ def admin_proxy():
     except Exception as e:
         return f"Database error: {str(e)}"
 
-@app.route('/admin/api/proxy', methods=['POST'])
+@app.route('/admin/mailbox')
+def admin_mailbox():
+    """Admin mailbox management page"""
+    if not session.get('admin_logged_in'):
+        return redirect(url_for('admin_login'))
+    
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        
+        # Get mail accounts
+        cursor.execute('SELECT * FROM mail_accounts ORDER BY created_at DESC')
+        accounts = cursor.fetchall()
+        
+        conn.close()
+        
+        return render_template('admin_mailbox.html', 
+                            accounts=accounts,
+                            admin_username=session.get('admin_username'))
+                                    
+    except Exception as e:
+        return f"Database error: {str(e)}"
+
+@app.route('/admin/cards')
+def admin_cards():
+    """Admin cards management page"""
+    if not session.get('admin_logged_in'):
+        return redirect(url_for('admin_login'))
+    
+    # In a real implementation, you would fetch card data from database
+    return render_template('admin_cards.html',
+                         admin_username=session.get('admin_username'))
+
+@app.route('/admin/card-logs')
+def admin_card_logs():
+    """Admin card logs page"""
+    if not session.get('admin_logged_in'):
+        return redirect(url_for('admin_login'))
+    
+    # In a real implementation, you would fetch log data from database
+    return render_template('admin_card_logs.html',
+                         admin_username=session.get('admin_username'))
+
+@app.route('/admin/inbox')
+def admin_inbox():
+    """Admin inbox management page"""
+    if not session.get('admin_logged_in'):
+        return redirect(url_for('admin_login'))
+    
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        
+        # Get mail accounts for inbox management
+        cursor.execute('SELECT * FROM mail_accounts ORDER BY created_at DESC')
+        accounts = cursor.fetchall()
+        
+        conn.close()
+        
+        return render_template('admin_inbox.html',
+                            accounts=accounts,
+                            admin_username=session.get('admin_username'))
+                                    
+    except Exception as e:
+        return f"Database error: {str(e)}"
+
+@app.route('/admin/system')
+def admin_system():
+    """Admin system settings page"""
+    if not session.get('admin_logged_in'):
+        return redirect(url_for('admin_login'))
+    
+    return render_template('admin_system.html',
+                         admin_username=session.get('admin_username'))
+
 def admin_manage_proxy():
     """Manage proxy settings"""
     if not session.get('admin_logged_in'):

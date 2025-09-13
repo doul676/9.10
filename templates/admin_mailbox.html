@@ -1,0 +1,666 @@
+{% extends "admin_base.html" %}
+
+{% block title %}邮箱管理 - 邮件查看系统{% endblock %}
+{% block page_title %}邮箱管理{% endblock %}
+{% block breadcrumb %}邮件查看系统 / 管理后台 / 邮箱管理{% endblock %}
+
+{% block extra_styles %}
+/* Additional styles specific to mailbox page */
+.search-bar {
+    margin-bottom: 20px;
+    display: flex;
+    gap: 15px;
+    align-items: center;
+}
+
+.search-input {
+    flex: 1;
+    padding: 10px 15px;
+    border: 1px solid #ddd;
+    border-radius: 5px;
+    font-size: 14px;
+}
+
+.filter-select {
+    min-width: 150px;
+    padding: 10px;
+    border: 1px solid #ddd;
+    border-radius: 5px;
+}
+
+.mail-preview {
+    background: #f8f9fa;
+    padding: 15px;
+    border-radius: 8px;
+    margin-top: 10px;
+    font-size: 13px;
+    line-height: 1.4;
+    max-height: 200px;
+    overflow-y: auto;
+}
+
+.mail-meta {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 10px;
+    margin-bottom: 10px;
+    font-size: 12px;
+    color: #666;
+}
+
+.mail-actions {
+    display: flex;
+    gap: 5px;
+    flex-wrap: wrap;
+}
+
+.status-badge {
+    padding: 3px 8px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 500;
+}
+
+.status-connected {
+    background: #d4edda;
+    color: #155724;
+}
+
+.status-error {
+    background: #f8d7da;
+    color: #721c24;
+}
+
+.status-untested {
+    background: #fff3cd;
+    color: #856404;
+}
+
+.batch-actions {
+    margin-bottom: 20px;
+    padding: 15px;
+    background: #f8f9fa;
+    border-radius: 8px;
+    display: flex;
+    gap: 10px;
+    align-items: center;
+}
+
+.checkbox-column {
+    width: 40px;
+    text-align: center;
+}
+
+.account-row:hover {
+    background: #f8f9fa;
+}
+
+.account-row.selected {
+    background: #e7f3ff;
+}
+{% endblock %}
+
+{% block content %}
+<div class="card">
+    <h2>邮箱账号管理</h2>
+    
+    <!-- Search and Filter Bar -->
+    <div class="search-bar">
+        <input type="text" class="search-input" placeholder="搜索邮箱地址、服务器或备注..." id="searchInput">
+        <select class="filter-select" id="protocolFilter">
+            <option value="">所有协议</option>
+            <option value="imap">IMAP</option>
+            <option value="pop3">POP3</option>
+        </select>
+        <select class="filter-select" id="statusFilter">
+            <option value="">所有状态</option>
+            <option value="connected">已连接</option>
+            <option value="error">连接错误</option>
+            <option value="untested">未测试</option>
+        </select>
+        <button class="btn btn-primary" onclick="showAddForm()">+ 添加邮箱</button>
+    </div>
+    
+    <!-- Batch Actions -->
+    <div class="batch-actions" id="batchActions" style="display: none;">
+        <span>已选择 <span id="selectedCount">0</span> 个账号：</span>
+        <button class="btn btn-info" onclick="batchTest()">批量测试</button>
+        <button class="btn btn-warning" onclick="batchExport()">导出配置</button>
+        <button class="btn btn-danger" onclick="batchDelete()">批量删除</button>
+    </div>
+    
+    <!-- Accounts Table -->
+    <div style="overflow-x: auto;">
+        <table class="table" id="accountsTable">
+            <thead>
+                <tr>
+                    <th class="checkbox-column">
+                        <input type="checkbox" id="selectAll" onchange="toggleSelectAll()">
+                    </th>
+                    <th>邮箱地址</th>
+                    <th>服务器配置</th>
+                    <th>连接状态</th>
+                    <th>最后检测</th>
+                    <th>创建时间</th>
+                    <th>操作</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for account in accounts %}
+                <tr class="account-row" data-id="{{ account[0] }}">
+                    <td class="checkbox-column">
+                        <input type="checkbox" class="account-checkbox" value="{{ account[0] }}" onchange="updateBatchActions()">
+                    </td>
+                    <td>
+                        <div style="font-weight: 600;">{{ account[1] }}</div>
+                        <div style="font-size: 12px; color: #666;">
+                            {% if account[8] %}{{ account[8] }}{% else %}无备注{% endif %}
+                        </div>
+                    </td>
+                    <td>
+                        <div>{{ account[4] }}:{{ account[5] }}</div>
+                        <div style="font-size: 12px; color: #666;">
+                            {{ account[6].upper() }}{% if account[7] %} + SSL{% endif %}
+                        </div>
+                    </td>
+                    <td>
+                        <span class="status-badge status-untested" id="status-{{ account[0] }}">未测试</span>
+                    </td>
+                    <td>
+                        <span id="lastTest-{{ account[0] }}">-</span>
+                    </td>
+                    <td>{{ account[9][:19] if account[9] else "" }}</td>
+                    <td>
+                        <div class="mail-actions">
+                            <button class="btn btn-info btn-sm" onclick="testConnection({{ account[0] }})">测试</button>
+                            <button class="btn btn-success btn-sm" onclick="getMail({{ account[0] }})">获取邮件</button>
+                            <button class="btn btn-warning btn-sm" onclick="editAccount({{ account[0] }})">编辑</button>
+                            <button class="btn btn-danger btn-sm" onclick="deleteAccount({{ account[0] }})">删除</button>
+                        </div>
+                        <div class="mail-preview" id="preview-{{ account[0] }}" style="display: none;"></div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Quick Stats Card -->
+<div class="card">
+    <h2>快速统计</h2>
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px;">
+        <div style="text-align: center; padding: 20px; background: #e3f2fd; border-radius: 8px;">
+            <div style="font-size: 32px; font-weight: bold; color: #1976d2;">{{ accounts|length }}</div>
+            <div style="color: #666;">总邮箱数</div>
+        </div>
+        <div style="text-align: center; padding: 20px; background: #e8f5e8; border-radius: 8px;">
+            <div style="font-size: 32px; font-weight: bold; color: #388e3c;">0</div>
+            <div style="color: #666;">正常连接</div>
+        </div>
+        <div style="text-align: center; padding: 20px; background: #ffebee; border-radius: 8px;">
+            <div style="font-size: 32px; font-weight: bold; color: #d32f2f;">0</div>
+            <div style="color: #666;">连接异常</div>
+        </div>
+        <div style="text-align: center; padding: 20px; background: #fff3e0; border-radius: 8px;">
+            <div style="font-size: 32px; font-weight: bold; color: #f57c00;">{{ accounts|length }}</div>
+            <div style="color: #666;">未测试</div>
+        </div>
+    </div>
+</div>
+
+<!-- Add/Edit Account Modal -->
+<div id="accountModal" class="modal">
+    <div class="modal-content">
+        <span class="close" onclick="closeModal()">&times;</span>
+        <h2 id="modalTitle">添加邮箱账号</h2>
+        <form id="accountForm">
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+                <div class="form-group">
+                    <label for="email">邮箱地址*</label>
+                    <input type="email" id="email" name="email" required>
+                </div>
+                
+                <div class="form-group">
+                    <label for="username">用户名*</label>
+                    <input type="text" id="username" name="username" required>
+                </div>
+            </div>
+            
+            <div class="form-group">
+                <label for="password">密码/授权码*</label>
+                <input type="password" id="password" name="password" required>
+            </div>
+            
+            <div style="display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 15px;">
+                <div class="form-group">
+                    <label for="server">服务器地址*</label>
+                    <input type="text" id="server" name="server" required>
+                </div>
+                
+                <div class="form-group">
+                    <label for="port">端口*</label>
+                    <input type="number" id="port" name="port" value="993" required>
+                </div>
+                
+                <div class="form-group">
+                    <label for="protocol">协议</label>
+                    <select id="protocol" name="protocol">
+                        <option value="imap">IMAP</option>
+                        <option value="pop3">POP3</option>
+                    </select>
+                </div>
+            </div>
+            
+            <div style="display: grid; grid-template-columns: auto 1fr; gap: 15px; align-items: end;">
+                <div class="form-group">
+                    <label>
+                        <input type="checkbox" id="ssl" name="ssl" checked style="width: auto; margin-right: 8px;">
+                        启用SSL
+                    </label>
+                </div>
+                
+                <div class="form-group">
+                    <label for="remarks">备注</label>
+                    <input type="text" id="remarks" name="remarks" placeholder="可选">
+                </div>
+            </div>
+            
+            <div style="display: flex; gap: 10px; margin-top: 20px;">
+                <button type="submit" class="btn btn-primary">保存</button>
+                <button type="button" class="btn btn-info" onclick="testBeforeSave()">测试并保存</button>
+                <button type="button" class="btn btn-secondary" onclick="closeModal()">取消</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+let currentAccountId = null;
+let selectedAccounts = new Set();
+
+// Search and filter functionality
+document.getElementById('searchInput').addEventListener('input', filterAccounts);
+document.getElementById('protocolFilter').addEventListener('change', filterAccounts);
+document.getElementById('statusFilter').addEventListener('change', filterAccounts);
+
+function filterAccounts() {
+    const searchTerm = document.getElementById('searchInput').value.toLowerCase();
+    const protocolFilter = document.getElementById('protocolFilter').value;
+    const statusFilter = document.getElementById('statusFilter').value;
+    
+    const rows = document.querySelectorAll('.account-row');
+    
+    rows.forEach(row => {
+        const email = row.querySelector('td:nth-child(2)').textContent.toLowerCase();
+        const protocol = row.querySelector('td:nth-child(3)').textContent.toLowerCase();
+        const status = row.querySelector('.status-badge').className;
+        
+        let show = true;
+        
+        if (searchTerm && !email.includes(searchTerm)) {
+            show = false;
+        }
+        
+        if (protocolFilter && !protocol.includes(protocolFilter)) {
+            show = false;
+        }
+        
+        if (statusFilter && !status.includes(`status-${statusFilter}`)) {
+            show = false;
+        }
+        
+        row.style.display = show ? '' : 'none';
+    });
+}
+
+function toggleSelectAll() {
+    const selectAll = document.getElementById('selectAll');
+    const checkboxes = document.querySelectorAll('.account-checkbox');
+    
+    checkboxes.forEach(checkbox => {
+        if (checkbox.closest('tr').style.display !== 'none') {
+            checkbox.checked = selectAll.checked;
+            if (selectAll.checked) {
+                selectedAccounts.add(checkbox.value);
+            } else {
+                selectedAccounts.delete(checkbox.value);
+            }
+        }
+    });
+    
+    updateBatchActions();
+}
+
+function updateBatchActions() {
+    const checkboxes = document.querySelectorAll('.account-checkbox:checked');
+    selectedAccounts.clear();
+    
+    checkboxes.forEach(checkbox => {
+        selectedAccounts.add(checkbox.value);
+    });
+    
+    const batchActions = document.getElementById('batchActions');
+    const selectedCount = document.getElementById('selectedCount');
+    
+    if (selectedAccounts.size > 0) {
+        batchActions.style.display = 'flex';
+        selectedCount.textContent = selectedAccounts.size;
+    } else {
+        batchActions.style.display = 'none';
+    }
+}
+
+function showAddForm() {
+    currentAccountId = null;
+    document.getElementById('modalTitle').textContent = '添加邮箱账号';
+    document.getElementById('accountForm').reset();
+    document.getElementById('ssl').checked = true;
+    document.getElementById('port').value = '993';
+    document.getElementById('accountModal').style.display = 'block';
+}
+
+function closeModal() {
+    document.getElementById('accountModal').style.display = 'none';
+}
+
+function editAccount(id) {
+    currentAccountId = id;
+    document.getElementById('modalTitle').textContent = '编辑邮箱账号';
+    // In a real implementation, you would fetch account data here
+    document.getElementById('accountModal').style.display = 'block';
+}
+
+async function testConnection(id) {
+    const statusElement = document.getElementById(`status-${id}`);
+    const lastTestElement = document.getElementById(`lastTest-${id}`);
+    
+    statusElement.textContent = '测试中...';
+    statusElement.className = 'status-badge status-untested';
+    
+    try {
+        const response = await fetch('/admin/api/test_connection', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ id: id })
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            statusElement.textContent = '连接正常';
+            statusElement.className = 'status-badge status-connected';
+            showToast('连接测试成功！', 'success');
+        } else {
+            statusElement.textContent = '连接失败';
+            statusElement.className = 'status-badge status-error';
+            showToast(`连接测试失败: ${result.message}`, 'error');
+        }
+        
+        lastTestElement.textContent = new Date().toLocaleString();
+        
+    } catch (error) {
+        statusElement.textContent = '测试错误';
+        statusElement.className = 'status-badge status-error';
+        showToast('测试请求失败', 'error');
+    }
+}
+
+async function getMail(id) {
+    const previewElement = document.getElementById(`preview-${id}`);
+    previewElement.style.display = 'block';
+    previewElement.textContent = '正在获取邮件...';
+    
+    try {
+        // Get account email from the table row
+        const row = document.querySelector(`tr[data-id="${id}"]`);
+        const email = row.querySelector('td:nth-child(2) div').textContent;
+        
+        const response = await fetch('/backend/api/get_mail', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ email: email })
+        });
+        
+        const result = await response.json();
+        
+        if (result.success && result.mail) {
+            previewElement.innerHTML = `
+                <div class="mail-meta">
+                    <strong>主题:</strong> ${result.mail.subject || '(无主题)'}
+                    <strong>发件人:</strong> ${result.mail.from || '未知'}
+                    <strong>时间:</strong> ${result.mail.date || '未知'}
+                </div>
+                <div style="border-top: 1px solid #ddd; padding-top: 10px; margin-top: 10px;">
+                    ${(result.mail.body || '(邮件内容为空)').substring(0, 300)}
+                    ${result.mail.body && result.mail.body.length > 300 ? '...' : ''}
+                </div>
+            `;
+            showToast('邮件获取成功！', 'success');
+        } else {
+            previewElement.textContent = result.message || '邮箱中暂无邮件';
+        }
+        
+    } catch (error) {
+        previewElement.textContent = '获取邮件失败';
+        showToast('邮件获取失败', 'error');
+    }
+}
+
+async function deleteAccount(id) {
+    if (!confirm('确定要删除这个邮箱账号吗？')) {
+        return;
+    }
+    
+    try {
+        const response = await fetch('/admin/api/mail', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ action: 'delete', id: id })
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            showToast('邮箱账号删除成功', 'success');
+            setTimeout(() => location.reload(), 1000);
+        } else {
+            showToast(`删除失败: ${result.message}`, 'error');
+        }
+    } catch (error) {
+        showToast('删除请求失败', 'error');
+    }
+}
+
+async function batchTest() {
+    if (selectedAccounts.size === 0) return;
+    
+    showToast(`开始批量测试 ${selectedAccounts.size} 个账号...`, 'info');
+    
+    for (const accountId of selectedAccounts) {
+        await testConnection(accountId);
+        await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1 second between tests
+    }
+    
+    showToast('批量测试完成', 'success');
+}
+
+function batchExport() {
+    if (selectedAccounts.size === 0) return;
+    
+    // Create export data (in real implementation, this would be more comprehensive)
+    const exportData = Array.from(selectedAccounts).map(id => {
+        const row = document.querySelector(`tr[data-id="${id}"]`);
+        return {
+            id: id,
+            email: row.querySelector('td:nth-child(2) div').textContent,
+            server: row.querySelector('td:nth-child(3) div').textContent
+        };
+    });
+    
+    const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'mail_accounts_export.json';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    
+    showToast(`已导出 ${selectedAccounts.size} 个账号配置`, 'success');
+}
+
+async function batchDelete() {
+    if (selectedAccounts.size === 0) return;
+    
+    if (!confirm(`确定要删除这 ${selectedAccounts.size} 个邮箱账号吗？此操作不可撤销！`)) {
+        return;
+    }
+    
+    let successCount = 0;
+    let errorCount = 0;
+    
+    for (const accountId of selectedAccounts) {
+        try {
+            const response = await fetch('/admin/api/mail', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ action: 'delete', id: accountId })
+            });
+            
+            const result = await response.json();
+            
+            if (result.success) {
+                successCount++;
+            } else {
+                errorCount++;
+            }
+        } catch (error) {
+            errorCount++;
+        }
+    }
+    
+    showToast(`批量删除完成: 成功 ${successCount} 个，失败 ${errorCount} 个`, successCount > 0 ? 'success' : 'error');
+    
+    if (successCount > 0) {
+        setTimeout(() => location.reload(), 1500);
+    }
+}
+
+async function testBeforeSave() {
+    // Test connection before saving
+    const formData = new FormData(document.getElementById('accountForm'));
+    
+    try {
+        const response = await fetch('/admin/api/test_connection', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                email: formData.get('email'),
+                username: formData.get('username'),
+                password: formData.get('password'),
+                server: formData.get('server'),
+                port: parseInt(formData.get('port')),
+                protocol: formData.get('protocol'),
+                ssl: formData.get('ssl') === 'on'
+            })
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            showToast('连接测试成功，正在保存...', 'success');
+            // If test succeeds, submit the form
+            document.getElementById('accountForm').dispatchEvent(new Event('submit'));
+        } else {
+            showToast(`连接测试失败: ${result.message}`, 'error');
+        }
+    } catch (error) {
+        showToast('连接测试失败', 'error');
+    }
+}
+
+document.getElementById('accountForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    
+    const formData = new FormData(e.target);
+    const data = {
+        action: currentAccountId ? 'edit' : 'add',
+        email: formData.get('email'),
+        username: formData.get('username'),
+        password: formData.get('password'),
+        server: formData.get('server'),
+        port: parseInt(formData.get('port')),
+        protocol: formData.get('protocol'),
+        ssl: formData.get('ssl') === 'on',
+        remarks: formData.get('remarks')
+    };
+    
+    if (currentAccountId) {
+        data.id = currentAccountId;
+    }
+    
+    try {
+        const response = await fetch('/admin/api/mail', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(data)
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            showToast(result.message, 'success');
+            closeModal();
+            setTimeout(() => location.reload(), 1000);
+        } else {
+            showToast(`操作失败: ${result.message}`, 'error');
+        }
+    } catch (error) {
+        showToast('请求失败', 'error');
+    }
+});
+
+// Close modal when clicking outside
+window.addEventListener('click', (e) => {
+    const modal = document.getElementById('accountModal');
+    if (e.target === modal) {
+        closeModal();
+    }
+});
+
+// Auto-update port when protocol changes
+document.getElementById('protocol').addEventListener('change', function() {
+    const portInput = document.getElementById('port');
+    if (this.value === 'imap') {
+        portInput.value = document.getElementById('ssl').checked ? '993' : '143';
+    } else if (this.value === 'pop3') {
+        portInput.value = document.getElementById('ssl').checked ? '995' : '110';
+    }
+});
+
+document.getElementById('ssl').addEventListener('change', function() {
+    const protocol = document.getElementById('protocol').value;
+    const portInput = document.getElementById('port');
+    
+    if (protocol === 'imap') {
+        portInput.value = this.checked ? '993' : '143';
+    } else if (protocol === 'pop3') {
+        portInput.value = this.checked ? '995' : '110';
+    }
+});
+{% endblock %}
