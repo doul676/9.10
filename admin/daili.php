@@ -864,6 +864,9 @@ $socks5Proxies = array_filter($allProxies, function($proxy) { return $proxy['pro
                         <button type="button" class="btn btn-info" onclick="showProxySelectionModal()" id="manualSelectBtn">
                             📋 手动选择代理
                         </button>
+                        <button type="button" class="btn btn-warning" onclick="checkDataConsistency()" id="consistencyCheckBtn">
+                            🔍 数据一致性检查
+                        </button>
                     </div>
                     <p style="margin-top: 15px; color: #64748b;">管理HTTP和SOCKS5代理服务器配置，统一展示所有代理类型。点击"开启代理"将自动选择最快的代理，或点击"手动选择代理"进行手动选择。</p>
                 </div>
@@ -1331,6 +1334,50 @@ $socks5Proxies = array_filter($allProxies, function($proxy) { return $proxy['pro
         function closeProxySelectionModal() {
             document.getElementById('proxySelectionModal').classList.remove('show');
             document.body.style.overflow = '';
+        }
+        
+        // 数据一致性检查
+        function checkDataConsistency() {
+            const btn = document.getElementById('consistencyCheckBtn');
+            const originalText = btn.textContent;
+            
+            btn.disabled = true;
+            btn.textContent = '🔍 检查中...';
+            
+            fetch('api.php?action=check_data_consistency', {
+                method: 'GET'
+            })
+            .then(response => response.json())
+            .then(result => {
+                if (result.success) {
+                    let message = `数据一致性检查完成:\n`;
+                    message += `• 总计问题: ${result.summary.total_issues}个\n`;
+                    message += `• 代理状态: ${result.summary.proxy_enabled ? '已启用' : '已禁用'}\n`;
+                    message += `• 代理总数: ${result.summary.total_proxies}个\n`;
+                    message += `• 邮箱账号: ${result.summary.mail_accounts}个\n`;
+                    
+                    if (result.issues.length > 0) {
+                        message += `\n发现的问题:\n`;
+                        result.issues.forEach((issue, index) => {
+                            message += `${index + 1}. ${issue}\n`;
+                        });
+                        showToast(message, 'error', 8000);
+                    } else {
+                        message += `\n✅ 所有检查项均通过，数据一致性良好`;
+                        showToast(message, 'success', 6000);
+                    }
+                } else {
+                    showToast('数据一致性检查失败：' + result.message, 'error');
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                showToast('数据一致性检查失败：' + error.message, 'error');
+            })
+            .finally(() => {
+                btn.disabled = false;
+                btn.textContent = originalText;
+            });
         }
         
         // 刷新代理列表

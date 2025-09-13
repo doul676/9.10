@@ -56,6 +56,9 @@ switch ($action) {
     case 'get_proxy_status':
         getGlobalProxyStatus();
         break;
+    case 'check_data_consistency':
+        checkDataConsistency();
+        break;
     default:
         http_response_code(400);
         echo json_encode([
@@ -1610,6 +1613,94 @@ function getGlobalProxyStatus() {
         echo json_encode([
             'success' => false,
             'message' => '获取代理状态失败：' . $e->getMessage()
+        ]);
+    }
+}
+
+/**
+ * 检查数据一致性
+ */
+function checkDataConsistency() {
+    try {
+        $db = new SQLite3('../db/mail.sqlite');
+        $issues = [];
+        $checks = [];
+        
+        // 检查代理配置一致性
+        $configResult = $db->query("SELECT config_key, config_value FROM proxy_config");
+        $config = [];
+        while ($row = $configResult->fetchArray(SQLITE3_ASSOC)) {
+            $config[$row['config_key']] = $row['config_value'];
+        }
+        
+        $checks['proxy_config_loaded'] = count($config) > 0;
+        
+        // 检查活动代理是否存在
+        if (isset($config['proxy_enabled']) && $config['proxy_enabled'] === '1') {
+            $proxyType = $config['active_proxy_type'] ?? '';
+            $proxyId = (int)($config['active_proxy_id'] ?? 0);
+            
+            if (!empty($proxyType) && $proxyId > 0) {
+                $tableName = $proxyType === 'socks5' ? 'socks5_proxies' : 'http_proxies';
+                $stmt = $db->prepare("SELECT id, name, status FROM {$tableName} WHERE id = ?");
+                $stmt->bindValue(1, $proxyId);
+                $proxyResult = $stmt->execute();
+                $activeProxy = $proxyResult->fetchArray(SQLITE3_ASSOC);
+                
+                if ($activeProxy) {
+                    $checks['active_proxy_exists'] = true;
+                    $checks['active_proxy_status'] = $activeProxy['status'] == 1;
+                    if ($activeProxy['status'] != 1) {
+                        $issues[] = "活动代理状态为异常，建议重新测试代理";
+                    }
+                } else {
+                    $issues[] = "配置中的活动代理ID不存在于数据库中";
+                    $checks['active_proxy_exists'] = false;
+                }
+            } else {
+                $issues[] = "代理已启用但未指定有效的代理ID或类型";
+                $checks['active_proxy_configured'] = false;
+            }
+        } else {
+            $checks['proxy_disabled_properly'] = true;
+        }
+        
+        // 检查代理数据完整性
+        $httpCount = $db->querySingle("SELECT COUNT(*) FROM http_proxies");
+        $socks5Count = $db->querySingle("SELECT COUNT(*) FROM socks5_proxies");
+        $checks['total_proxies'] = $httpCount + $socks5Count;
+        
+        // 检查是否有响应时间为0的正常状态代理
+        $invalidHttpProxies = $db->querySingle("SELECT COUNT(*) FROM http_proxies WHERE status = 1 AND (response_time = 0 OR response_time IS NULL)");
+        $invalidSocks5Proxies = $db->querySingle("SELECT COUNT(*) FROM socks5_proxies WHERE status = 1 AND (response_time = 0 OR response_time IS NULL)");
+        
+        if ($invalidHttpProxies > 0 || $invalidSocks5Proxies > 0) {
+            $issues[] = "存在状态为正常但响应时间为0的代理，建议重新测试";
+        }
+        
+        // 检查邮箱账号数量
+        $mailAccountCount = $db->querySingle("SELECT COUNT(*) FROM mail_accounts");
+        $checks['mail_accounts_count'] = $mailAccountCount;
+        
+        $db->close();
+        
+        echo json_encode([
+            'success' => true,
+            'message' => count($issues) === 0 ? '数据一致性检查通过' : '发现 ' . count($issues) . ' 个问题',
+            'issues' => $issues,
+            'checks' => $checks,
+            'summary' => [
+                'total_issues' => count($issues),
+                'proxy_enabled' => isset($config['proxy_enabled']) && $config['proxy_enabled'] === '1',
+                'total_proxies' => $checks['total_proxies'],
+                'mail_accounts' => $checks['mail_accounts_count']
+            ]
+        ]);
+        
+    } catch (Exception $e) {
+        echo json_encode([
+            'success' => false,
+            'message' => '数据一致性检查失败：' . $e->getMessage()
         ]);
     }
 }
