@@ -671,7 +671,7 @@ function testProxyConnection() {
             exit();
         }
         
-        performProxyTest($name, $host, $port, $username, $password, $proxyType);
+        performProxyTest($name, $host, $port, $username, $password, $proxyType, null, true); // Add modal test flag
         
     } catch (Exception $e) {
         echo json_encode([
@@ -718,7 +718,8 @@ function testExistingProxy($proxyId, $proxyType) {
             $proxy['username'] ?? '',
             $proxy['password'] ?? '',
             $proxyType,
-            $proxyId  // 传递代理ID用于更新数据库
+            $proxyId,  // 传递代理ID用于更新数据库
+            false      // 现有代理测试，不是模态测试
         );
         
     } catch (Exception $e) {
@@ -732,7 +733,7 @@ function testExistingProxy($proxyId, $proxyType) {
 /**
  * 执行代理测试
  */
-function performProxyTest($name, $host, $port, $username, $password, $proxyType, $proxyId = null) {
+function performProxyTest($name, $host, $port, $username, $password, $proxyType, $proxyId = null, $isModalTest = false) {
     try {
         $startTime = microtime(true);
         
@@ -749,8 +750,10 @@ function performProxyTest($name, $host, $port, $username, $password, $proxyType,
         $socket = @fsockopen($host, $port, $errno, $errstr, 5);
         
         if (!$socket) {
-            // 更新数据库中的测试结果
-            updateProxyTestResult($name, $host, $port, $proxyType, false, 0, $proxyId);
+            // 只有在非模态测试时才更新数据库
+            if (!$isModalTest) {
+                updateProxyTestResult($name, $host, $port, $proxyType, false, 0, $proxyId);
+            }
             
             echo json_encode([
                 'success' => false,
@@ -782,8 +785,10 @@ function performProxyTest($name, $host, $port, $username, $password, $proxyType,
             // 测试通过代理连接到外部网站
             $connectivityResults = testProxyConnectivity($host, $port, $username, $password, $proxyType);
             
-            // 更新数据库中的测试结果
-            updateProxyTestResult($name, $host, $port, $proxyType, true, $totalLatency, $proxyId);
+            // 只有在非模态测试时才更新数据库
+            if (!$isModalTest) {
+                updateProxyTestResult($name, $host, $port, $proxyType, true, $totalLatency, $proxyId);
+            }
             
             // 构建成功消息，包含IP和延迟信息
             $message = "✅ {$name} 测试成功\n";
@@ -821,8 +826,10 @@ function performProxyTest($name, $host, $port, $username, $password, $proxyType,
                 'diagnostics' => $diagnostics
             ]);
         } else {
-            // 端口通但代理功能异常
-            updateProxyTestResult($name, $host, $port, $proxyType, false, $totalLatency, $proxyId);
+            // 只有在非模态测试时才更新数据库
+            if (!$isModalTest) {
+                updateProxyTestResult($name, $host, $port, $proxyType, false, $totalLatency, $proxyId);
+            }
             
             $message = "❌ {$name} 功能测试失败\n";
             $message .= "服务器: {$hostInfo}:{$port}\n";
@@ -847,8 +854,10 @@ function performProxyTest($name, $host, $port, $username, $password, $proxyType,
         }
         
     } catch (Exception $e) {
-        // 更新数据库中的测试结果
-        updateProxyTestResult($name, $host, $port, $proxyType, false, 0, $proxyId);
+        // 只有在非模态测试时才更新数据库
+        if (!$isModalTest) {
+            updateProxyTestResult($name, $host, $port, $proxyType, false, 0, $proxyId);
+        }
         
         echo json_encode([
             'success' => false,

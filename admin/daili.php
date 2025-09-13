@@ -1562,16 +1562,16 @@ $socks5Proxies = array_filter($allProxies, function($proxy) { return $proxy['pro
             .then(result => {
                 if (result.success) {
                     showToast(result.message, 'success', 5000);
-                    // 刷新页面以显示更新后的测试结果
+                    // 使用刷新代理列表API而不是页面重载来避免重复通知
                     setTimeout(() => {
-                        window.location.reload();
-                    }, 2000);
+                        refreshProxyList();
+                    }, 1000);
                 } else {
                     showToast(result.message, 'error', 8000);
-                    // 即使测试失败也要刷新页面以显示更新后的失败计数
+                    // 使用刷新代理列表API而不是页面重载来避免重复通知
                     setTimeout(() => {
-                        window.location.reload();
-                    }, 3000);
+                        refreshProxyList();
+                    }, 1500);
                 }
             })
             .catch(error => {
