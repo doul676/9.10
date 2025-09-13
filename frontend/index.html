@@ -666,46 +666,24 @@
                 
                 const data = await response.json();
                 
-                // 显示代理状态信息（使用toast通知）
-                if (data.proxy) {
-                    displayProxyStatusToast(data.proxy);
-                }
-                
                 if (data.success) {
                     if (data.mail) {
                         displayMail(data.mail);
-                        // 组合成功消息包含连接状态
-                        let successMessage = '邮件获取成功';
-                        if (data.proxy && data.proxy.enabled && data.proxy.info) {
-                            successMessage += ` (通过代理: ${data.proxy.info.name})`;
-                        } else {
-                            successMessage += ' (直连)';
-                        }
-                        showMessage(successMessage, 'success');
+                        // 统一的成功消息，包含连接状态详细信息
+                        showUnifiedSuccessMessage(data);
                     } else {
-                        // 组合无邮件消息包含连接状态
-                        let noMailMessage = '邮箱中暂无邮件';
-                        if (data.proxy && data.proxy.enabled && data.proxy.info) {
-                            noMailMessage += ` (通过代理: ${data.proxy.info.name})`;
-                        } else {
-                            noMailMessage += ' (直连)';
-                        }
-                        showMessage(noMailMessage, 'info');
+                        // 统一的无邮件消息，包含连接状态详细信息
+                        showUnifiedNoMailMessage(data);
                     }
                 } else {
-                    // 组合失败消息包含连接状态
-                    let errorMessage = data.message || '获取邮件失败';
-                    if (data.proxy && data.proxy.enabled && data.proxy.info) {
-                        errorMessage += ` (代理连接: ${data.proxy.info.name})`;
-                    } else {
-                        errorMessage += ' (直连)';
-                    }
-                    showMessage(errorMessage, 'error');
+                    // 统一的错误消息，包含连接状态详细信息
+                    showUnifiedErrorMessage(data);
                 }
                 
             } catch (error) {
                 console.error('请求失败:', error);
-                showMessage('网络请求失败，请检查网络连接', 'error');
+                // 使用统一的错误消息格式，但这里是网络错误所以无代理信息
+                showToast('❌ 网络请求失败，请检查网络连接\n🌐 连接状态：无法确定（网络错误）', 'error', 5000);
             } finally {
                 // 隐藏加载状态
                 loading.style.display = 'none';
@@ -936,18 +914,66 @@
             return re.test(email);
         }
         
-        function displayProxyStatusToast(proxyData) {
-            if (!proxyData) {
-                return;
+        // 统一的成功消息显示函数
+        function showUnifiedSuccessMessage(data) {
+            let message = '✅ 邮件获取成功';
+            
+            // 添加连接状态详细信息
+            if (data.proxy && data.proxy.enabled && data.proxy.info) {
+                const proxy = data.proxy.info;
+                message += `\n🔒 连接状态：通过代理连接`;
+                message += `\n代理名称：${proxy.name}`;
+                message += `\n代理类型：${proxy.type.toUpperCase()}`;
+                message += `\n服务器：${proxy.host}:${proxy.port}`;
+            } else {
+                message += `\n🌐 连接状态：直接连接（未使用代理）`;
             }
             
-            if (proxyData.enabled && proxyData.info) {
-                const info = proxyData.info;
-                const message = `🔒 连接状态：通过代理连接\n代理名称：${info.name}\n代理类型：${info.type.toUpperCase()}\n服务器：${info.host}:${info.port}`;
-                showToast(message, 'info', 4000);
+            showToast(message, 'success', 5000);
+        }
+        
+        // 统一的无邮件消息显示函数
+        function showUnifiedNoMailMessage(data) {
+            let message = 'ℹ️ 邮箱中暂无邮件';
+            
+            // 添加连接状态详细信息
+            if (data.proxy && data.proxy.enabled && data.proxy.info) {
+                const proxy = data.proxy.info;
+                message += `\n🔒 连接状态：通过代理连接`;
+                message += `\n代理名称：${proxy.name}`;
+                message += `\n代理类型：${proxy.type.toUpperCase()}`;
+                message += `\n服务器：${proxy.host}:${proxy.port}`;
             } else {
-                showToast('🌐 连接状态：直接连接（未使用代理）', 'info', 3000);
+                message += `\n🌐 连接状态：直接连接（未使用代理）`;
             }
+            
+            showToast(message, 'info', 4000);
+        }
+        
+        // 统一的错误消息显示函数
+        function showUnifiedErrorMessage(data) {
+            let message = '❌ ' + (data.message || '获取邮件失败');
+            
+            // 添加连接状态详细信息
+            if (data.proxy && data.proxy.enabled && data.proxy.info) {
+                const proxy = data.proxy.info;
+                message += `\n🔒 连接状态：通过代理连接`;
+                message += `\n代理名称：${proxy.name}`;
+                message += `\n代理类型：${proxy.type.toUpperCase()}`;
+                message += `\n服务器：${proxy.host}:${proxy.port}`;
+                message += `\n⚠️ 错误可能与代理设置相关`;
+            } else {
+                message += `\n🌐 连接状态：直接连接（未使用代理）`;
+            }
+            
+            showToast(message, 'error', 6000);
+        }
+        
+        // 保留原有的代理状态显示函数，但改为隐藏模式（不显示toast）
+        function displayProxyStatusToast(proxyData) {
+            // 该函数现在仅用于内部状态处理，不再显示重复的toast通知
+            // 所有通知合并到统一的消息函数中
+            return;
         }
         
         // 保留原有函数用于兼容性（但隐藏静态显示）

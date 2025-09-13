@@ -116,9 +116,79 @@ try {
     $db->close();
     
 } catch (Exception $e) {
+    // 尝试获取代理信息，即使在异常情况下也要提供连接状态
+    $proxyInfo = null;
+    try {
+        if (isset($fetcher)) {
+            $proxyInfo = $fetcher->getProxyInfo();
+        } else {
+            // 如果fetcher未创建，直接从配置中获取代理状态
+            $proxyInfo = getProxyInfoFromConfig();
+        }
+    } catch (Exception $proxyException) {
+        // 代理信息获取失败，设为未知状态
+        $proxyInfo = ['enabled' => false, 'info' => null];
+    }
+    
     echo json_encode([
         'success' => false,
-        'message' => '服务器错误: ' . $e->getMessage()
+        'message' => '服务器错误: ' . $e->getMessage(),
+        'proxy' => $proxyInfo
     ]);
+}
+
+/**
+ * 直接从配置中获取代理信息
+ */
+function getProxyInfoFromConfig() {
+    try {
+        $db = new SQLite3('../../db/mail.sqlite');
+        
+        // 检查proxy_config表是否存在
+        $tableCheck = $db->query("SELECT name FROM sqlite_master WHERE type='table' AND name='proxy_config'");
+        if (!$tableCheck || !$tableCheck->fetchArray()) {
+            $db->close();
+            return ['enabled' => false, 'info' => null];
+        }
+        
+        // 获取代理配置
+        $config = [];
+        $result = $db->query("SELECT config_key, config_value FROM proxy_config WHERE config_key IN ('proxy_enabled', 'active_proxy_type', 'active_proxy_id')");
+        while ($row = $result->fetchArray(SQLITE3_ASSOC)) {
+            $config[$row['config_key']] = $row['config_value'];
+        }
+        
+        if (isset($config['proxy_enabled']) && $config['proxy_enabled'] === '1') {
+            $proxyType = $config['active_proxy_type'] ?? '';
+            $proxyId = (int)($config['active_proxy_id'] ?? 0);
+            
+            if (!empty($proxyType) && $proxyId > 0) {
+                $tableName = $proxyType === 'socks5' ? 'socks5_proxies' : 'http_proxies';
+                $stmt = $db->prepare("SELECT name, host, port FROM {$tableName} WHERE id = ?");
+                $stmt->bindValue(1, $proxyId);
+                $proxyResult = $stmt->execute();
+                $activeProxy = $proxyResult->fetchArray(SQLITE3_ASSOC);
+                
+                if ($activeProxy) {
+                    $db->close();
+                    return [
+                        'enabled' => true,
+                        'info' => [
+                            'name' => $activeProxy['name'],
+                            'host' => $activeProxy['host'],
+                            'port' => $activeProxy['port'],
+                            'type' => $proxyType
+                        ]
+                    ];
+                }
+            }
+        }
+        
+        $db->close();
+        return ['enabled' => false, 'info' => null];
+        
+    } catch (Exception $e) {
+        return ['enabled' => false, 'info' => null];
+    }
 }
 ?>
