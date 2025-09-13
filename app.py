@@ -995,6 +995,8 @@ def api_admin_proxies(proxy_type):
             return _edit_proxy(db, table_name, data)
         elif action == 'test':
             return _test_proxy(db, table_name, data, proxy_type)
+        elif action == 'test_new':
+            return _test_new_proxy(data, proxy_type)
         elif action == 'batch_delete':
             return _batch_delete_proxy(db, table_name, data)
     
@@ -1169,6 +1171,45 @@ def _test_proxy(db, table_name, data, proxy_type):
                 WHERE id=%s
             ''', (now, response_time, 1 if test_results['success'] else 0, proxy_id))
             db.commit()
+        
+        return jsonify({
+            'success': test_results['success'],
+            'message': test_results['message'],
+            'details': test_results
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': f'测试失败: {str(e)}'
+        })
+
+def _test_new_proxy(data, proxy_type):
+    """测试新代理（无需保存到数据库）"""
+    host = data.get('host', '').strip()
+    port = int(data.get('port', 0))
+    username = data.get('username', '').strip()
+    password = data.get('password', '').strip()
+    name = data.get('name', '').strip() or f"临时代理"
+    
+    if not all([host, port]):
+        return jsonify({
+            'success': False,
+            'message': '请填写代理地址和端口'
+        })
+    
+    try:
+        # Create temporary proxy dict for testing
+        proxy_dict = {
+            'host': host,
+            'port': port,
+            'username': username or None,
+            'password': password or None,
+            'name': name
+        }
+        
+        # Test proxy connection
+        test_results = _perform_proxy_test(proxy_dict, proxy_type)
         
         return jsonify({
             'success': test_results['success'],

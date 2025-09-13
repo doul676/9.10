@@ -523,6 +523,17 @@ class ProxyMailFetcher:
         from_header = email_message.get('From', '')
         from_name, from_email = self._parse_address(from_header)
         
+        # Create proper sender display format: "Name <email@domain.com>"
+        if from_name and from_email and from_name != from_email:
+            # If we have both a name and email address, format as "Name <email>"
+            sender_display = f"{from_name} <{from_email}>"
+        elif from_email and from_email != '未知':
+            # If we only have email, use just the email
+            sender_display = from_email
+        else:
+            # Fallback to name or unknown
+            sender_display = from_name or '未知'
+        
         # Get recipient info
         to_header = email_message.get('To', '')
         to_name, to_email = self._parse_address(to_header)
@@ -539,7 +550,7 @@ class ProxyMailFetcher:
         
         mail_data = {
             'subject': subject,
-            'from': from_name,
+            'from': sender_display,
             'from_email': from_email,
             'to': to_email,
             'date': formatted_date,
