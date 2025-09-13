@@ -3,13 +3,537 @@
 {% block title %}卡密管理 - 邮件查看系统{% endblock %}
 
 {% block head %}
-<!-- 基础样式 -->
 <style>
-    /* 基础样式将在完善时添加 */
+    * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+    }
+    
+    :root {
+        --primary-color: #667eea;
+        --secondary-color: #764ba2;
+        --sidebar-width: 280px;
+        --header-height: 70px;
+        --transition: all 0.3s ease;
+    }
+    
+    body {
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        background: #f8fafc;
+        line-height: 1.6;
+        color: #334155;
+        transition: var(--transition);
+    }
+    
+    /* Sidebar Styles */
+    .sidebar {
+        position: fixed;
+        left: 0;
+        top: 0;
+        width: var(--sidebar-width);
+        height: 100vh;
+        background: linear-gradient(135deg, var(--primary-color) 0%, var(--secondary-color) 100%);
+        z-index: 1000;
+        transition: var(--transition);
+        box-shadow: 4px 0 15px rgba(0,0,0,0.1);
+    }
+    
+    .sidebar-header {
+        padding: 20px;
+        border-bottom: 1px solid rgba(255,255,255,0.1);
+    }
+    
+    .sidebar-logo {
+        color: white;
+        font-size: 20px;
+        font-weight: 700;
+        text-align: center;
+        text-shadow: 0 2px 4px rgba(0,0,0,0.3);
+    }
+    
+    .sidebar-nav {
+        padding: 20px 0;
+    }
+    
+    .nav-item {
+        display: block;
+        color: rgba(255,255,255,0.8);
+        text-decoration: none;
+        padding: 15px 25px;
+        transition: var(--transition);
+        border-left: 3px solid transparent;
+        position: relative;
+        overflow: hidden;
+    }
+    
+    .nav-item::before {
+        content: '';
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(255,255,255,0.1);
+        transform: translateX(-100%);
+        transition: var(--transition);
+    }
+    
+    .nav-item:hover::before {
+        transform: translateX(0);
+    }
+    
+    .nav-item:hover,
+    .nav-item.active {
+        color: white;
+        background: rgba(255,255,255,0.15);
+        border-left-color: white;
+        transform: translateX(5px);
+    }
+    
+    .nav-item i {
+        margin-right: 10px;
+        width: 20px;
+        text-align: center;
+    }
+    
+    /* Main Content */
+    .main-content {
+        margin-left: var(--sidebar-width);
+        min-height: 100vh;
+        transition: var(--transition);
+    }
+    
+    .header {
+        background: white;
+        height: var(--header-height);
+        box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 30px;
+        position: sticky;
+        top: 0;
+        z-index: 999;
+    }
+    
+    .header-title {
+        font-size: 24px;
+        font-weight: 600;
+        color: #1e293b;
+    }
+    
+    .header-actions {
+        display: flex;
+        align-items: center;
+        gap: 20px;
+    }
+    
+    .user-info {
+        display: flex;
+        align-items: center;
+        gap: 15px;
+        color: #64748b;
+    }
+    
+    .logout-btn {
+        background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+        color: white;
+        text-decoration: none;
+        padding: 8px 16px;
+        border-radius: 8px;
+        font-size: 14px;
+        font-weight: 500;
+        transition: var(--transition);
+    }
+    
+    .logout-btn:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 5px 15px rgba(239, 68, 68, 0.3);
+    }
+    
+    /* Content Area */
+    .content {
+        padding: 30px;
+    }
+    
+    /* Cards */
+    .card {
+        background: white;
+        border-radius: 15px;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.05), 0 1px 3px rgba(0,0,0,0.1);
+        overflow: hidden;
+        margin-bottom: 25px;
+        transition: var(--transition);
+    }
+    
+    .card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 25px rgba(0,0,0,0.1), 0 4px 10px rgba(0,0,0,0.06);
+    }
+    
+    .card-header {
+        padding: 20px 25px;
+        border-bottom: 1px solid #f1f5f9;
+        background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+    
+    .header-buttons {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+    }
+    
+    .card-title {
+        font-size: 18px;
+        font-weight: 600;
+        color: #1e293b;
+        margin: 0;
+    }
+    
+    .card-body {
+        padding: 25px;
+    }
+    
+    .btn {
+        padding: 10px 20px;
+        border: none;
+        border-radius: 8px;
+        font-size: 14px;
+        font-weight: 500;
+        cursor: pointer;
+        transition: var(--transition);
+        text-decoration: none;
+        display: inline-block;
+    }
+    
+    .btn-primary {
+        background: linear-gradient(135deg, var(--primary-color) 0%, var(--secondary-color) 100%);
+        color: white;
+    }
+    
+    .btn-primary:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 5px 15px rgba(102, 126, 234, 0.3);
+    }
+    
+    .btn-danger {
+        background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+        color: white;
+    }
+    
+    .btn-danger:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 5px 15px rgba(239, 68, 68, 0.3);
+    }
+    
+    .btn-success {
+        background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+        color: white;
+    }
+    
+    .btn-success:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 5px 15px rgba(16, 185, 129, 0.3);
+    }
+    
+    .btn-warning {
+        background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+        color: white;
+    }
+    
+    .btn-warning:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 5px 15px rgba(245, 158, 11, 0.3);
+    }
+    
+    .btn-info {
+        background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+        color: white;
+    }
+    
+    .btn-info:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 5px 15px rgba(59, 130, 246, 0.3);
+    }
+    
+    /* Form Styles */
+    .form-group {
+        margin-bottom: 20px;
+    }
+    
+    .form-group label {
+        display: block;
+        margin-bottom: 8px;
+        color: #374151;
+        font-weight: 500;
+    }
+    
+    .form-group input,
+    .form-group select,
+    .form-group textarea {
+        width: 100%;
+        padding: 12px 16px;
+        border: 2px solid #e5e7eb;
+        border-radius: 8px;
+        font-size: 14px;
+        transition: var(--transition);
+    }
+    
+    .form-group input:focus,
+    .form-group select:focus,
+    .form-group textarea:focus {
+        outline: none;
+        border-color: var(--primary-color);
+        box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+    }
+    
+    .form-group textarea {
+        min-height: 120px;
+        resize: vertical;
+        font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+    }
+    
+    .checkbox-group {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+    
+    .checkbox-group input[type="checkbox"] {
+        width: auto;
+    }
+    
+    /* Table Styles */
+    .table-container {
+        overflow-x: auto;
+    }
+    
+    table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 20px;
+    }
+    
+    table th,
+    table td {
+        padding: 12px 16px;
+        text-align: left;
+        border-bottom: 1px solid #e5e7eb;
+    }
+    
+    table th {
+        background: #f8fafc;
+        font-weight: 600;
+        color: #374151;
+    }
+    
+    table tr:hover {
+        background: #f8fafc;
+    }
+    
+    /* Status indicators */
+    .status {
+        padding: 4px 8px;
+        border-radius: 12px;
+        font-size: 12px;
+        font-weight: 500;
+    }
+    
+    .status.active {
+        background: #dcfce7;
+        color: #166534;
+    }
+    
+    .status.inactive {
+        background: #fef2f2;
+        color: #991b1b;
+    }
+    
+    .status.expired {
+        background: #fef3c7;
+        color: #92400e;
+    }
+    
+    /* Modal Styles */
+    .modal {
+        display: none;
+        position: fixed;
+        z-index: 2000;
+        left: 0;
+        top: 0;
+        width: 100%;
+        height: 100%;
+        background-color: rgba(0, 0, 0, 0.5);
+        animation: fadeIn 0.3s ease;
+    }
+    
+    .modal.show {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+    
+    .modal-content {
+        background: white;
+        border-radius: 15px;
+        width: 90%;
+        max-width: 600px;
+        max-height: 80vh;
+        overflow-y: auto;
+        animation: slideInUp 0.3s ease;
+    }
+    
+    .modal-header {
+        padding: 20px 25px;
+        border-bottom: 1px solid #e5e7eb;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+    
+    .modal-title {
+        font-size: 18px;
+        font-weight: 600;
+        color: #1e293b;
+    }
+    
+    .modal-close {
+        background: none;
+        border: none;
+        font-size: 24px;
+        cursor: pointer;
+        color: #6b7280;
+    }
+    
+    .modal-close:hover {
+        color: #374151;
+    }
+    
+    .modal-body {
+        padding: 25px;
+    }
+    
+    .modal-footer {
+        padding: 20px 25px;
+        border-top: 1px solid #e5e7eb;
+        display: flex;
+        justify-content: flex-end;
+        gap: 15px;
+    }
+    
+    /* Toast Notifications */
+    .toast-container {
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        z-index: 3000;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        max-width: 400px;
+    }
+    
+    .toast {
+        padding: 15px 20px;
+        border-radius: 10px;
+        color: white;
+        font-weight: 500;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+        transform: translateX(450px);
+        opacity: 0;
+        transition: all 0.3s ease;
+        position: relative;
+        overflow: hidden;
+    }
+    
+    .toast.show {
+        transform: translateX(0);
+        opacity: 1;
+    }
+    
+    .toast.success {
+        background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+    }
+    
+    .toast.error {
+        background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+    }
+    
+    .toast.info {
+        background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+    }
+    
+    /* Generated cards display */
+    .generated-cards {
+        background: #f8fafc;
+        border: 2px solid #e5e7eb;
+        border-radius: 8px;
+        padding: 15px;
+        max-height: 300px;
+        overflow-y: auto;
+        font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+        font-size: 12px;
+        line-height: 1.4;
+    }
+    
+    .card-code {
+        display: inline-block;
+        background: white;
+        padding: 2px 6px;
+        margin: 2px;
+        border-radius: 4px;
+        border: 1px solid #d1d5db;
+    }
+    
+    /* Responsive */
+    @media (max-width: 768px) {
+        .sidebar {
+            transform: translateX(-100%);
+        }
+        
+        .sidebar.mobile-open {
+            transform: translateX(0);
+        }
+        
+        .main-content {
+            margin-left: 0;
+        }
+        
+        .header-title {
+            font-size: 20px;
+        }
+        
+        .content {
+            padding: 20px;
+        }
+        
+        .card-header {
+            flex-direction: column;
+            gap: 15px;
+            align-items: flex-start;
+        }
+        
+        .modal-content {
+            width: 95%;
+            margin: 20px;
+        }
+        
+        .table-container {
+            font-size: 12px;
+        }
+    }
 </style>
 {% endblock %}
 
 {% block body %}
+<!-- Toast notification container -->
+<div id="toast-container" class="toast-container"></div>
+
+<!-- Sidebar -->
 <div class="sidebar">
     <div class="sidebar-header">
         <div class="sidebar-logo">📧 邮件管理系统</div>
@@ -39,6 +563,7 @@
     </nav>
 </div>
 
+<!-- Main Content -->
 <div class="main-content">
     <div class="header">
         <h1 class="header-title">卡密管理</h1>
@@ -51,15 +576,469 @@
     </div>
     
     <div class="content">
+        <!-- 卡密管理 -->
         <div class="card">
             <div class="card-header">
-                <h2 class="card-title">卡密管理功能</h2>
+                <h2 class="card-title">卡密列表</h2>
+                <div class="header-buttons">
+                    <button class="btn btn-primary" onclick="showGenerateModal()">
+                        ➕ 生成卡密
+                    </button>
+                    <button class="btn btn-info" onclick="showBatchGenerateModal()">
+                        📦 批量生成
+                    </button>
+                    <button class="btn btn-warning" onclick="cleanupExpiredCards()">
+                        🧹 清理过期卡密
+                    </button>
+                </div>
             </div>
             <div class="card-body">
-                <p>卡密管理功能正在开发中...</p>
-                <p>将包含卡密生成、管理和验证功能。</p>
+                <div class="table-container">
+                    <table id="cardTable">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>卡密代码</th>
+                                <th>类型</th>
+                                <th>状态</th>
+                                <th>使用次数</th>
+                                <th>最大使用</th>
+                                <th>有效期</th>
+                                <th>创建时间</th>
+                                <th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <!-- 卡密列表将通过JavaScript加载 -->
+                        </tbody>
+                    </table>
+                </div>
             </div>
         </div>
     </div>
 </div>
+
+<!-- 生成卡密模态框 -->
+<div id="generateModal" class="modal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3 class="modal-title">生成卡密</h3>
+            <button class="modal-close" onclick="closeGenerateModal()">&times;</button>
+        </div>
+        <div class="modal-body">
+            <form id="generateForm">
+                <div class="form-group">
+                    <label for="cardType">卡密类型</label>
+                    <select id="cardType" name="cardType">
+                        <option value="standard">标准卡密</option>
+                        <option value="premium">高级卡密</option>
+                        <option value="trial">试用卡密</option>
+                    </select>
+                </div>
+                
+                <div class="form-group">
+                    <label for="maxUsage">最大使用次数</label>
+                    <input type="number" id="maxUsage" name="maxUsage" value="1" min="1" max="1000">
+                </div>
+                
+                <div class="form-group">
+                    <label for="validDays">有效期（天）</label>
+                    <input type="number" id="validDays" name="validDays" value="30" min="1" max="365">
+                </div>
+                
+                <div class="form-group">
+                    <label for="remarks">备注</label>
+                    <input type="text" id="remarks" name="remarks" placeholder="可选：备注信息">
+                </div>
+            </form>
+        </div>
+        <div class="modal-footer">
+            <button type="button" class="btn" onclick="closeGenerateModal()">取消</button>
+            <button type="button" class="btn btn-primary" onclick="generateCard()">生成</button>
+        </div>
+    </div>
+</div>
+
+<!-- 批量生成卡密模态框 -->
+<div id="batchGenerateModal" class="modal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3 class="modal-title">批量生成卡密</h3>
+            <button class="modal-close" onclick="closeBatchGenerateModal()">&times;</button>
+        </div>
+        <div class="modal-body">
+            <form id="batchGenerateForm">
+                <div class="form-group">
+                    <label for="batchCount">生成数量</label>
+                    <input type="number" id="batchCount" name="batchCount" value="10" min="1" max="1000">
+                </div>
+                
+                <div class="form-group">
+                    <label for="batchCardType">卡密类型</label>
+                    <select id="batchCardType" name="batchCardType">
+                        <option value="standard">标准卡密</option>
+                        <option value="premium">高级卡密</option>
+                        <option value="trial">试用卡密</option>
+                    </select>
+                </div>
+                
+                <div class="form-group">
+                    <label for="batchMaxUsage">最大使用次数</label>
+                    <input type="number" id="batchMaxUsage" name="batchMaxUsage" value="1" min="1" max="1000">
+                </div>
+                
+                <div class="form-group">
+                    <label for="batchValidDays">有效期（天）</label>
+                    <input type="number" id="batchValidDays" name="batchValidDays" value="30" min="1" max="365">
+                </div>
+                
+                <div class="form-group">
+                    <label for="batchRemarks">备注</label>
+                    <input type="text" id="batchRemarks" name="batchRemarks" placeholder="可选：批量备注信息">
+                </div>
+            </form>
+            
+            <div id="generatedCardsContainer" style="display: none;">
+                <div class="form-group">
+                    <label>生成的卡密：</label>
+                    <div id="generatedCards" class="generated-cards"></div>
+                </div>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button type="button" class="btn" onclick="closeBatchGenerateModal()">取消</button>
+            <button type="button" class="btn btn-primary" onclick="batchGenerateCards()">批量生成</button>
+            <button type="button" class="btn btn-success" onclick="exportGeneratedCards()" id="exportBtn" style="display: none;">导出卡密</button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // 页面加载时获取卡密列表
+    document.addEventListener('DOMContentLoaded', function() {
+        loadCards();
+    });
+    
+    // 加载卡密列表
+    async function loadCards() {
+        try {
+            const response = await fetch('/admin/api/cards', {
+                method: 'GET',
+                headers: {
+                    'Content-Type': 'application/json',
+                }
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                renderCardTable(data.data);
+            } else {
+                showToast('加载卡密列表失败', 'error');
+            }
+        } catch (error) {
+            console.error('加载卡密列表失败:', error);
+            showToast('网络错误，请稍后重试', 'error');
+        }
+    }
+    
+    // 渲染卡密表格
+    function renderCardTable(cards) {
+        const tbody = document.querySelector('#cardTable tbody');
+        tbody.innerHTML = '';
+        
+        if (cards.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="9" style="text-align: center; color: #6b7280;">暂无卡密</td></tr>';
+            return;
+        }
+        
+        cards.forEach(card => {
+            const row = document.createElement('tr');
+            let statusClass = 'active';
+            let statusText = '正常';
+            
+            if (card.status === 0) {
+                statusClass = 'inactive';
+                statusText = '已禁用';
+            } else if (card.expires_at && new Date(card.expires_at) < new Date()) {
+                statusClass = 'expired';
+                statusText = '已过期';
+            } else if (card.used_times >= card.max_usage) {
+                statusClass = 'inactive';
+                statusText = '已用完';
+            }
+            
+            row.innerHTML = `
+                <td>${card.id}</td>
+                <td><code>${escapeHtml(card.card_code)}</code></td>
+                <td>${escapeHtml(card.card_type)}</td>
+                <td><span class="status ${statusClass}">${statusText}</span></td>
+                <td>${card.used_times}</td>
+                <td>${card.max_usage}</td>
+                <td>${card.valid_days}天</td>
+                <td>${formatDateTime(card.created_at)}</td>
+                <td>
+                    <button class="btn btn-success" onclick="editCard(${card.id})" style="margin-right: 5px;">编辑</button>
+                    <button class="btn btn-danger" onclick="deleteCard(${card.id})">删除</button>
+                </td>
+            `;
+            tbody.appendChild(row);
+        });
+    }
+    
+    // 显示生成卡密模态框
+    function showGenerateModal() {
+        document.getElementById('generateForm').reset();
+        document.getElementById('maxUsage').value = '1';
+        document.getElementById('validDays').value = '30';
+        document.getElementById('generateModal').classList.add('show');
+    }
+    
+    // 显示批量生成模态框
+    function showBatchGenerateModal() {
+        document.getElementById('batchGenerateForm').reset();
+        document.getElementById('batchCount').value = '10';
+        document.getElementById('batchMaxUsage').value = '1';
+        document.getElementById('batchValidDays').value = '30';
+        document.getElementById('generatedCardsContainer').style.display = 'none';
+        document.getElementById('exportBtn').style.display = 'none';
+        document.getElementById('batchGenerateModal').classList.add('show');
+    }
+    
+    // 关闭模态框
+    function closeGenerateModal() {
+        document.getElementById('generateModal').classList.remove('show');
+    }
+    
+    function closeBatchGenerateModal() {
+        document.getElementById('batchGenerateModal').classList.remove('show');
+    }
+    
+    // 生成单个卡密
+    async function generateCard() {
+        const form = document.getElementById('generateForm');
+        const formData = new FormData(form);
+        
+        const data = {
+            cardType: formData.get('cardType'),
+            maxUsage: parseInt(formData.get('maxUsage')),
+            validDays: parseInt(formData.get('validDays')),
+            remarks: formData.get('remarks')
+        };
+        
+        try {
+            const response = await fetch('/admin/api/cards/generate', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(data)
+            });
+            
+            const result = await response.json();
+            
+            if (result.success) {
+                showToast(`卡密生成成功：${result.card_code}`, 'success');
+                closeGenerateModal();
+                loadCards();
+            } else {
+                showToast(result.message || '生成失败', 'error');
+            }
+        } catch (error) {
+            console.error('生成卡密失败:', error);
+            showToast('网络错误，请稍后重试', 'error');
+        }
+    }
+    
+    // 批量生成卡密
+    async function batchGenerateCards() {
+        const form = document.getElementById('batchGenerateForm');
+        const formData = new FormData(form);
+        
+        const data = {
+            count: parseInt(formData.get('batchCount')),
+            cardType: formData.get('batchCardType'),
+            maxUsage: parseInt(formData.get('batchMaxUsage')),
+            validDays: parseInt(formData.get('batchValidDays')),
+            remarks: formData.get('batchRemarks')
+        };
+        
+        try {
+            showToast('正在批量生成卡密...', 'info');
+            
+            const response = await fetch('/admin/api/cards/batch-generate', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(data)
+            });
+            
+            const result = await response.json();
+            
+            if (result.success) {
+                showToast(`批量生成成功：${result.generated}个卡密`, 'success');
+                
+                // 显示生成的卡密
+                const container = document.getElementById('generatedCardsContainer');
+                const cardsDiv = document.getElementById('generatedCards');
+                let cardsHtml = '';
+                
+                result.cards.forEach(card => {
+                    cardsHtml += `<span class="card-code">${card}</span>`;
+                });
+                
+                cardsDiv.innerHTML = cardsHtml;
+                container.style.display = 'block';
+                document.getElementById('exportBtn').style.display = 'inline-block';
+                
+                // 存储卡密用于导出
+                window.generatedCards = result.cards;
+                
+                loadCards();
+            } else {
+                showToast(result.message || '批量生成失败', 'error');
+            }
+        } catch (error) {
+            console.error('批量生成卡密失败:', error);
+            showToast('网络错误，请稍后重试', 'error');
+        }
+    }
+    
+    // 导出生成的卡密
+    function exportGeneratedCards() {
+        if (!window.generatedCards || window.generatedCards.length === 0) {
+            showToast('没有可导出的卡密', 'error');
+            return;
+        }
+        
+        const content = window.generatedCards.join('\n');
+        const blob = new Blob([content], { type: 'text/plain' });
+        const url = URL.createObjectURL(blob);
+        
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `cards_${new Date().toISOString().slice(0, 10)}.txt`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        
+        showToast('卡密导出成功', 'success');
+    }
+    
+    // 清理过期卡密
+    async function cleanupExpiredCards() {
+        if (!confirm('确定要清理所有过期和无效的卡密吗？此操作不可撤销。')) {
+            return;
+        }
+        
+        try {
+            const response = await fetch('/admin/api/cards/cleanup', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                }
+            });
+            
+            const result = await response.json();
+            
+            if (result.success) {
+                showToast(`清理完成：删除了 ${result.deleted} 个过期卡密`, 'success');
+                loadCards();
+            } else {
+                showToast(result.message || '清理失败', 'error');
+            }
+        } catch (error) {
+            console.error('清理卡密失败:', error);
+            showToast('网络错误，请稍后重试', 'error');
+        }
+    }
+    
+    // 删除卡密
+    async function deleteCard(id) {
+        if (!confirm('确定要删除这个卡密吗？')) {
+            return;
+        }
+        
+        try {
+            const response = await fetch('/admin/api/cards', {
+                method: 'DELETE',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ id: id })
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                showToast('卡密删除成功', 'success');
+                loadCards();
+            } else {
+                showToast(data.message || '删除失败', 'error');
+            }
+        } catch (error) {
+            console.error('删除卡密失败:', error);
+            showToast('网络错误，请稍后重试', 'error');
+        }
+    }
+    
+    // 编辑卡密 (简单实现)
+    function editCard(id) {
+        showToast('编辑功能开发中...', 'info');
+    }
+    
+    // 点击模态框外部关闭
+    document.getElementById('generateModal').addEventListener('click', function(e) {
+        if (e.target === this) {
+            closeGenerateModal();
+        }
+    });
+    
+    document.getElementById('batchGenerateModal').addEventListener('click', function(e) {
+        if (e.target === this) {
+            closeBatchGenerateModal();
+        }
+    });
+    
+    // Toast通知系统
+    function showToast(message, type = 'info', duration = 3000) {
+        const container = document.getElementById('toast-container');
+        
+        const toast = document.createElement('div');
+        toast.className = `toast ${type}`;
+        toast.textContent = message;
+        
+        container.appendChild(toast);
+        
+        setTimeout(() => {
+            toast.classList.add('show');
+        }, 10);
+        
+        setTimeout(() => {
+            toast.classList.remove('show');
+            setTimeout(() => {
+                if (container.contains(toast)) {
+                    container.removeChild(toast);
+                }
+            }, 300);
+        }, duration);
+    }
+    
+    // 工具函数
+    function escapeHtml(text) {
+        if (!text) return '';
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+    
+    function formatDateTime(dateString) {
+        if (!dateString) return '-';
+        return new Date(dateString).toLocaleString('zh-CN');
+    }
+</script>
 {% endblock %}

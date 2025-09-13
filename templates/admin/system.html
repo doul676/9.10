@@ -4,11 +4,329 @@
 
 {% block head %}
 <style>
-    /* 基础样式将在完善时添加 */
+    * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+    }
+    
+    :root {
+        --primary-color: #667eea;
+        --secondary-color: #764ba2;
+        --sidebar-width: 280px;
+        --header-height: 70px;
+        --transition: all 0.3s ease;
+    }
+    
+    body {
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        background: #f8fafc;
+        line-height: 1.6;
+        color: #334155;
+        transition: var(--transition);
+    }
+    
+    /* Sidebar Styles */
+    .sidebar {
+        position: fixed;
+        left: 0;
+        top: 0;
+        width: var(--sidebar-width);
+        height: 100vh;
+        background: linear-gradient(135deg, var(--primary-color) 0%, var(--secondary-color) 100%);
+        z-index: 1000;
+        transition: var(--transition);
+        box-shadow: 4px 0 15px rgba(0,0,0,0.1);
+    }
+    
+    .sidebar-header {
+        padding: 20px;
+        border-bottom: 1px solid rgba(255,255,255,0.1);
+    }
+    
+    .sidebar-logo {
+        color: white;
+        font-size: 20px;
+        font-weight: 700;
+        text-align: center;
+        text-shadow: 0 2px 4px rgba(0,0,0,0.3);
+    }
+    
+    .sidebar-nav {
+        padding: 20px 0;
+    }
+    
+    .nav-item {
+        display: block;
+        color: rgba(255,255,255,0.8);
+        text-decoration: none;
+        padding: 15px 25px;
+        transition: var(--transition);
+        border-left: 3px solid transparent;
+        position: relative;
+        overflow: hidden;
+    }
+    
+    .nav-item::before {
+        content: '';
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(255,255,255,0.1);
+        transform: translateX(-100%);
+        transition: var(--transition);
+    }
+    
+    .nav-item:hover::before {
+        transform: translateX(0);
+    }
+    
+    .nav-item:hover,
+    .nav-item.active {
+        color: white;
+        background: rgba(255,255,255,0.15);
+        border-left-color: white;
+        transform: translateX(5px);
+    }
+    
+    .nav-item i {
+        margin-right: 10px;
+        width: 20px;
+        text-align: center;
+    }
+    
+    /* Main Content */
+    .main-content {
+        margin-left: var(--sidebar-width);
+        min-height: 100vh;
+        transition: var(--transition);
+    }
+    
+    .header {
+        background: white;
+        height: var(--header-height);
+        box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 30px;
+        position: sticky;
+        top: 0;
+        z-index: 999;
+    }
+    
+    .header-title {
+        font-size: 24px;
+        font-weight: 600;
+        color: #1e293b;
+    }
+    
+    .header-actions {
+        display: flex;
+        align-items: center;
+        gap: 20px;
+    }
+    
+    .user-info {
+        display: flex;
+        align-items: center;
+        gap: 15px;
+        color: #64748b;
+    }
+    
+    .logout-btn {
+        background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+        color: white;
+        text-decoration: none;
+        padding: 8px 16px;
+        border-radius: 8px;
+        font-size: 14px;
+        font-weight: 500;
+        transition: var(--transition);
+    }
+    
+    .logout-btn:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 5px 15px rgba(239, 68, 68, 0.3);
+    }
+    
+    /* Content Area */
+    .content {
+        padding: 30px;
+    }
+    
+    /* Cards */
+    .card {
+        background: white;
+        border-radius: 15px;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.05), 0 1px 3px rgba(0,0,0,0.1);
+        overflow: hidden;
+        margin-bottom: 25px;
+        transition: var(--transition);
+    }
+    
+    .card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 25px rgba(0,0,0,0.1), 0 4px 10px rgba(0,0,0,0.06);
+    }
+    
+    .card-header {
+        padding: 20px 25px;
+        border-bottom: 1px solid #f1f5f9;
+        background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+    
+    .card-title {
+        font-size: 18px;
+        font-weight: 600;
+        color: #1e293b;
+        margin: 0;
+    }
+    
+    .card-body {
+        padding: 25px;
+    }
+    
+    .btn {
+        padding: 10px 20px;
+        border: none;
+        border-radius: 8px;
+        font-size: 14px;
+        font-weight: 500;
+        cursor: pointer;
+        transition: var(--transition);
+        text-decoration: none;
+        display: inline-block;
+    }
+    
+    .btn-primary {
+        background: linear-gradient(135deg, var(--primary-color) 0%, var(--secondary-color) 100%);
+        color: white;
+    }
+    
+    .btn-primary:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 5px 15px rgba(102, 126, 234, 0.3);
+    }
+    
+    .btn-success {
+        background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+        color: white;
+    }
+    
+    .btn-success:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 5px 15px rgba(16, 185, 129, 0.3);
+    }
+    
+    /* Form Styles */
+    .form-group {
+        margin-bottom: 20px;
+    }
+    
+    .form-group label {
+        display: block;
+        margin-bottom: 8px;
+        color: #374151;
+        font-weight: 500;
+    }
+    
+    .form-group input,
+    .form-group select {
+        width: 100%;
+        padding: 12px 16px;
+        border: 2px solid #e5e7eb;
+        border-radius: 8px;
+        font-size: 14px;
+        transition: var(--transition);
+    }
+    
+    .form-group input:focus,
+    .form-group select:focus {
+        outline: none;
+        border-color: var(--primary-color);
+        box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+    }
+    
+    .checkbox-group {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+    
+    .checkbox-group input[type="checkbox"] {
+        width: auto;
+    }
+    
+    .config-section {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+        gap: 20px;
+    }
+    
+    .config-item {
+        padding: 15px;
+        border: 1px solid #e5e7eb;
+        border-radius: 8px;
+        background: #f9fafb;
+    }
+    
+    .config-description {
+        font-size: 12px;
+        color: #6b7280;
+        margin-top: 5px;
+    }
+    
+    /* Toast Notifications */
+    .toast-container {
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        z-index: 3000;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        max-width: 400px;
+    }
+    
+    .toast {
+        padding: 15px 20px;
+        border-radius: 10px;
+        color: white;
+        font-weight: 500;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+        transform: translateX(450px);
+        opacity: 0;
+        transition: all 0.3s ease;
+        position: relative;
+        overflow: hidden;
+    }
+    
+    .toast.show {
+        transform: translateX(0);
+        opacity: 1;
+    }
+    
+    .toast.success {
+        background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+    }
+    
+    .toast.error {
+        background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+    }
 </style>
 {% endblock %}
 
 {% block body %}
+<!-- Toast notification container -->
+<div id="toast-container" class="toast-container"></div>
+
+<!-- Sidebar -->
 <div class="sidebar">
     <div class="sidebar-header">
         <div class="sidebar-logo">📧 邮件管理系统</div>
@@ -38,6 +356,7 @@
     </nav>
 </div>
 
+<!-- Main Content -->
 <div class="main-content">
     <div class="header">
         <h1 class="header-title">系统设置</h1>
@@ -50,15 +369,184 @@
     </div>
     
     <div class="content">
+        <!-- 系统配置 -->
         <div class="card">
             <div class="card-header">
                 <h2 class="card-title">系统配置</h2>
+                <button class="btn btn-success" onclick="saveConfig()">
+                    💾 保存设置
+                </button>
             </div>
             <div class="card-body">
-                <p>系统设置功能正在开发中...</p>
-                <p>将包含管理员密码修改、系统参数配置等功能。</p>
+                <form id="configForm">
+                    <div class="config-section" id="configSection">
+                        <!-- 配置项将通过JavaScript加载 -->
+                    </div>
+                </form>
             </div>
         </div>
     </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // 页面加载时获取系统配置
+    document.addEventListener('DOMContentLoaded', function() {
+        loadSystemConfig();
+    });
+    
+    // 加载系统配置
+    async function loadSystemConfig() {
+        try {
+            const response = await fetch('/admin/api/system-config', {
+                method: 'GET',
+                headers: {
+                    'Content-Type': 'application/json',
+                }
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                renderConfigForm(data.data);
+            } else {
+                showToast('加载系统配置失败', 'error');
+            }
+        } catch (error) {
+            console.error('加载系统配置失败:', error);
+            showToast('网络错误，请稍后重试', 'error');
+        }
+    }
+    
+    // 渲染配置表单
+    function renderConfigForm(configs) {
+        const section = document.getElementById('configSection');
+        section.innerHTML = '';
+        
+        configs.forEach(config => {
+            const item = document.createElement('div');
+            item.className = 'config-item';
+            
+            let inputHtml = '';
+            
+            if (config.config_type === 'boolean') {
+                const checked = config.config_value === '1' ? 'checked' : '';
+                inputHtml = `
+                    <div class="checkbox-group">
+                        <input type="checkbox" id="${config.config_key}" name="${config.config_key}" ${checked}>
+                        <label for="${config.config_key}">${getConfigLabel(config.config_key)}</label>
+                    </div>
+                `;
+            } else if (config.config_type === 'integer') {
+                inputHtml = `
+                    <label for="${config.config_key}">${getConfigLabel(config.config_key)}</label>
+                    <input type="number" id="${config.config_key}" name="${config.config_key}" value="${config.config_value}">
+                `;
+            } else {
+                inputHtml = `
+                    <label for="${config.config_key}">${getConfigLabel(config.config_key)}</label>
+                    <input type="text" id="${config.config_key}" name="${config.config_key}" value="${config.config_value}">
+                `;
+            }
+            
+            item.innerHTML = `
+                ${inputHtml}
+                <div class="config-description">${escapeHtml(config.description)}</div>
+            `;
+            
+            section.appendChild(item);
+        });
+    }
+    
+    // 获取配置项中文名称
+    function getConfigLabel(key) {
+        const labels = {
+            'site_title': '网站标题',
+            'max_daily_usage': '每日最大使用次数',
+            'default_card_validity': '默认卡密有效期（天）',
+            'require_card_auth': '启用卡密验证',
+            'admin_notification': '启用管理员通知',
+            'auto_cleanup_logs': '自动清理日志',
+            'log_retention_days': '日志保留天数'
+        };
+        return labels[key] || key;
+    }
+    
+    // 保存系统配置
+    async function saveConfig() {
+        const form = document.getElementById('configForm');
+        const formData = new FormData(form);
+        
+        const configs = [];
+        
+        // 收集所有配置项
+        document.querySelectorAll('#configSection input').forEach(input => {
+            let value;
+            if (input.type === 'checkbox') {
+                value = input.checked ? '1' : '0';
+            } else {
+                value = input.value;
+            }
+            
+            configs.push({
+                config_key: input.name,
+                config_value: value
+            });
+        });
+        
+        try {
+            const response = await fetch('/admin/api/system-config', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ configs: configs })
+            });
+            
+            const result = await response.json();
+            
+            if (result.success) {
+                showToast('系统设置保存成功', 'success');
+            } else {
+                showToast(result.message || '保存失败', 'error');
+            }
+        } catch (error) {
+            console.error('保存系统配置失败:', error);
+            showToast('网络错误，请稍后重试', 'error');
+        }
+    }
+    
+    // Toast通知系统
+    function showToast(message, type = 'info', duration = 3000) {
+        const container = document.getElementById('toast-container');
+        
+        const toast = document.createElement('div');
+        toast.className = `toast ${type}`;
+        toast.textContent = message;
+        
+        container.appendChild(toast);
+        
+        setTimeout(() => {
+            toast.classList.add('show');
+        }, 10);
+        
+        setTimeout(() => {
+            toast.classList.remove('show');
+            setTimeout(() => {
+                if (container.contains(toast)) {
+                    container.removeChild(toast);
+                }
+            }, 300);
+        }, duration);
+    }
+    
+    // 工具函数
+    function escapeHtml(text) {
+        if (!text) return '';
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+</script>
 {% endblock %}

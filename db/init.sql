@@ -79,13 +79,78 @@ INSERT OR IGNORE INTO proxy_config (config_key, config_value, description) VALUE
 ('active_proxy_id', '0', '当前激活的代理ID'),
 ('proxy_timeout', '30', '代理连接超时时间（秒）');
 
+-- 卡密管理表
+CREATE TABLE IF NOT EXISTS cards (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    card_code TEXT NOT NULL UNIQUE,
+    card_type TEXT NOT NULL DEFAULT 'standard',
+    status INTEGER NOT NULL DEFAULT 1,
+    used_times INTEGER DEFAULT 0,
+    max_usage INTEGER DEFAULT 1,
+    valid_days INTEGER DEFAULT 30,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    expires_at DATETIME DEFAULT NULL,
+    first_used_at DATETIME DEFAULT NULL,
+    last_used_at DATETIME DEFAULT NULL,
+    remarks TEXT DEFAULT ''
+);
+
+-- 卡密使用日志表
+CREATE TABLE IF NOT EXISTS card_usage_logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    card_id INTEGER NOT NULL,
+    card_code TEXT NOT NULL,
+    user_ip TEXT DEFAULT '',
+    user_agent TEXT DEFAULT '',
+    action TEXT NOT NULL DEFAULT 'use',
+    result TEXT NOT NULL DEFAULT 'success',
+    message TEXT DEFAULT '',
+    used_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (card_id) REFERENCES cards(id) ON DELETE CASCADE
+);
+
+-- 收件日志表
+CREATE TABLE IF NOT EXISTS mail_logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    email TEXT NOT NULL,
+    request_ip TEXT DEFAULT '',
+    user_agent TEXT DEFAULT '',
+    card_code TEXT DEFAULT '',
+    success INTEGER DEFAULT 1,
+    message TEXT DEFAULT '',
+    mail_count INTEGER DEFAULT 0,
+    response_time INTEGER DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 系统配置表
+CREATE TABLE IF NOT EXISTS system_config (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    config_key TEXT NOT NULL UNIQUE,
+    config_value TEXT NOT NULL,
+    config_type TEXT DEFAULT 'string',
+    description TEXT DEFAULT '',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 插入默认系统配置
+INSERT OR IGNORE INTO system_config (config_key, config_value, config_type, description) VALUES 
+('site_title', '邮件查看系统', 'string', '网站标题'),
+('max_daily_usage', '100', 'integer', '每日最大使用次数'),
+('default_card_validity', '30', 'integer', '默认卡密有效期（天）'),
+('require_card_auth', '0', 'boolean', '是否需要卡密验证'),
+('admin_notification', '1', 'boolean', '是否启用管理员通知'),
+('auto_cleanup_logs', '1', 'boolean', '是否自动清理日志'),
+('log_retention_days', '30', 'integer', '日志保留天数');
+
 -- 创建索引
-CREATE INDEX IF NOT EXISTS idx_mail_accounts_email ON mail_accounts(email);
-CREATE INDEX IF NOT EXISTS idx_mail_accounts_created_at ON mail_accounts(created_at);
-CREATE INDEX IF NOT EXISTS idx_server_addresses_name ON server_addresses(server_name);
-CREATE INDEX IF NOT EXISTS idx_server_addresses_address ON server_addresses(server_address);
-CREATE INDEX IF NOT EXISTS idx_http_proxies_host_port ON http_proxies(host, port);
-CREATE INDEX IF NOT EXISTS idx_http_proxies_status ON http_proxies(status);
-CREATE INDEX IF NOT EXISTS idx_socks5_proxies_host_port ON socks5_proxies(host, port);
-CREATE INDEX IF NOT EXISTS idx_socks5_proxies_status ON socks5_proxies(status);
-CREATE INDEX IF NOT EXISTS idx_proxy_config_key ON proxy_config(config_key);
+CREATE INDEX IF NOT EXISTS idx_cards_code ON cards(card_code);
+CREATE INDEX IF NOT EXISTS idx_cards_status ON cards(status);
+CREATE INDEX IF NOT EXISTS idx_cards_created_at ON cards(created_at);
+CREATE INDEX IF NOT EXISTS idx_card_usage_logs_card_id ON card_usage_logs(card_id);
+CREATE INDEX IF NOT EXISTS idx_card_usage_logs_used_at ON card_usage_logs(used_at);
+CREATE INDEX IF NOT EXISTS idx_mail_logs_email ON mail_logs(email);
+CREATE INDEX IF NOT EXISTS idx_mail_logs_created_at ON mail_logs(created_at);
+CREATE INDEX IF NOT EXISTS idx_system_config_key ON system_config(config_key);
