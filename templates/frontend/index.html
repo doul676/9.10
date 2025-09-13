@@ -656,17 +656,8 @@
     function displayMail(mail) {
         document.getElementById('mailSubject').textContent = mail.subject || '(无主题)';
         
-        // 处理发件人显示：同时显示名字和邮箱账号（如：张三 <zhangsan@example.com>）
-        let senderDisplay = mail.from || '未知';
-        if (senderDisplay && senderDisplay.includes('@')) {
-            // 如果发件人是邮箱格式，尝试提取用户名作为显示名称
-            const atIndex = senderDisplay.indexOf('@');
-            const localPart = senderDisplay.substring(0, atIndex);
-            const displayName = localPart || '未知发件人';
-            // 显示格式：名称 <邮箱地址>
-            senderDisplay = `${displayName} <${senderDisplay}>`;
-        }
-        document.getElementById('mailFrom').textContent = senderDisplay;
+        // 显示发件人信息（后端已格式化为"名称 <邮箱地址>"格式）
+        document.getElementById('mailFrom').textContent = mail.from || '未知';
         
         document.getElementById('mailTo').textContent = mail.to || '未知';
         document.getElementById('mailDate').textContent = mail.date || '未知';
