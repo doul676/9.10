@@ -264,14 +264,43 @@
                 <h2 class="card-title">邮件收件日志</h2>
             </div>
             <div class="card-body">
-                <div class="feature-intro">
-                    <div class="feature-icon">📧</div>
-                    <h3>收件日志系统</h3>
-                    <p>实时记录所有邮件收取操作和处理结果</p>
-                    <p>详细记录邮件获取时间、状态、错误信息等</p>
-                    <p>支持按邮箱、时间、状态等条件筛选查询</p>
-                    <p>提供邮件收取成功率统计和趋势分析</p>
-                    <p>功能完善中，敬请期待...</p>
+                <!-- 搜索和分页控制 -->
+                <div class="search-controls" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; gap: 20px;">
+                    <div class="search-box" style="display: flex; gap: 10px; flex: 1; max-width: 400px;">
+                        <input type="text" id="logSearchInput" placeholder="搜索邮箱、主题或发件人..." style="flex: 1; min-width: 200px; padding: 8px 12px; border: 2px solid #e5e7eb; border-radius: 8px;" onkeyup="searchLogs()">
+                        <button class="btn btn-primary" onclick="searchLogs()" style="padding: 8px 16px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; border-radius: 8px; cursor: pointer;">🔍 搜索</button>
+                    </div>
+                    <div class="page-controls">
+                        <select id="logPerPageSelect" onchange="changePerPage()" style="padding: 8px 12px; border: 2px solid #e5e7eb; border-radius: 8px; font-size: 14px;">
+                            <option value="10">每页10条</option>
+                            <option value="20">每页20条</option>
+                            <option value="50">每页50条</option>
+                        </select>
+                    </div>
+                </div>
+                
+                <!-- 邮件日志列表 -->
+                <div class="table-container" style="overflow-x: auto; border: 1px solid #e5e7eb; border-radius: 8px;">
+                    <table id="mailLogTable" style="width: 100%; border-collapse: collapse;">
+                        <thead>
+                            <tr style="background: #f8fafc;">
+                                <th style="padding: 12px; border-bottom: 1px solid #e5e7eb; text-align: left; font-weight: 600;">ID</th>
+                                <th style="padding: 12px; border-bottom: 1px solid #e5e7eb; text-align: left; font-weight: 600;">收件邮箱</th>
+                                <th style="padding: 12px; border-bottom: 1px solid #e5e7eb; text-align: left; font-weight: 600;">邮件主题</th>
+                                <th style="padding: 12px; border-bottom: 1px solid #e5e7eb; text-align: left; font-weight: 600;">发件人</th>
+                                <th style="padding: 12px; border-bottom: 1px solid #e5e7eb; text-align: left; font-weight: 600;">接收时间</th>
+                                <th style="padding: 12px; border-bottom: 1px solid #e5e7eb; text-align: left; font-weight: 600;">状态</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <!-- 邮件日志将通过JavaScript加载 -->
+                        </tbody>
+                    </table>
+                </div>
+                
+                <!-- 分页导航 -->
+                <div class="pagination-container" id="logPaginationContainer" style="margin-top: 20px; display: flex; justify-content: center; align-items: center; gap: 10px;">
+                    <!-- 分页按钮将通过JavaScript生成 -->
                 </div>
             </div>
         </div>
@@ -281,7 +310,182 @@
 
 {% block scripts %}
 <script>
-    // 页面脚本
+    // 全局变量
+    let currentPage = 1;
+    let perPage = 10;
+    let searchQuery = '';
+    let totalPages = 1;
+
+    // 页面加载时初始化
+    document.addEventListener('DOMContentLoaded', function() {
+        loadMailLogs();
+    });
+    
+    // 加载邮件日志列表
+    async function loadMailLogs(page = null, search = null) {
+        try {
+            if (page !== null) currentPage = page;
+            if (search !== null) searchQuery = search;
+            
+            const params = new URLSearchParams({
+                page: currentPage,
+                per_page: perPage,
+                search: searchQuery
+            });
+            
+            const response = await fetch(`/admin/api/mail-logs?${params}`, {
+                method: 'GET',
+                headers: {
+                    'Content-Type': 'application/json',
+                }
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                renderLogTable(data.data);
+                renderLogPagination(data.pagination);
+            } else {
+                showError('加载邮件日志失败: ' + (data.message || '未知错误'));
+            }
+        } catch (error) {
+            console.error('加载邮件日志失败:', error);
+            showError('网络错误，请稍后重试');
+        }
+    }
+    
+    // 渲染邮件日志表格
+    function renderLogTable(logs) {
+        const tbody = document.querySelector('#mailLogTable tbody');
+        tbody.innerHTML = '';
+        
+        if (logs.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: #6b7280; padding: 20px;">暂无邮件日志</td></tr>';
+            return;
+        }
+        
+        logs.forEach(log => {
+            const row = document.createElement('tr');
+            const statusBadge = getStatusBadge(log.status);
+            
+            row.innerHTML = `
+                <td style="padding: 12px; border-bottom: 1px solid #e5e7eb;">${log.id}</td>
+                <td style="padding: 12px; border-bottom: 1px solid #e5e7eb;">${escapeHtml(log.email)}</td>
+                <td style="padding: 12px; border-bottom: 1px solid #e5e7eb;" title="${escapeHtml(log.mail_subject)}">${truncateText(escapeHtml(log.mail_subject), 30)}</td>
+                <td style="padding: 12px; border-bottom: 1px solid #e5e7eb; font-weight: 500;">${escapeHtml(log.formatted_sender)}</td>
+                <td style="padding: 12px; border-bottom: 1px solid #e5e7eb;">${formatDateTime(log.received_at)}</td>
+                <td style="padding: 12px; border-bottom: 1px solid #e5e7eb;">${statusBadge}</td>
+            `;
+            tbody.appendChild(row);
+        });
+    }
+    
+    // 渲染分页导航
+    function renderLogPagination(pagination) {
+        const container = document.getElementById('logPaginationContainer');
+        totalPages = pagination.pages;
+        
+        let html = `<div class="pagination-info" style="color: #6b7280; font-size: 14px; margin-right: 20px;">共 ${pagination.total} 条记录，第 ${pagination.page} 页，共 ${pagination.pages} 页</div>`;
+        
+        if (pagination.pages > 1) {
+            html += '<div class="pagination-buttons" style="display: flex; gap: 5px;">';
+            
+            // 上一页
+            if (pagination.page > 1) {
+                html += `<button class="page-btn" onclick="loadMailLogs(${pagination.page - 1})" style="padding: 8px 12px; border: 1px solid #e5e7eb; background: white; color: #374151; border-radius: 6px; cursor: pointer;">« 上一页</button>`;
+            }
+            
+            // 页码按钮
+            let startPage = Math.max(1, pagination.page - 2);
+            let endPage = Math.min(pagination.pages, pagination.page + 2);
+            
+            if (startPage > 1) {
+                html += `<button class="page-btn" onclick="loadMailLogs(1)" style="padding: 8px 12px; border: 1px solid #e5e7eb; background: white; color: #374151; border-radius: 6px; cursor: pointer;">1</button>`;
+                if (startPage > 2) {
+                    html += '<span style="padding: 8px 12px; border: none; cursor: default;">...</span>';
+                }
+            }
+            
+            for (let i = startPage; i <= endPage; i++) {
+                const activeStyle = i === pagination.page ? 'background: #667eea; color: white; border-color: #667eea;' : 'background: white; color: #374151;';
+                html += `<button class="page-btn" onclick="loadMailLogs(${i})" style="padding: 8px 12px; border: 1px solid #e5e7eb; border-radius: 6px; cursor: pointer; ${activeStyle}">${i}</button>`;
+            }
+            
+            if (endPage < pagination.pages) {
+                if (endPage < pagination.pages - 1) {
+                    html += '<span style="padding: 8px 12px; border: none; cursor: default;">...</span>';
+                }
+                html += `<button class="page-btn" onclick="loadMailLogs(${pagination.pages})" style="padding: 8px 12px; border: 1px solid #e5e7eb; background: white; color: #374151; border-radius: 6px; cursor: pointer;">${pagination.pages}</button>`;
+            }
+            
+            // 下一页
+            if (pagination.page < pagination.pages) {
+                html += `<button class="page-btn" onclick="loadMailLogs(${pagination.page + 1})" style="padding: 8px 12px; border: 1px solid #e5e7eb; background: white; color: #374151; border-radius: 6px; cursor: pointer;">下一页 »</button>`;
+            }
+            
+            html += '</div>';
+        }
+        
+        container.innerHTML = html;
+    }
+    
+    // 获取状态徽章
+    function getStatusBadge(status) {
+        const badges = {
+            'received': '<span style="padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: 500; background: #dcfce7; color: #166534;">已接收</span>',
+            'processed': '<span style="padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: 500; background: #dbeafe; color: #1e40af;">已处理</span>',
+            'failed': '<span style="padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: 500; background: #fee2e2; color: #991b1b;">失败</span>'
+        };
+        return badges[status] || '<span style="padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: 500; background: #f3f4f6; color: #6b7280;">未知</span>';
+    }
+    
+    // 搜索邮件日志
+    function searchLogs() {
+        const search = document.getElementById('logSearchInput').value.trim();
+        loadMailLogs(1, search);
+    }
+    
+    // 改变每页显示数量
+    function changePerPage() {
+        perPage = parseInt(document.getElementById('logPerPageSelect').value);
+        loadMailLogs(1, searchQuery);
+    }
+    
+    // 工具函数
+    function escapeHtml(text) {
+        if (!text) return '';
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+    
+    function truncateText(text, maxLength) {
+        if (!text) return '';
+        return text.length > maxLength ? text.substring(0, maxLength) + '...' : text;
+    }
+    
+    function formatDateTime(dateStr) {
+        if (!dateStr) return '-';
+        try {
+            const date = new Date(dateStr);
+            return date.toLocaleString('zh-CN');
+        } catch (e) {
+            return dateStr;
+        }
+    }
+    
+    function showError(message) {
+        // 简单的错误显示，可以替换为更好的UI组件
+        alert(message);
+    }
+    
+    // 搜索框回车事件
+    document.addEventListener('keyup', function(event) {
+        if (event.target.id === 'logSearchInput' && event.key === 'Enter') {
+            searchLogs();
+        }
+    });
+    
     console.log('收件日志页面已加载');
 </script>
 {% endblock %}

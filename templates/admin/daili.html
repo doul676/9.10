@@ -1210,12 +1210,73 @@
         const proxyId = document.getElementById('proxyId').value;
         const proxyType = document.getElementById('proxyType').value;
         
-        if (!proxyId) {
-            showToast('请先保存代理后再测试', 'error');
+        if (proxyId) {
+            // 如果有ID，测试已保存的代理
+            await testSingleProxy(proxyType, proxyId);
+        } else {
+            // 如果没有ID，测试新代理（无需保存）
+            await testNewProxy(proxyType);
+        }
+    }
+    
+    // 测试新代理（无需保存）
+    async function testNewProxy(proxyType) {
+        const formData = {
+            action: 'test_new',
+            host: document.getElementById('proxyHost').value.trim(),
+            port: parseInt(document.getElementById('proxyPort').value) || 0,
+            username: document.getElementById('proxyUsername').value.trim(),
+            password: document.getElementById('proxyPassword').value.trim(),
+            name: document.getElementById('proxyName').value.trim()
+        };
+        
+        if (!formData.host || !formData.port) {
+            showToast('请填写代理地址和端口', 'error');
             return;
         }
         
-        await testSingleProxy(proxyType, proxyId);
+        try {
+            showToast('代理测试中，请稍候...', 'info', 1000);
+            
+            const response = await fetch(`/admin/api/proxies/${proxyType}`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(formData)
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                const details = data.details;
+                let message = data.message;
+                
+                if (details && details.results) {
+                    const results = details.results;
+                    const successCount = results.filter(r => r.success).length;
+                    message += `\n测试结果：${successCount}/${results.length} 成功`;
+                    
+                    results.forEach(result => {
+                        if (result.success) {
+                            message += `\n✅ ${result.url}: ${result.response_time}ms`;
+                            if (result.error) {
+                                message += ` (${result.error})`;
+                            }
+                        } else {
+                            message += `\n❌ ${result.url}: ${result.error}`;
+                        }
+                    });
+                }
+                
+                showToast(message, 'success', 5000);
+            } else {
+                showToast(data.message || '代理测试失败', 'error');
+            }
+        } catch (error) {
+            console.error('测试新代理失败:', error);
+            showToast('网络错误，请稍后重试', 'error');
+        }
     }
     
     // 删除代理
