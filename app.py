@@ -1224,7 +1224,11 @@ def _add_proxy(db, table_name, data, proxy_type):
     """添加代理"""
     name = data.get('name', '').strip()
     host = data.get('host', '').strip()
-    port = int(data.get('port', 0))
+    port_raw = data.get('port', 0)
+    try:
+        port = int(port_raw) if port_raw is not None else 0
+    except (ValueError, TypeError):
+        port = 0
     username = data.get('username', '').strip()
     password = data.get('password', '').strip()
     remarks = data.get('remarks', '').strip()
@@ -1286,7 +1290,11 @@ def _edit_proxy(db, table_name, data):
     
     name = data.get('name', '').strip()
     host = data.get('host', '').strip()
-    port = int(data.get('port', 0))
+    port_raw = data.get('port', 0)
+    try:
+        port = int(port_raw) if port_raw is not None else 0
+    except (ValueError, TypeError):
+        port = 0
     username = data.get('username', '').strip()
     password = data.get('password', '').strip()
     remarks = data.get('remarks', '').strip()
