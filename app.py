@@ -7,6 +7,8 @@
 import os
 import sqlite3
 import secrets
+import time
+import requests
 from datetime import datetime, timezone
 from flask import Flask, render_template, request, session, redirect, url_for, flash, jsonify, g
 from werkzeug.security import check_password_hash, generate_password_hash
@@ -672,6 +674,266 @@ def api_admin_servers():
                 'success': False,
                 'message': f'删除失败: {str(e)}'
             })
+
+@app.route('/admin/api/proxies/<proxy_type>', methods=['GET', 'POST', 'DELETE'])
+@admin_required
+def api_admin_proxies(proxy_type):
+    """代理管理 API"""
+    if proxy_type not in ['http', 'socks5']:
+        return jsonify({
+            'success': False,
+            'message': '不支持的代理类型'
+        })
+    
+    table_name = f'{proxy_type}_proxies'
+    db = get_db()
+    
+    if request.method == 'GET':
+        # 获取代理列表
+        proxies = db.execute(f'''
+            SELECT * FROM {table_name} 
+            ORDER BY created_at DESC
+        ''').fetchall()
+        
+        return jsonify({
+            'success': True,
+            'data': [dict(proxy) for proxy in proxies]
+        })
+    
+    elif request.method == 'POST':
+        # 添加或编辑代理
+        data = request.get_json()
+        action = data.get('action')
+        
+        if action == 'add':
+            name = data.get('name', '').strip()
+            host = data.get('host', '').strip()
+            port = int(data.get('port', 0))
+            username = data.get('username', '').strip()
+            password = data.get('password', '').strip()
+            remarks = data.get('remarks', '').strip()
+            
+            if not all([host, port]):
+                return jsonify({
+                    'success': False,
+                    'message': '请填写代理地址和端口'
+                })
+            
+            # Auto-generate name if empty
+            if not name:
+                # Get existing names to generate auto name
+                existing = db.execute(f'SELECT name FROM {table_name} WHERE name LIKE "未命名%"').fetchall()
+                existing_names = [row['name'] for row in existing]
+                
+                counter = 1
+                name = f'未命名{counter}'
+                while name in existing_names:
+                    counter += 1
+                    name = f'未命名{counter}'
+            
+            try:
+                # Check if proxy already exists
+                existing = db.execute(f'SELECT id FROM {table_name} WHERE host = ? AND port = ?', 
+                                    (host, port)).fetchone()
+                if existing:
+                    return jsonify({
+                        'success': False,
+                        'message': '代理地址已存在'
+                    })
+                
+                # Insert new proxy
+                now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                db.execute(f'''
+                    INSERT INTO {table_name} (name, host, port, username, password, status, remarks, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (name, host, port, username, password, 1, remarks, now, now))
+                
+                db.commit()
+                
+                return jsonify({
+                    'success': True,
+                    'message': f'{proxy_type.upper()}代理添加成功'
+                })
+                
+            except Exception as e:
+                return jsonify({
+                    'success': False,
+                    'message': f'添加失败: {str(e)}'
+                })
+        
+        elif action == 'edit':
+            # 编辑代理
+            proxy_id = data.get('id')
+            if not proxy_id:
+                return jsonify({
+                    'success': False,
+                    'message': '缺少代理ID'
+                })
+            
+            name = data.get('name', '').strip()
+            host = data.get('host', '').strip()
+            port = int(data.get('port', 0))
+            username = data.get('username', '').strip()
+            password = data.get('password', '').strip()
+            remarks = data.get('remarks', '').strip()
+            
+            try:
+                now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                db.execute(f'''
+                    UPDATE {table_name} 
+                    SET name=?, host=?, port=?, username=?, password=?, remarks=?, updated_at=?
+                    WHERE id=?
+                ''', (name, host, port, username, password, remarks, now, proxy_id))
+                
+                db.commit()
+                
+                return jsonify({
+                    'success': True,
+                    'message': f'{proxy_type.upper()}代理更新成功'
+                })
+                
+            except Exception as e:
+                return jsonify({
+                    'success': False,
+                    'message': f'更新失败: {str(e)}'
+                })
+    
+    elif request.method == 'DELETE':
+        # 删除代理
+        data = request.get_json()
+        proxy_id = data.get('id')
+        
+        if not proxy_id:
+            return jsonify({
+                'success': False,
+                'message': '缺少代理ID'
+            })
+        
+        try:
+            db.execute(f'DELETE FROM {table_name} WHERE id = ?', (proxy_id,))
+            db.commit()
+            
+            return jsonify({
+                'success': True,
+                'message': f'{proxy_type.upper()}代理删除成功'
+            })
+            
+        except Exception as e:
+            return jsonify({
+                'success': False,
+                'message': f'删除失败: {str(e)}'
+            })
+
+@app.route('/admin/api/proxies/<proxy_type>/test', methods=['POST'])
+@admin_required
+def api_test_proxy(proxy_type):
+    """测试代理连接"""
+    if proxy_type not in ['http', 'socks5']:
+        return jsonify({
+            'success': False,
+            'message': '不支持的代理类型'
+        })
+    
+    data = request.get_json()
+    proxy_id = data.get('id')
+    
+    if not proxy_id:
+        return jsonify({
+            'success': False,
+            'message': '缺少代理ID'
+        })
+    
+    try:
+        table_name = f'{proxy_type}_proxies'
+        db = get_db()
+        proxy = db.execute(f'SELECT * FROM {table_name} WHERE id = ?', (proxy_id,)).fetchone()
+        
+        if not proxy:
+            return jsonify({
+                'success': False,
+                'message': '代理不存在'
+            })
+        
+        # Test proxy by making a simple HTTP request
+        import time
+        import requests
+        
+        proxy_dict = {
+            'http': f'{proxy_type}://{proxy["host"]}:{proxy["port"]}',
+            'https': f'{proxy_type}://{proxy["host"]}:{proxy["port"]}'
+        }
+        
+        # Add authentication if provided
+        if proxy['username'] and proxy['password']:
+            proxy_dict['http'] = f'{proxy_type}://{proxy["username"]}:{proxy["password"]}@{proxy["host"]}:{proxy["port"]}'
+            proxy_dict['https'] = f'{proxy_type}://{proxy["username"]}:{proxy["password"]}@{proxy["host"]}:{proxy["port"]}'
+        
+        start_time = time.time()
+        
+        try:
+            # Test with a simple HTTP request to get IP
+            response = requests.get(
+                'http://httpbin.org/ip', 
+                proxies=proxy_dict, 
+                timeout=10
+            )
+            
+            latency = int((time.time() - start_time) * 1000)
+            
+            if response.status_code == 200:
+                ip_info = response.json()
+                resolved_ip = ip_info.get('origin', 'Unknown')
+                
+                # Update proxy stats
+                now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                db.execute(f'''
+                    UPDATE {table_name} 
+                    SET status=1, last_check=?, response_time=?, success_count=success_count+1
+                    WHERE id=?
+                ''', (now, latency, proxy_id))
+                db.commit()
+                
+                return jsonify({
+                    'success': True,
+                    'message': '代理测试成功',
+                    'ip': resolved_ip,
+                    'latency': latency
+                })
+            else:
+                # Update failure stats
+                now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                db.execute(f'''
+                    UPDATE {table_name} 
+                    SET status=0, last_check=?, fail_count=fail_count+1
+                    WHERE id=?
+                ''', (now, proxy_id))
+                db.commit()
+                
+                return jsonify({
+                    'success': False,
+                    'message': f'代理响应错误: HTTP {response.status_code}'
+                })
+                
+        except requests.exceptions.RequestException as e:
+            # Update failure stats
+            now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            db.execute(f'''
+                UPDATE {table_name} 
+                SET status=0, last_check=?, fail_count=fail_count+1
+                WHERE id=?
+            ''', (now, proxy_id))
+            db.commit()
+            
+            return jsonify({
+                'success': False,
+                'message': f'代理连接失败: {str(e)}'
+            })
+            
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': f'测试过程出错: {str(e)}'
+        })
 
 if __name__ == '__main__':
     # 初始化数据库
