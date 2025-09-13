@@ -108,7 +108,12 @@ class ProxyMailFetcher:
     def _check_proxy_status(self):
         """Check proxy configuration from database"""
         try:
-            db_path = os.path.join(os.path.dirname(__file__), '..', 'db', 'mail.sqlite')
+            # Use temporary database path if provided (for testing)
+            temp_db_path = os.environ.get('TEMP_DB_PATH')
+            if temp_db_path and os.path.exists(temp_db_path):
+                db_path = temp_db_path
+            else:
+                db_path = os.path.join(os.path.dirname(__file__), '..', 'db', 'mail.sqlite')
             
             if not os.path.exists(db_path):
                 return
@@ -882,8 +887,13 @@ def main():
     test_mode = len(sys.argv) > 2 and sys.argv[2] == '--test-connection'
     
     try:
-        # Get email account from database
-        db_path = os.path.join(os.path.dirname(__file__), '..', 'db', 'mail.sqlite')
+        # Get email account from database (support temporary database for testing)
+        temp_db_path = os.environ.get('TEMP_DB_PATH')
+        if temp_db_path and os.path.exists(temp_db_path):
+            db_path = temp_db_path
+        else:
+            db_path = os.path.join(os.path.dirname(__file__), '..', 'db', 'mail.sqlite')
+            
         conn = sqlite3.connect(db_path)
         cursor = conn.cursor()
         
