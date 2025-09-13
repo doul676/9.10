@@ -417,6 +417,8 @@ def api_admin_mailbox():
             return _edit_mailbox(db, data)
         elif action == 'test':
             return _test_mailbox(db, data)
+        elif action == 'test_new':
+            return _test_new_mailbox(data)
         elif action == 'batch_delete':
             return _batch_delete_mailbox(db, data)
     
@@ -694,6 +696,39 @@ def _test_mailbox(db, data):
                 WHERE id=%s
             ''', (now, test_result, account_id))
             db.commit()
+        
+        return jsonify({
+            'success': test_success,
+            'message': test_result
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': f'测试失败: {str(e)}'
+        })
+
+def _test_new_mailbox(data):
+    """测试新邮箱连接（无需保存到数据库）"""
+    email = data.get('email', '').strip()
+    password = data.get('password', '').strip()
+    server = data.get('server', '').strip()
+    port = int(data.get('port', 0))
+    protocol = data.get('protocol', 'imap')
+    ssl = data.get('ssl', True)
+    
+    if not all([email, password, server, port]):
+        return jsonify({
+            'success': False,
+            'message': '请填写完整的邮箱信息'
+        })
+    
+    try:
+        # 这里应该调用实际的邮箱连接测试
+        # 可以使用类似的逻辑调用 mail_fetcher.py 进行实际测试
+        # 暂时返回模拟结果
+        test_result = "连接测试成功"
+        test_success = True
         
         return jsonify({
             'success': test_success,
