@@ -410,41 +410,165 @@
         background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
     }
     
-    /* Responsive */
+    /* 增强样式 */
+    .button-group {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+    }
+    
+    .search-controls {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 20px;
+        gap: 20px;
+    }
+    
+    .search-box {
+        display: flex;
+        gap: 10px;
+        flex: 1;
+        max-width: 400px;
+    }
+    
+    .search-box input {
+        flex: 1;
+        min-width: 200px;
+    }
+    
+    .page-controls select {
+        padding: 8px 12px;
+        border: 2px solid #e5e7eb;
+        border-radius: 8px;
+        font-size: 14px;
+    }
+    
+    .pagination-container {
+        margin-top: 20px;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        gap: 10px;
+    }
+    
+    .pagination-info {
+        color: #6b7280;
+        font-size: 14px;
+        margin-right: 20px;
+    }
+    
+    .page-btn {
+        padding: 8px 12px;
+        border: 1px solid #e5e7eb;
+        background: white;
+        color: #374151;
+        text-decoration: none;
+        border-radius: 6px;
+        transition: var(--transition);
+        cursor: pointer;
+    }
+    
+    .page-btn:hover {
+        background: #f3f4f6;
+        border-color: #d1d5db;
+    }
+    
+    .page-btn.active {
+        background: var(--primary-color);
+        color: white;
+        border-color: var(--primary-color);
+    }
+    
+    .page-btn:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+    }
+    
+    .form-row {
+        display: flex;
+        gap: 15px;
+        margin-bottom: 15px;
+    }
+    
+    .form-row .form-group {
+        flex: 1;
+        margin-bottom: 0;
+    }
+    
+    .server-list {
+        max-height: 200px;
+        overflow-y: auto;
+        border: 1px solid #e5e7eb;
+        border-radius: 8px;
+        margin-top: 15px;
+    }
+    
+    .server-item {
+        padding: 10px 15px;
+        border-bottom: 1px solid #f3f4f6;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        cursor: pointer;
+        transition: var(--transition);
+    }
+    
+    .server-item:hover {
+        background: #f8fafc;
+    }
+    
+    .server-item:last-child {
+        border-bottom: none;
+    }
+    
+    .server-info {
+        flex: 1;
+    }
+    
+    .server-name {
+        font-weight: 500;
+        color: #1e293b;
+    }
+    
+    .server-address {
+        font-size: 12px;
+        color: #6b7280;
+    }
+    
+    .server-actions {
+        display: flex;
+        gap: 5px;
+    }
+    
+    .btn-small {
+        padding: 4px 8px;
+        font-size: 12px;
+        border-radius: 4px;
+    }
+    
+    /* 响应式增强 */
     @media (max-width: 768px) {
-        .sidebar {
-            transform: translateX(-100%);
-        }
-        
-        .sidebar.mobile-open {
-            transform: translateX(0);
-        }
-        
-        .main-content {
-            margin-left: 0;
-        }
-        
-        .header-title {
-            font-size: 20px;
-        }
-        
-        .content {
-            padding: 20px;
-        }
-        
-        .card-header {
+        .button-group {
             flex-direction: column;
-            gap: 15px;
-            align-items: flex-start;
         }
         
-        .modal-content {
-            width: 95%;
-            margin: 20px;
+        .search-controls {
+            flex-direction: column;
+            align-items: stretch;
         }
         
-        .table-container {
-            font-size: 12px;
+        .search-box {
+            max-width: none;
+        }
+        
+        .form-row {
+            flex-direction: column;
+        }
+        
+        .pagination-container {
+            flex-wrap: wrap;
+            gap: 5px;
         }
     }
 </style>
@@ -500,23 +624,50 @@
         <div class="card">
             <div class="card-header">
                 <h2 class="card-title">邮箱账号管理</h2>
-                <button class="btn btn-primary" onclick="showAddModal()">
-                    ➕ 添加邮箱
-                </button>
+                <div class="button-group">
+                    <button class="btn btn-primary" onclick="showAddModal()">
+                        ➕ 添加邮箱
+                    </button>
+                    <button class="btn btn-primary" onclick="showBatchAddModal()">
+                        📝 批量添加邮箱
+                    </button>
+                    <button class="btn btn-primary" onclick="showServerModal()">
+                        🌐 添加服务器地址
+                    </button>
+                    <button class="btn btn-danger" onclick="batchDeleteMailboxes()" id="batchDeleteBtn" style="display: none;">
+                        🗑️ 批量删除
+                    </button>
+                </div>
             </div>
             <div class="card-body">
+                <!-- 搜索和分页控制 -->
+                <div class="search-controls">
+                    <div class="search-box">
+                        <input type="text" id="searchInput" placeholder="搜索邮箱地址、服务器或备注..." onkeyup="searchMailboxes()">
+                        <button class="btn btn-primary" onclick="searchMailboxes()">🔍 搜索</button>
+                    </div>
+                    <div class="page-controls">
+                        <select id="perPageSelect" onchange="changePerPage()">
+                            <option value="10">每页10条</option>
+                            <option value="20">每页20条</option>
+                            <option value="50">每页50条</option>
+                        </select>
+                    </div>
+                </div>
+                
                 <div class="table-container">
                     <table id="mailboxTable">
                         <thead>
                             <tr>
-                                <th>ID</th>
+                                <th><input type="checkbox" id="selectAll" onchange="toggleSelectAll()"></th>
+                                <th>序号ID</th>
                                 <th>邮箱地址</th>
+                                <th>邮箱密码</th>
                                 <th>服务器</th>
-                                <th>端口</th>
-                                <th>协议</th>
+                                <th>端口/协议</th>
                                 <th>SSL</th>
                                 <th>备注</th>
-                                <th>创建时间</th>
+                                <th>添加时间</th>
                                 <th>操作</th>
                             </tr>
                         </thead>
@@ -524,6 +675,11 @@
                             <!-- 邮箱列表将通过JavaScript加载 -->
                         </tbody>
                     </table>
+                </div>
+                
+                <!-- 分页导航 -->
+                <div class="pagination-container" id="paginationContainer">
+                    <!-- 分页按钮将通过JavaScript生成 -->
                 </div>
             </div>
         </div>
@@ -554,27 +710,32 @@
                 
                 <div class="form-group">
                     <label for="server">服务器地址 *</label>
-                    <input type="text" id="server" name="server" required 
-                           placeholder="例: imap.qq.com">
-                </div>
-                
-                <div class="form-group">
-                    <label for="port">端口 *</label>
-                    <input type="number" id="port" name="port" required 
-                           placeholder="例: 993">
-                </div>
-                
-                <div class="form-group">
-                    <label for="protocol">协议</label>
-                    <select id="protocol" name="protocol">
-                        <option value="imap">IMAP</option>
-                        <option value="pop3">POP3</option>
+                    <select id="serverSelect" onchange="selectServer()">
+                        <option value="">选择已有服务器或手动输入</option>
                     </select>
+                    <input type="text" id="server" name="server" required 
+                           placeholder="例: imap.qq.com" style="margin-top: 8px;">
+                </div>
+                
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="port">端口 *</label>
+                        <input type="number" id="port" name="port" required 
+                               placeholder="例: 993">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="protocol">协议</label>
+                        <select id="protocol" name="protocol" onchange="updatePortByProtocol()">
+                            <option value="imap">IMAP</option>
+                            <option value="pop3">POP3</option>
+                        </select>
+                    </div>
                 </div>
                 
                 <div class="form-group">
                     <div class="checkbox-group">
-                        <input type="checkbox" id="ssl" name="ssl" checked>
+                        <input type="checkbox" id="ssl" name="ssl" checked onchange="updatePortBySSL()">
                         <label for="ssl">启用SSL</label>
                     </div>
                 </div>
@@ -588,7 +749,149 @@
         </div>
         <div class="modal-footer">
             <button type="button" class="btn" onclick="closeModal()">取消</button>
+            <button type="button" class="btn btn-success" onclick="testMailbox()" id="testBtn" style="display: none;">测试连接</button>
             <button type="button" class="btn btn-primary" onclick="saveMailbox()">保存</button>
+        </div>
+    </div>
+</div>
+
+<!-- 批量添加邮箱模态框 -->
+<div id="batchAddModal" class="modal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3 class="modal-title">批量添加邮箱</h3>
+            <button class="modal-close" onclick="closeBatchAddModal()">&times;</button>
+        </div>
+        <div class="modal-body">
+            <form id="batchAddForm">
+                <div class="form-group">
+                    <label for="batchContent">批量邮箱内容 *</label>
+                    <textarea id="batchContent" name="batch_content" rows="10" 
+                              placeholder="格式：账号----密码（每行一个）&#10;例如：&#10;user1@example.com----password1&#10;user2@example.com----password2"
+                              style="width: 100%; padding: 12px; border: 2px solid #e5e7eb; border-radius: 8px; font-family: monospace;"></textarea>
+                    <small style="color: #6b7280;">请按照"账号----密码"的格式填写，每行一个账号</small>
+                </div>
+                
+                <div class="form-group">
+                    <label for="batchServerSelect">服务器地址 *</label>
+                    <select id="batchServerSelect" onchange="selectBatchServer()">
+                        <option value="">选择已有服务器或手动输入</option>
+                    </select>
+                    <input type="text" id="batchServer" name="server" required 
+                           placeholder="例: imap.qq.com" style="margin-top: 8px;">
+                </div>
+                
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="batchPort">端口 *</label>
+                        <input type="number" id="batchPort" name="port" required 
+                               placeholder="例: 993">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="batchProtocol">协议</label>
+                        <select id="batchProtocol" name="protocol" onchange="updateBatchPortByProtocol()">
+                            <option value="imap">IMAP</option>
+                            <option value="pop3">POP3</option>
+                        </select>
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <div class="checkbox-group">
+                        <input type="checkbox" id="batchSsl" name="ssl" checked onchange="updateBatchPortBySSL()">
+                        <label for="batchSsl">启用SSL</label>
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <label for="batchRemarks">备注</label>
+                    <input type="text" id="batchRemarks" name="remarks" 
+                           placeholder="可选：批量添加备注">
+                </div>
+            </form>
+        </div>
+        <div class="modal-footer">
+            <button type="button" class="btn" onclick="closeBatchAddModal()">取消</button>
+            <button type="button" class="btn btn-primary" onclick="saveBatchMailboxes()">批量添加</button>
+        </div>
+    </div>
+</div>
+
+<!-- 服务器管理模态框 -->
+<div id="serverModal" class="modal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3 class="modal-title">服务器地址管理</h3>
+            <button class="modal-close" onclick="closeServerModal()">&times;</button>
+        </div>
+        <div class="modal-body">
+            <!-- 添加服务器表单 -->
+            <form id="serverForm">
+                <input type="hidden" id="serverId" name="id">
+                <input type="hidden" id="serverAction" name="action" value="add">
+                
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="serverName">服务器名称 *</label>
+                        <input type="text" id="serverName" name="server_name" required 
+                               placeholder="例: QQ邮箱">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="serverAddress">服务器地址 *</label>
+                        <input type="text" id="serverAddress" name="server_address" required 
+                               placeholder="例: imap.qq.com">
+                    </div>
+                </div>
+                
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="defaultPortImap">IMAP端口</label>
+                        <input type="number" id="defaultPortImap" name="default_port_imap" value="993">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="defaultPortPop3">POP3端口</label>
+                        <input type="number" id="defaultPortPop3" name="default_port_pop3" value="995">
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <div class="checkbox-group">
+                        <input type="checkbox" id="serverSslEnabled" name="ssl_enabled" checked>
+                        <label for="serverSslEnabled">默认启用SSL</label>
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <label for="serverRemarks">备注</label>
+                    <input type="text" id="serverRemarks" name="remarks" 
+                           placeholder="可选：服务器备注信息">
+                </div>
+                
+                <div style="text-align: right; margin-top: 15px;">
+                    <button type="button" class="btn btn-primary" onclick="saveServer()">
+                        <span id="serverSaveText">添加服务器</span>
+                    </button>
+                </div>
+            </form>
+            
+            <!-- 已添加服务器列表 -->
+            <div style="margin-top: 25px;">
+                <h4 style="margin-bottom: 15px; color: #374151;">已添加的服务器</h4>
+                <div class="server-list" id="serverList">
+                    <!-- 服务器列表将通过JavaScript加载 -->
+                </div>
+                <div style="margin-top: 15px; text-align: right;">
+                    <button class="btn btn-danger" onclick="batchDeleteServers()" id="batchDeleteServersBtn" style="display: none;">
+                        批量删除选中
+                    </button>
+                </div>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button type="button" class="btn" onclick="closeServerModal()">关闭</button>
         </div>
     </div>
 </div>
@@ -596,15 +899,36 @@
 
 {% block scripts %}
 <script>
-    // 页面加载时获取邮箱列表
+    // 全局变量
+    let currentPage = 1;
+    let perPage = 10;
+    let searchQuery = '';
+    let totalPages = 1;
+    let selectedMailboxes = new Set();
+    let selectedServers = new Set();
+    let servers = [];
+
+    // 页面加载时初始化
     document.addEventListener('DOMContentLoaded', function() {
+        loadServers();
         loadMailboxes();
     });
     
+    // ========== 邮箱管理功能 ==========
+    
     // 加载邮箱列表
-    async function loadMailboxes() {
+    async function loadMailboxes(page = 1, search = '') {
         try {
-            const response = await fetch('/admin/api/mailbox', {
+            currentPage = page;
+            searchQuery = search;
+            
+            const params = new URLSearchParams({
+                page: page,
+                per_page: perPage,
+                search: search
+            });
+            
+            const response = await fetch(`/admin/api/mailbox?${params}`, {
                 method: 'GET',
                 headers: {
                     'Content-Type': 'application/json',
@@ -615,6 +939,7 @@
             
             if (data.success) {
                 renderMailboxTable(data.data);
+                renderPagination(data.pagination);
             } else {
                 showToast('加载邮箱列表失败', 'error');
             }
@@ -630,28 +955,96 @@
         tbody.innerHTML = '';
         
         if (mailboxes.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="9" style="text-align: center; color: #6b7280;">暂无邮箱账号</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="10" style="text-align: center; color: #6b7280;">暂无邮箱账号</td></tr>';
             return;
         }
         
         mailboxes.forEach(mailbox => {
             const row = document.createElement('tr');
             row.innerHTML = `
+                <td><input type="checkbox" class="mailbox-checkbox" value="${mailbox.id}" onchange="toggleMailboxSelection(${mailbox.id})"></td>
                 <td>${mailbox.id}</td>
                 <td>${escapeHtml(mailbox.email)}</td>
+                <td>******</td>
                 <td>${escapeHtml(mailbox.server)}</td>
-                <td>${mailbox.port}</td>
-                <td>${mailbox.protocol.toUpperCase()}</td>
+                <td>${mailbox.port}/${mailbox.protocol.toUpperCase()}</td>
                 <td>${mailbox.ssl ? '✅' : '❌'}</td>
                 <td>${escapeHtml(mailbox.remarks || '-')}</td>
                 <td>${formatDateTime(mailbox.created_at)}</td>
                 <td>
-                    <button class="btn btn-success" onclick="editMailbox(${mailbox.id})" style="margin-right: 5px;">编辑</button>
-                    <button class="btn btn-danger" onclick="deleteMailbox(${mailbox.id})">删除</button>
+                    <div class="actions" style="display: flex; gap: 5px; flex-wrap: wrap;">
+                        <button class="btn btn-success btn-small" onclick="editMailbox(${mailbox.id})">编辑</button>
+                        <button class="btn btn-primary btn-small" onclick="testMailbox(${mailbox.id})">测试</button>
+                        <button class="btn btn-primary btn-small" onclick="quickRemark(${mailbox.id})">快捷备注</button>
+                        <button class="btn btn-danger btn-small" onclick="deleteMailbox(${mailbox.id})">删除</button>
+                    </div>
                 </td>
             `;
             tbody.appendChild(row);
         });
+        
+        updateBatchDeleteButton();
+    }
+    
+    // 渲染分页
+    function renderPagination(pagination) {
+        const container = document.getElementById('paginationContainer');
+        totalPages = pagination.pages;
+        
+        let html = `<div class="pagination-info">共 ${pagination.total} 条记录，第 ${pagination.page} 页，共 ${pagination.pages} 页</div>`;
+        
+        if (pagination.pages > 1) {
+            html += '<div class="pagination-buttons">';
+            
+            // 上一页
+            if (pagination.page > 1) {
+                html += `<button class="page-btn" onclick="loadMailboxes(${pagination.page - 1}, '${searchQuery}')">« 上一页</button>`;
+            }
+            
+            // 页码按钮
+            let startPage = Math.max(1, pagination.page - 2);
+            let endPage = Math.min(pagination.pages, pagination.page + 2);
+            
+            if (startPage > 1) {
+                html += `<button class="page-btn" onclick="loadMailboxes(1, '${searchQuery}')">1</button>`;
+                if (startPage > 2) {
+                    html += '<span class="page-btn" style="border: none; cursor: default;">...</span>';
+                }
+            }
+            
+            for (let i = startPage; i <= endPage; i++) {
+                const activeClass = i === pagination.page ? 'active' : '';
+                html += `<button class="page-btn ${activeClass}" onclick="loadMailboxes(${i}, '${searchQuery}')">${i}</button>`;
+            }
+            
+            if (endPage < pagination.pages) {
+                if (endPage < pagination.pages - 1) {
+                    html += '<span class="page-btn" style="border: none; cursor: default;">...</span>';
+                }
+                html += `<button class="page-btn" onclick="loadMailboxes(${pagination.pages}, '${searchQuery}')">${pagination.pages}</button>`;
+            }
+            
+            // 下一页
+            if (pagination.page < pagination.pages) {
+                html += `<button class="page-btn" onclick="loadMailboxes(${pagination.page + 1}, '${searchQuery}')">下一页 »</button>`;
+            }
+            
+            html += '</div>';
+        }
+        
+        container.innerHTML = html;
+    }
+    
+    // 搜索邮箱
+    function searchMailboxes() {
+        const search = document.getElementById('searchInput').value.trim();
+        loadMailboxes(1, search);
+    }
+    
+    // 改变每页显示数量
+    function changePerPage() {
+        perPage = parseInt(document.getElementById('perPageSelect').value);
+        loadMailboxes(1, searchQuery);
     }
     
     // 显示添加邮箱模态框
@@ -661,7 +1054,30 @@
         document.getElementById('mailboxForm').reset();
         document.getElementById('mailboxId').value = '';
         document.getElementById('ssl').checked = true;
+        document.getElementById('testBtn').style.display = 'none';
+        loadServerOptions();
+        updatePortByProtocol();
         document.getElementById('mailboxModal').classList.add('show');
+    }
+    
+    // 显示批量添加模态框
+    function showBatchAddModal() {
+        document.getElementById('batchAddForm').reset();
+        document.getElementById('batchSsl').checked = true;
+        loadBatchServerOptions();
+        updateBatchPortByProtocol();
+        document.getElementById('batchAddModal').classList.add('show');
+    }
+    
+    // 显示服务器管理模态框
+    function showServerModal() {
+        document.getElementById('serverForm').reset();
+        document.getElementById('serverId').value = '';
+        document.getElementById('serverAction').value = 'add';
+        document.getElementById('serverSaveText').textContent = '添加服务器';
+        document.getElementById('serverSslEnabled').checked = true;
+        loadServerList();
+        document.getElementById('serverModal').classList.add('show');
     }
     
     // 编辑邮箱
@@ -683,12 +1099,102 @@
                     document.getElementById('protocol').value = mailbox.protocol;
                     document.getElementById('ssl').checked = mailbox.ssl;
                     document.getElementById('remarks').value = mailbox.remarks || '';
+                    document.getElementById('testBtn').style.display = 'inline-block';
+                    loadServerOptions();
                     document.getElementById('mailboxModal').classList.add('show');
                 }
             }
         } catch (error) {
             console.error('获取邮箱信息失败:', error);
             showToast('获取邮箱信息失败', 'error');
+        }
+    }
+    
+    // 测试邮箱连接
+    async function testMailbox(id = null) {
+        const targetId = id || document.getElementById('mailboxId').value;
+        
+        if (!targetId) {
+            showToast('请先保存邮箱后再测试', 'error');
+            return;
+        }
+        
+        try {
+            const response = await fetch('/admin/api/mailbox', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ 
+                    action: 'test',
+                    id: parseInt(targetId)
+                })
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                showToast('邮箱连接测试成功', 'success');
+            } else {
+                showToast(data.message || '邮箱连接测试失败', 'error');
+            }
+        } catch (error) {
+            console.error('测试邮箱失败:', error);
+            showToast('网络错误，请稍后重试', 'error');
+        }
+    }
+    
+    // 快捷备注
+    function quickRemark(id) {
+        const newRemark = prompt('请输入新的备注信息：');
+        if (newRemark !== null) {
+            // 这里可以实现快速更新备注的功能
+            updateMailboxRemark(id, newRemark);
+        }
+    }
+    
+    // 更新邮箱备注
+    async function updateMailboxRemark(id, remark) {
+        try {
+            // 获取当前邮箱信息
+            const response = await fetch('/admin/api/mailbox');
+            const data = await response.json();
+            
+            if (data.success) {
+                const mailbox = data.data.find(m => m.id === id);
+                if (mailbox) {
+                    // 更新备注
+                    const updateResponse = await fetch('/admin/api/mailbox', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({
+                            action: 'edit',
+                            id: id,
+                            email: mailbox.email,
+                            password: mailbox.password,
+                            server: mailbox.server,
+                            port: mailbox.port,
+                            protocol: mailbox.protocol,
+                            ssl: mailbox.ssl,
+                            remarks: remark
+                        })
+                    });
+                    
+                    const updateData = await updateResponse.json();
+                    
+                    if (updateData.success) {
+                        showToast('备注更新成功', 'success');
+                        loadMailboxes(currentPage, searchQuery);
+                    } else {
+                        showToast(updateData.message || '备注更新失败', 'error');
+                    }
+                }
+            }
+        } catch (error) {
+            console.error('更新备注失败:', error);
+            showToast('网络错误，请稍后重试', 'error');
         }
     }
     
@@ -711,7 +1217,7 @@
             
             if (data.success) {
                 showToast('邮箱删除成功', 'success');
-                loadMailboxes();
+                loadMailboxes(currentPage, searchQuery);
             } else {
                 showToast(data.message || '删除失败', 'error');
             }
@@ -755,7 +1261,7 @@
             if (result.success) {
                 showToast(result.message || '保存成功', 'success');
                 closeModal();
-                loadMailboxes();
+                loadMailboxes(currentPage, searchQuery);
             } else {
                 showToast(result.message || '保存失败', 'error');
             }
@@ -765,9 +1271,450 @@
         }
     }
     
-    // 关闭模态框
+    // 批量添加邮箱
+    async function saveBatchMailboxes() {
+        const form = document.getElementById('batchAddForm');
+        const formData = new FormData(form);
+        
+        const data = {
+            action: 'batch_add',
+            batch_content: formData.get('batch_content'),
+            server: formData.get('server'),
+            port: parseInt(formData.get('port')),
+            protocol: formData.get('protocol'),
+            ssl: formData.get('ssl') === 'on',
+            remarks: formData.get('remarks')
+        };
+        
+        if (!data.batch_content || !data.server || !data.port) {
+            showToast('请填写所有必需字段', 'error');
+            return;
+        }
+        
+        try {
+            const response = await fetch('/admin/api/mailbox', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(data)
+            });
+            
+            const result = await response.json();
+            
+            if (result.success) {
+                showToast(result.message || '批量添加成功', 'success');
+                closeBatchAddModal();
+                loadMailboxes(currentPage, searchQuery);
+            } else {
+                showToast(result.message || '批量添加失败', 'error');
+            }
+        } catch (error) {
+            console.error('批量添加失败:', error);
+            showToast('网络错误，请稍后重试', 'error');
+        }
+    }
+    
+    // ========== 选择管理功能 ==========
+    
+    // 全选/取消全选
+    function toggleSelectAll() {
+        const selectAll = document.getElementById('selectAll');
+        const checkboxes = document.querySelectorAll('.mailbox-checkbox');
+        
+        checkboxes.forEach(checkbox => {
+            checkbox.checked = selectAll.checked;
+            if (selectAll.checked) {
+                selectedMailboxes.add(parseInt(checkbox.value));
+            } else {
+                selectedMailboxes.delete(parseInt(checkbox.value));
+            }
+        });
+        
+        updateBatchDeleteButton();
+    }
+    
+    // 切换邮箱选择状态
+    function toggleMailboxSelection(id) {
+        if (selectedMailboxes.has(id)) {
+            selectedMailboxes.delete(id);
+        } else {
+            selectedMailboxes.add(id);
+        }
+        updateBatchDeleteButton();
+    }
+    
+    // 更新批量删除按钮状态
+    function updateBatchDeleteButton() {
+        const btn = document.getElementById('batchDeleteBtn');
+        if (selectedMailboxes.size > 0) {
+            btn.style.display = 'inline-block';
+            btn.textContent = `🗑️ 批量删除 (${selectedMailboxes.size})`;
+        } else {
+            btn.style.display = 'none';
+        }
+    }
+    
+    // 批量删除邮箱
+    async function batchDeleteMailboxes() {
+        if (selectedMailboxes.size === 0) {
+            showToast('请选择要删除的邮箱', 'error');
+            return;
+        }
+        
+        if (!confirm(`确定要删除选中的 ${selectedMailboxes.size} 个邮箱账号吗？`)) {
+            return;
+        }
+        
+        try {
+            const response = await fetch('/admin/api/mailbox', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ 
+                    action: 'batch_delete',
+                    ids: Array.from(selectedMailboxes)
+                })
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                showToast(data.message || '批量删除成功', 'success');
+                selectedMailboxes.clear();
+                loadMailboxes(currentPage, searchQuery);
+            } else {
+                showToast(data.message || '批量删除失败', 'error');
+            }
+        } catch (error) {
+            console.error('批量删除失败:', error);
+            showToast('网络错误，请稍后重试', 'error');
+        }
+    }
+    
+    // ========== 服务器管理功能 ==========
+    
+    // 加载服务器列表
+    async function loadServers() {
+        try {
+            const response = await fetch('/admin/api/servers');
+            const data = await response.json();
+            
+            if (data.success) {
+                servers = data.data;
+                loadServerOptions();
+                loadBatchServerOptions();
+            }
+        } catch (error) {
+            console.error('加载服务器列表失败:', error);
+        }
+    }
+    
+    // 加载服务器选项到添加邮箱表单
+    function loadServerOptions() {
+        const select = document.getElementById('serverSelect');
+        select.innerHTML = '<option value="">选择已有服务器或手动输入</option>';
+        
+        servers.forEach(server => {
+            const option = document.createElement('option');
+            option.value = server.id;
+            option.textContent = `${server.server_name} (${server.server_address})`;
+            select.appendChild(option);
+        });
+    }
+    
+    // 加载服务器选项到批量添加表单
+    function loadBatchServerOptions() {
+        const select = document.getElementById('batchServerSelect');
+        select.innerHTML = '<option value="">选择已有服务器或手动输入</option>';
+        
+        servers.forEach(server => {
+            const option = document.createElement('option');
+            option.value = server.id;
+            option.textContent = `${server.server_name} (${server.server_address})`;
+            select.appendChild(option);
+        });
+    }
+    
+    // 选择服务器
+    function selectServer() {
+        const select = document.getElementById('serverSelect');
+        const serverId = select.value;
+        
+        if (serverId) {
+            const server = servers.find(s => s.id == serverId);
+            if (server) {
+                document.getElementById('server').value = server.server_address;
+                document.getElementById('ssl').checked = server.ssl_enabled;
+                updatePortByProtocol();
+            }
+        }
+    }
+    
+    // 选择批量添加服务器
+    function selectBatchServer() {
+        const select = document.getElementById('batchServerSelect');
+        const serverId = select.value;
+        
+        if (serverId) {
+            const server = servers.find(s => s.id == serverId);
+            if (server) {
+                document.getElementById('batchServer').value = server.server_address;
+                document.getElementById('batchSsl').checked = server.ssl_enabled;
+                updateBatchPortByProtocol();
+            }
+        }
+    }
+    
+    // 根据协议更新端口
+    function updatePortByProtocol() {
+        const protocol = document.getElementById('protocol').value;
+        const ssl = document.getElementById('ssl').checked;
+        const portInput = document.getElementById('port');
+        
+        if (protocol === 'imap') {
+            portInput.value = ssl ? 993 : 143;
+        } else if (protocol === 'pop3') {
+            portInput.value = ssl ? 995 : 110;
+        }
+    }
+    
+    // 根据SSL更新端口
+    function updatePortBySSL() {
+        updatePortByProtocol();
+    }
+    
+    // 根据协议更新批量添加端口
+    function updateBatchPortByProtocol() {
+        const protocol = document.getElementById('batchProtocol').value;
+        const ssl = document.getElementById('batchSsl').checked;
+        const portInput = document.getElementById('batchPort');
+        
+        if (protocol === 'imap') {
+            portInput.value = ssl ? 993 : 143;
+        } else if (protocol === 'pop3') {
+            portInput.value = ssl ? 995 : 110;
+        }
+    }
+    
+    // 根据SSL更新批量添加端口
+    function updateBatchPortBySSL() {
+        updateBatchPortByProtocol();
+    }
+    
+    // 加载服务器管理列表
+    async function loadServerList() {
+        try {
+            const response = await fetch('/admin/api/servers');
+            const data = await response.json();
+            
+            if (data.success) {
+                renderServerList(data.data);
+            }
+        } catch (error) {
+            console.error('加载服务器列表失败:', error);
+        }
+    }
+    
+    // 渲染服务器列表
+    function renderServerList(serverList) {
+        const container = document.getElementById('serverList');
+        container.innerHTML = '';
+        
+        if (serverList.length === 0) {
+            container.innerHTML = '<div style="text-align: center; color: #6b7280; padding: 20px;">暂无服务器配置</div>';
+            return;
+        }
+        
+        serverList.forEach(server => {
+            const item = document.createElement('div');
+            item.className = 'server-item';
+            item.innerHTML = `
+                <input type="checkbox" class="server-checkbox" value="${server.id}" onchange="toggleServerSelection(${server.id})" style="margin-right: 10px;">
+                <div class="server-info">
+                    <div class="server-name">${escapeHtml(server.server_name)}</div>
+                    <div class="server-address">${escapeHtml(server.server_address)} (IMAP:${server.default_port_imap}, POP3:${server.default_port_pop3})</div>
+                </div>
+                <div class="server-actions">
+                    <button class="btn btn-success btn-small" onclick="editServer(${server.id})">编辑</button>
+                    <button class="btn btn-danger btn-small" onclick="deleteServer(${server.id})">删除</button>
+                </div>
+            `;
+            container.appendChild(item);
+        });
+        
+        updateBatchDeleteServersButton();
+    }
+    
+    // 切换服务器选择状态
+    function toggleServerSelection(id) {
+        if (selectedServers.has(id)) {
+            selectedServers.delete(id);
+        } else {
+            selectedServers.add(id);
+        }
+        updateBatchDeleteServersButton();
+    }
+    
+    // 更新批量删除服务器按钮状态
+    function updateBatchDeleteServersButton() {
+        const btn = document.getElementById('batchDeleteServersBtn');
+        if (selectedServers.size > 0) {
+            btn.style.display = 'inline-block';
+            btn.textContent = `批量删除选中 (${selectedServers.size})`;
+        } else {
+            btn.style.display = 'none';
+        }
+    }
+    
+    // 保存服务器
+    async function saveServer() {
+        const form = document.getElementById('serverForm');
+        const formData = new FormData(form);
+        
+        const data = {
+            action: formData.get('action'),
+            server_name: formData.get('server_name'),
+            server_address: formData.get('server_address'),
+            default_port_imap: parseInt(formData.get('default_port_imap')),
+            default_port_pop3: parseInt(formData.get('default_port_pop3')),
+            ssl_enabled: formData.get('ssl_enabled') === 'on',
+            remarks: formData.get('remarks')
+        };
+        
+        if (data.action === 'edit') {
+            data.id = parseInt(formData.get('id'));
+        }
+        
+        try {
+            const response = await fetch('/admin/api/servers', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(data)
+            });
+            
+            const result = await response.json();
+            
+            if (result.success) {
+                showToast(result.message || '服务器保存成功', 'success');
+                document.getElementById('serverForm').reset();
+                document.getElementById('serverId').value = '';
+                document.getElementById('serverAction').value = 'add';
+                document.getElementById('serverSaveText').textContent = '添加服务器';
+                document.getElementById('serverSslEnabled').checked = true;
+                loadServers();
+                loadServerList();
+            } else {
+                showToast(result.message || '服务器保存失败', 'error');
+            }
+        } catch (error) {
+            console.error('保存服务器失败:', error);
+            showToast('网络错误，请稍后重试', 'error');
+        }
+    }
+    
+    // 编辑服务器
+    function editServer(id) {
+        const server = servers.find(s => s.id === id);
+        if (server) {
+            document.getElementById('serverId').value = server.id;
+            document.getElementById('serverAction').value = 'edit';
+            document.getElementById('serverName').value = server.server_name;
+            document.getElementById('serverAddress').value = server.server_address;
+            document.getElementById('defaultPortImap').value = server.default_port_imap;
+            document.getElementById('defaultPortPop3').value = server.default_port_pop3;
+            document.getElementById('serverSslEnabled').checked = server.ssl_enabled;
+            document.getElementById('serverRemarks').value = server.remarks || '';
+            document.getElementById('serverSaveText').textContent = '更新服务器';
+        }
+    }
+    
+    // 删除服务器
+    async function deleteServer(id) {
+        if (!confirm('确定要删除这个服务器配置吗？')) {
+            return;
+        }
+        
+        try {
+            const response = await fetch('/admin/api/servers', {
+                method: 'DELETE',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ ids: [id] })
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                showToast('服务器删除成功', 'success');
+                loadServers();
+                loadServerList();
+            } else {
+                showToast(data.message || '删除失败', 'error');
+            }
+        } catch (error) {
+            console.error('删除服务器失败:', error);
+            showToast('网络错误，请稍后重试', 'error');
+        }
+    }
+    
+    // 批量删除服务器
+    async function batchDeleteServers() {
+        if (selectedServers.size === 0) {
+            showToast('请选择要删除的服务器', 'error');
+            return;
+        }
+        
+        if (!confirm(`确定要删除选中的 ${selectedServers.size} 个服务器配置吗？`)) {
+            return;
+        }
+        
+        try {
+            const response = await fetch('/admin/api/servers', {
+                method: 'DELETE',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ ids: Array.from(selectedServers) })
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                showToast(data.message || '批量删除成功', 'success');
+                selectedServers.clear();
+                loadServers();
+                loadServerList();
+            } else {
+                showToast(data.message || '批量删除失败', 'error');
+            }
+        } catch (error) {
+            console.error('批量删除失败:', error);
+            showToast('网络错误，请稍后重试', 'error');
+        }
+    }
+    
+    // ========== 模态框管理 ==========
+    
+    // 关闭添加/编辑邮箱模态框
     function closeModal() {
         document.getElementById('mailboxModal').classList.remove('show');
+    }
+    
+    // 关闭批量添加模态框
+    function closeBatchAddModal() {
+        document.getElementById('batchAddModal').classList.remove('show');
+    }
+    
+    // 关闭服务器管理模态框
+    function closeServerModal() {
+        document.getElementById('serverModal').classList.remove('show');
+        selectedServers.clear();
+        updateBatchDeleteServersButton();
     }
     
     // 点击模态框外部关闭
@@ -776,6 +1723,33 @@
             closeModal();
         }
     });
+    
+    document.getElementById('batchAddModal').addEventListener('click', function(e) {
+        if (e.target === this) {
+            closeBatchAddModal();
+        }
+    });
+    
+    document.getElementById('serverModal').addEventListener('click', function(e) {
+        if (e.target === this) {
+            closeServerModal();
+        }
+    });
+    
+    // 键盘事件
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape') {
+            closeModal();
+            closeBatchAddModal();
+            closeServerModal();
+        }
+        
+        if (e.key === 'Enter' && document.getElementById('searchInput') === document.activeElement) {
+            searchMailboxes();
+        }
+    });
+    
+    // ========== 工具函数 ==========
     
     // Toast通知系统
     function showToast(message, type = 'info', duration = 3000) {
