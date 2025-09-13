@@ -572,6 +572,548 @@ def api_admin_server_address():
                 'message': f'删除失败: {str(e)}'
             })
 
+@app.route('/admin/api/proxy/http', methods=['GET', 'POST', 'DELETE'])
+@admin_required
+def api_admin_http_proxy():
+    """HTTP代理管理 API"""
+    db = get_db()
+    
+    if request.method == 'GET':
+        # 获取HTTP代理列表
+        proxies = db.execute('''
+            SELECT * FROM http_proxies 
+            ORDER BY created_at DESC
+        ''').fetchall()
+        
+        return jsonify({
+            'success': True,
+            'data': [dict(proxy) for proxy in proxies]
+        })
+    
+    elif request.method == 'POST':
+        # 添加或编辑HTTP代理
+        data = request.get_json()
+        action = data.get('action')
+        
+        if action == 'add':
+            name = data.get('name', '').strip()
+            host = data.get('host', '').strip()
+            port = int(data.get('port', 0))
+            username = data.get('username', '').strip()
+            password = data.get('password', '').strip()
+            remarks = data.get('remarks', '').strip()
+            
+            if not all([name, host, port]):
+                return jsonify({
+                    'success': False,
+                    'message': '请填写代理名称、地址和端口'
+                })
+            
+            try:
+                # 检查代理是否已存在
+                existing = db.execute(
+                    'SELECT id FROM http_proxies WHERE host = ? AND port = ?', 
+                    (host, port)
+                ).fetchone()
+                if existing:
+                    return jsonify({
+                        'success': False,
+                        'message': '该代理地址和端口已存在'
+                    })
+                
+                # 插入新代理
+                now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                db.execute('''
+                    INSERT INTO http_proxies (name, host, port, username, password, status, remarks, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (name, host, port, username, password, 0, remarks, now, now))
+                
+                db.commit()
+                
+                return jsonify({
+                    'success': True,
+                    'message': 'HTTP代理添加成功'
+                })
+                
+            except Exception as e:
+                return jsonify({
+                    'success': False,
+                    'message': f'添加失败: {str(e)}'
+                })
+        
+        elif action == 'edit':
+            # 编辑代理逻辑
+            proxy_id = data.get('id')
+            if not proxy_id:
+                return jsonify({
+                    'success': False,
+                    'message': '缺少代理ID'
+                })
+            
+            name = data.get('name', '').strip()
+            host = data.get('host', '').strip()
+            port = int(data.get('port', 0))
+            username = data.get('username', '').strip()
+            password = data.get('password', '').strip()
+            remarks = data.get('remarks', '').strip()
+            
+            try:
+                now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                db.execute('''
+                    UPDATE http_proxies 
+                    SET name=?, host=?, port=?, username=?, password=?, remarks=?, updated_at=?
+                    WHERE id=?
+                ''', (name, host, port, username, password, remarks, now, proxy_id))
+                
+                db.commit()
+                
+                return jsonify({
+                    'success': True,
+                    'message': 'HTTP代理更新成功'
+                })
+                
+            except Exception as e:
+                return jsonify({
+                    'success': False,
+                    'message': f'更新失败: {str(e)}'
+                })
+    
+    elif request.method == 'DELETE':
+        # 删除代理
+        data = request.get_json()
+        proxy_id = data.get('id')
+        
+        if not proxy_id:
+            return jsonify({
+                'success': False,
+                'message': '缺少代理ID'
+            })
+        
+        try:
+            db.execute('DELETE FROM http_proxies WHERE id = ?', (proxy_id,))
+            db.commit()
+            
+            return jsonify({
+                'success': True,
+                'message': 'HTTP代理删除成功'
+            })
+            
+        except Exception as e:
+            return jsonify({
+                'success': False,
+                'message': f'删除失败: {str(e)}'
+            })
+
+@app.route('/admin/api/proxy/socks5', methods=['GET', 'POST', 'DELETE'])
+@admin_required
+def api_admin_socks5_proxy():
+    """SOCKS5代理管理 API"""
+    db = get_db()
+    
+    if request.method == 'GET':
+        # 获取SOCKS5代理列表
+        proxies = db.execute('''
+            SELECT * FROM socks5_proxies 
+            ORDER BY created_at DESC
+        ''').fetchall()
+        
+        return jsonify({
+            'success': True,
+            'data': [dict(proxy) for proxy in proxies]
+        })
+    
+    elif request.method == 'POST':
+        # 添加或编辑SOCKS5代理
+        data = request.get_json()
+        action = data.get('action')
+        
+        if action == 'add':
+            name = data.get('name', '').strip()
+            host = data.get('host', '').strip()
+            port = int(data.get('port', 0))
+            username = data.get('username', '').strip()
+            password = data.get('password', '').strip()
+            remarks = data.get('remarks', '').strip()
+            
+            if not all([name, host, port]):
+                return jsonify({
+                    'success': False,
+                    'message': '请填写代理名称、地址和端口'
+                })
+            
+            try:
+                # 检查代理是否已存在
+                existing = db.execute(
+                    'SELECT id FROM socks5_proxies WHERE host = ? AND port = ?', 
+                    (host, port)
+                ).fetchone()
+                if existing:
+                    return jsonify({
+                        'success': False,
+                        'message': '该代理地址和端口已存在'
+                    })
+                
+                # 插入新代理
+                now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                db.execute('''
+                    INSERT INTO socks5_proxies (name, host, port, username, password, status, remarks, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (name, host, port, username, password, 0, remarks, now, now))
+                
+                db.commit()
+                
+                return jsonify({
+                    'success': True,
+                    'message': 'SOCKS5代理添加成功'
+                })
+                
+            except Exception as e:
+                return jsonify({
+                    'success': False,
+                    'message': f'添加失败: {str(e)}'
+                })
+        
+        elif action == 'edit':
+            # 编辑代理逻辑
+            proxy_id = data.get('id')
+            if not proxy_id:
+                return jsonify({
+                    'success': False,
+                    'message': '缺少代理ID'
+                })
+            
+            name = data.get('name', '').strip()
+            host = data.get('host', '').strip()
+            port = int(data.get('port', 0))
+            username = data.get('username', '').strip()
+            password = data.get('password', '').strip()
+            remarks = data.get('remarks', '').strip()
+            
+            try:
+                now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                db.execute('''
+                    UPDATE socks5_proxies 
+                    SET name=?, host=?, port=?, username=?, password=?, remarks=?, updated_at=?
+                    WHERE id=?
+                ''', (name, host, port, username, password, remarks, now, proxy_id))
+                
+                db.commit()
+                
+                return jsonify({
+                    'success': True,
+                    'message': 'SOCKS5代理更新成功'
+                })
+                
+            except Exception as e:
+                return jsonify({
+                    'success': False,
+                    'message': f'更新失败: {str(e)}'
+                })
+    
+    elif request.method == 'DELETE':
+        # 删除代理
+        data = request.get_json()
+        proxy_id = data.get('id')
+        
+        if not proxy_id:
+            return jsonify({
+                'success': False,
+                'message': '缺少代理ID'
+            })
+        
+        try:
+            db.execute('DELETE FROM socks5_proxies WHERE id = ?', (proxy_id,))
+            db.commit()
+            
+            return jsonify({
+                'success': True,
+                'message': 'SOCKS5代理删除成功'
+            })
+            
+        except Exception as e:
+            return jsonify({
+                'success': False,
+                'message': f'删除失败: {str(e)}'
+            })
+
+@app.route('/admin/api/proxy/test-http', methods=['POST'])
+@admin_required
+def api_test_http_proxy():
+    """测试HTTP代理连接"""
+    data = request.get_json()
+    host = data.get('host')
+    port = data.get('port')
+    username = data.get('username')
+    password = data.get('password')
+    
+    if not host or not port:
+        return jsonify({
+            'success': False,
+            'message': '缺少代理地址或端口'
+        })
+    
+    try:
+        import time
+        import requests
+        
+        # 构建代理配置
+        proxy_dict = {
+            'http': f'http://{host}:{port}',
+            'https': f'http://{host}:{port}'
+        }
+        
+        if username and password:
+            proxy_dict = {
+                'http': f'http://{username}:{password}@{host}:{port}',
+                'https': f'http://{username}:{password}@{host}:{port}'
+            }
+        
+        # 测试连接
+        start_time = time.time()
+        test_response = requests.get(
+            'http://httpbin.org/ip', 
+            proxies=proxy_dict, 
+            timeout=10
+        )
+        response_time = int((time.time() - start_time) * 1000)
+        
+        if test_response.status_code == 200:
+            return jsonify({
+                'success': True,
+                'message': '代理连接测试成功',
+                'response_time': response_time,
+                'ip': test_response.json().get('origin', 'Unknown')
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'message': f'代理返回状态码: {test_response.status_code}'
+            })
+            
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': f'代理测试失败: {str(e)}'
+        })
+
+@app.route('/admin/api/proxy/test-socks5', methods=['POST'])
+@admin_required
+def api_test_socks5_proxy():
+    """测试SOCKS5代理连接"""
+    data = request.get_json()
+    host = data.get('host')
+    port = data.get('port')
+    username = data.get('username')
+    password = data.get('password')
+    
+    if not host or not port:
+        return jsonify({
+            'success': False,
+            'message': '缺少代理地址或端口'
+        })
+    
+    try:
+        import time
+        import requests
+        
+        # 构建SOCKS5代理配置
+        proxy_dict = {
+            'http': f'socks5://{host}:{port}',
+            'https': f'socks5://{host}:{port}'
+        }
+        
+        if username and password:
+            proxy_dict = {
+                'http': f'socks5://{username}:{password}@{host}:{port}',
+                'https': f'socks5://{username}:{password}@{host}:{port}'
+            }
+        
+        # 测试连接
+        start_time = time.time()
+        test_response = requests.get(
+            'http://httpbin.org/ip', 
+            proxies=proxy_dict, 
+            timeout=10
+        )
+        response_time = int((time.time() - start_time) * 1000)
+        
+        if test_response.status_code == 200:
+            return jsonify({
+                'success': True,
+                'message': '代理连接测试成功',
+                'response_time': response_time,
+                'ip': test_response.json().get('origin', 'Unknown')
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'message': f'代理返回状态码: {test_response.status_code}'
+            })
+            
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': f'代理测试失败: {str(e)}'
+        })
+
+@app.route('/admin/api/proxy/test-http/<int:proxy_id>', methods=['POST'])
+@admin_required
+def api_test_http_proxy_by_id(proxy_id):
+    """通过ID测试HTTP代理"""
+    db = get_db()
+    
+    try:
+        # 获取代理信息
+        proxy = db.execute('SELECT * FROM http_proxies WHERE id = ?', (proxy_id,)).fetchone()
+        if not proxy:
+            return jsonify({
+                'success': False,
+                'message': '代理不存在'
+            })
+        
+        import time
+        import requests
+        
+        # 构建代理配置
+        proxy_dict = {
+            'http': f'http://{proxy["host"]}:{proxy["port"]}',
+            'https': f'http://{proxy["host"]}:{proxy["port"]}'
+        }
+        
+        if proxy['username'] and proxy['password']:
+            proxy_dict = {
+                'http': f'http://{proxy["username"]}:{proxy["password"]}@{proxy["host"]}:{proxy["port"]}',
+                'https': f'http://{proxy["username"]}:{proxy["password"]}@{proxy["host"]}:{proxy["port"]}'
+            }
+        
+        # 测试连接
+        start_time = time.time()
+        test_response = requests.get(
+            'http://httpbin.org/ip', 
+            proxies=proxy_dict, 
+            timeout=10
+        )
+        response_time = int((time.time() - start_time) * 1000)
+        
+        # 更新代理状态
+        now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        if test_response.status_code == 200:
+            db.execute('''
+                UPDATE http_proxies 
+                SET status=1, response_time=?, last_check=?, success_count=success_count+1
+                WHERE id=?
+            ''', (response_time, now, proxy_id))
+            status = True
+        else:
+            db.execute('''
+                UPDATE http_proxies 
+                SET status=0, last_check=?, fail_count=fail_count+1
+                WHERE id=?
+            ''', (now, proxy_id))
+            status = False
+        
+        db.commit()
+        
+        return jsonify({
+            'success': status,
+            'message': '代理连接测试成功' if status else f'代理返回状态码: {test_response.status_code}',
+            'response_time': response_time if status else 0
+        })
+        
+    except Exception as e:
+        # 更新失败状态
+        now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        db.execute('''
+            UPDATE http_proxies 
+            SET status=0, last_check=?, fail_count=fail_count+1
+            WHERE id=?
+        ''', (now, proxy_id))
+        db.commit()
+        
+        return jsonify({
+            'success': False,
+            'message': f'代理测试失败: {str(e)}'
+        })
+
+@app.route('/admin/api/proxy/test-socks5/<int:proxy_id>', methods=['POST'])
+@admin_required
+def api_test_socks5_proxy_by_id(proxy_id):
+    """通过ID测试SOCKS5代理"""
+    db = get_db()
+    
+    try:
+        # 获取代理信息
+        proxy = db.execute('SELECT * FROM socks5_proxies WHERE id = ?', (proxy_id,)).fetchone()
+        if not proxy:
+            return jsonify({
+                'success': False,
+                'message': '代理不存在'
+            })
+        
+        import time
+        import requests
+        
+        # 构建SOCKS5代理配置
+        proxy_dict = {
+            'http': f'socks5://{proxy["host"]}:{proxy["port"]}',
+            'https': f'socks5://{proxy["host"]}:{proxy["port"]}'
+        }
+        
+        if proxy['username'] and proxy['password']:
+            proxy_dict = {
+                'http': f'socks5://{proxy["username"]}:{proxy["password"]}@{proxy["host"]}:{proxy["port"]}',
+                'https': f'socks5://{proxy["username"]}:{proxy["password"]}@{proxy["host"]}:{proxy["port"]}'
+            }
+        
+        # 测试连接
+        start_time = time.time()
+        test_response = requests.get(
+            'http://httpbin.org/ip', 
+            proxies=proxy_dict, 
+            timeout=10
+        )
+        response_time = int((time.time() - start_time) * 1000)
+        
+        # 更新代理状态
+        now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        if test_response.status_code == 200:
+            db.execute('''
+                UPDATE socks5_proxies 
+                SET status=1, response_time=?, last_check=?, success_count=success_count+1
+                WHERE id=?
+            ''', (response_time, now, proxy_id))
+            status = True
+        else:
+            db.execute('''
+                UPDATE socks5_proxies 
+                SET status=0, last_check=?, fail_count=fail_count+1
+                WHERE id=?
+            ''', (now, proxy_id))
+            status = False
+        
+        db.commit()
+        
+        return jsonify({
+            'success': status,
+            'message': '代理连接测试成功' if status else f'代理返回状态码: {test_response.status_code}',
+            'response_time': response_time if status else 0
+        })
+        
+    except Exception as e:
+        # 更新失败状态
+        now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        db.execute('''
+            UPDATE socks5_proxies 
+            SET status=0, last_check=?, fail_count=fail_count+1
+            WHERE id=?
+        ''', (now, proxy_id))
+        db.commit()
+        
+        return jsonify({
+            'success': False,
+            'message': f'代理测试失败: {str(e)}'
+        })
+
 if __name__ == '__main__':
     # 初始化数据库
     with app.app_context():

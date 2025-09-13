@@ -3,16 +3,507 @@
 {% block title %}代理池管理 - 邮件查看系统{% endblock %}
 
 {% block head %}
-<!-- 这里将复制与 mailbox.html 相同的CSS样式 -->
 <style>
-    /* 与 mailbox.html 相同的基础样式 */
-    /* ... */
-    /* 样式内容将在后续完善时添加 */
+    * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+    }
+    
+    :root {
+        --primary-color: #667eea;
+        --secondary-color: #764ba2;
+        --sidebar-width: 280px;
+        --header-height: 70px;
+        --transition: all 0.3s ease;
+    }
+    
+    body {
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        background: #f8fafc;
+        line-height: 1.6;
+        color: #334155;
+        transition: var(--transition);
+    }
+    
+    /* Sidebar Styles */
+    .sidebar {
+        position: fixed;
+        left: 0;
+        top: 0;
+        width: var(--sidebar-width);
+        height: 100vh;
+        background: linear-gradient(135deg, var(--primary-color) 0%, var(--secondary-color) 100%);
+        z-index: 1000;
+        transition: var(--transition);
+        box-shadow: 4px 0 15px rgba(0,0,0,0.1);
+    }
+    
+    .sidebar-header {
+        padding: 20px;
+        border-bottom: 1px solid rgba(255,255,255,0.1);
+    }
+    
+    .sidebar-logo {
+        color: white;
+        font-size: 20px;
+        font-weight: 700;
+        text-align: center;
+        text-shadow: 0 2px 4px rgba(0,0,0,0.3);
+    }
+    
+    .sidebar-nav {
+        padding: 20px 0;
+    }
+    
+    .nav-item {
+        display: block;
+        color: rgba(255,255,255,0.8);
+        text-decoration: none;
+        padding: 15px 25px;
+        transition: var(--transition);
+        border-left: 3px solid transparent;
+        position: relative;
+        overflow: hidden;
+    }
+    
+    .nav-item::before {
+        content: '';
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(255,255,255,0.1);
+        transform: translateX(-100%);
+        transition: var(--transition);
+    }
+    
+    .nav-item:hover::before {
+        transform: translateX(0);
+    }
+    
+    .nav-item:hover,
+    .nav-item.active {
+        color: white;
+        background: rgba(255,255,255,0.15);
+        border-left-color: white;
+        transform: translateX(5px);
+    }
+    
+    .nav-item i {
+        margin-right: 10px;
+        width: 20px;
+        text-align: center;
+    }
+    
+    /* Main Content */
+    .main-content {
+        margin-left: var(--sidebar-width);
+        min-height: 100vh;
+        transition: var(--transition);
+    }
+    
+    .header {
+        background: white;
+        height: var(--header-height);
+        box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 30px;
+        position: sticky;
+        top: 0;
+        z-index: 999;
+    }
+    
+    .header-title {
+        font-size: 24px;
+        font-weight: 600;
+        color: #1e293b;
+    }
+    
+    .header-actions {
+        display: flex;
+        align-items: center;
+        gap: 20px;
+    }
+    
+    .user-info {
+        display: flex;
+        align-items: center;
+        gap: 15px;
+        color: #64748b;
+    }
+    
+    .logout-btn {
+        background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+        color: white;
+        text-decoration: none;
+        padding: 8px 16px;
+        border-radius: 8px;
+        font-size: 14px;
+        font-weight: 500;
+        transition: var(--transition);
+    }
+    
+    .logout-btn:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 5px 15px rgba(239, 68, 68, 0.3);
+    }
+    
+    /* Content Area */
+    .content {
+        padding: 30px;
+    }
+    
+    /* Cards */
+    .card {
+        background: white;
+        border-radius: 15px;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.05), 0 1px 3px rgba(0,0,0,0.1);
+        overflow: hidden;
+        margin-bottom: 25px;
+        transition: var(--transition);
+    }
+    
+    .card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 25px rgba(0,0,0,0.1), 0 4px 10px rgba(0,0,0,0.06);
+    }
+    
+    .card-header {
+        padding: 20px 25px;
+        border-bottom: 1px solid #f1f5f9;
+        background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+    
+    .header-buttons {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+    }
+    
+    .card-title {
+        font-size: 18px;
+        font-weight: 600;
+        color: #1e293b;
+        margin: 0;
+    }
+    
+    .card-body {
+        padding: 25px;
+    }
+    
+    .btn {
+        padding: 10px 20px;
+        border: none;
+        border-radius: 8px;
+        font-size: 14px;
+        font-weight: 500;
+        cursor: pointer;
+        transition: var(--transition);
+        text-decoration: none;
+        display: inline-block;
+    }
+    
+    .btn-primary {
+        background: linear-gradient(135deg, var(--primary-color) 0%, var(--secondary-color) 100%);
+        color: white;
+    }
+    
+    .btn-primary:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 5px 15px rgba(102, 126, 234, 0.3);
+    }
+    
+    .btn-danger {
+        background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+        color: white;
+    }
+    
+    .btn-danger:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 5px 15px rgba(239, 68, 68, 0.3);
+    }
+    
+    .btn-success {
+        background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+        color: white;
+    }
+    
+    .btn-success:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 5px 15px rgba(16, 185, 129, 0.3);
+    }
+    
+    .btn-warning {
+        background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+        color: white;
+    }
+    
+    .btn-warning:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 5px 15px rgba(245, 158, 11, 0.3);
+    }
+    
+    .btn-info {
+        background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+        color: white;
+    }
+    
+    .btn-info:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 5px 15px rgba(59, 130, 246, 0.3);
+    }
+    
+    /* Form Styles */
+    .form-group {
+        margin-bottom: 20px;
+    }
+    
+    .form-group label {
+        display: block;
+        margin-bottom: 8px;
+        color: #374151;
+        font-weight: 500;
+    }
+    
+    .form-group input,
+    .form-group select {
+        width: 100%;
+        padding: 12px 16px;
+        border: 2px solid #e5e7eb;
+        border-radius: 8px;
+        font-size: 14px;
+        transition: var(--transition);
+    }
+    
+    .form-group input:focus,
+    .form-group select:focus {
+        outline: none;
+        border-color: var(--primary-color);
+        box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+    }
+    
+    .checkbox-group {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+    
+    .checkbox-group input[type="checkbox"] {
+        width: auto;
+    }
+    
+    /* Table Styles */
+    .table-container {
+        overflow-x: auto;
+    }
+    
+    table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 20px;
+    }
+    
+    table th,
+    table td {
+        padding: 12px 16px;
+        text-align: left;
+        border-bottom: 1px solid #e5e7eb;
+    }
+    
+    table th {
+        background: #f8fafc;
+        font-weight: 600;
+        color: #374151;
+    }
+    
+    table tr:hover {
+        background: #f8fafc;
+    }
+    
+    /* Status indicators */
+    .status {
+        padding: 4px 8px;
+        border-radius: 12px;
+        font-size: 12px;
+        font-weight: 500;
+    }
+    
+    .status.online {
+        background: #dcfce7;
+        color: #166534;
+    }
+    
+    .status.offline {
+        background: #fef2f2;
+        color: #991b1b;
+    }
+    
+    .status.testing {
+        background: #fef3c7;
+        color: #92400e;
+    }
+    
+    /* Modal Styles */
+    .modal {
+        display: none;
+        position: fixed;
+        z-index: 2000;
+        left: 0;
+        top: 0;
+        width: 100%;
+        height: 100%;
+        background-color: rgba(0, 0, 0, 0.5);
+        animation: fadeIn 0.3s ease;
+    }
+    
+    .modal.show {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+    
+    .modal-content {
+        background: white;
+        border-radius: 15px;
+        width: 90%;
+        max-width: 600px;
+        max-height: 80vh;
+        overflow-y: auto;
+        animation: slideInUp 0.3s ease;
+    }
+    
+    .modal-header {
+        padding: 20px 25px;
+        border-bottom: 1px solid #e5e7eb;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+    
+    .modal-title {
+        font-size: 18px;
+        font-weight: 600;
+        color: #1e293b;
+    }
+    
+    .modal-close {
+        background: none;
+        border: none;
+        font-size: 24px;
+        cursor: pointer;
+        color: #6b7280;
+    }
+    
+    .modal-close:hover {
+        color: #374151;
+    }
+    
+    .modal-body {
+        padding: 25px;
+    }
+    
+    .modal-footer {
+        padding: 20px 25px;
+        border-top: 1px solid #e5e7eb;
+        display: flex;
+        justify-content: flex-end;
+        gap: 15px;
+    }
+    
+    /* Toast Notifications */
+    .toast-container {
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        z-index: 3000;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        max-width: 400px;
+    }
+    
+    .toast {
+        padding: 15px 20px;
+        border-radius: 10px;
+        color: white;
+        font-weight: 500;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+        transform: translateX(450px);
+        opacity: 0;
+        transition: all 0.3s ease;
+        position: relative;
+        overflow: hidden;
+    }
+    
+    .toast.show {
+        transform: translateX(0);
+        opacity: 1;
+    }
+    
+    .toast.success {
+        background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+    }
+    
+    .toast.error {
+        background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+    }
+    
+    .toast.info {
+        background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+    }
+    
+    /* Responsive */
+    @media (max-width: 768px) {
+        .sidebar {
+            transform: translateX(-100%);
+        }
+        
+        .sidebar.mobile-open {
+            transform: translateX(0);
+        }
+        
+        .main-content {
+            margin-left: 0;
+        }
+        
+        .header-title {
+            font-size: 20px;
+        }
+        
+        .content {
+            padding: 20px;
+        }
+        
+        .card-header {
+            flex-direction: column;
+            gap: 15px;
+            align-items: flex-start;
+        }
+        
+        .modal-content {
+            width: 95%;
+            margin: 20px;
+        }
+        
+        .table-container {
+            font-size: 12px;
+        }
+    }
 </style>
 {% endblock %}
 
 {% block body %}
-<!-- 代理池管理页面 -->
+<!-- Toast notification container -->
+<div id="toast-container" class="toast-container"></div>
+
+<!-- Sidebar -->
 <div class="sidebar">
     <div class="sidebar-header">
         <div class="sidebar-logo">📧 邮件管理系统</div>
@@ -42,6 +533,7 @@
     </nav>
 </div>
 
+<!-- Main Content -->
 <div class="main-content">
     <div class="header">
         <h1 class="header-title">代理池管理</h1>
@@ -54,15 +546,727 @@
     </div>
     
     <div class="content">
+        <!-- HTTP 代理管理 -->
         <div class="card">
             <div class="card-header">
-                <h2 class="card-title">代理池功能</h2>
+                <h2 class="card-title">HTTP 代理管理</h2>
+                <div class="header-buttons">
+                    <button class="btn btn-primary" onclick="showHttpProxyModal()">
+                        ➕ 添加HTTP代理
+                    </button>
+                    <button class="btn btn-info" onclick="testAllHttpProxies()">
+                        🔍 测试所有HTTP代理
+                    </button>
+                </div>
             </div>
             <div class="card-body">
-                <p>代理池管理功能正在开发中...</p>
-                <p>将包含HTTP代理和SOCKS5代理的添加、编辑、删除和测试功能。</p>
+                <div class="table-container">
+                    <table id="httpProxyTable">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>名称</th>
+                                <th>地址</th>
+                                <th>端口</th>
+                                <th>用户名</th>
+                                <th>状态</th>
+                                <th>响应时间</th>
+                                <th>成功/失败</th>
+                                <th>最后检查</th>
+                                <th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <!-- HTTP代理列表将通过JavaScript加载 -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- SOCKS5 代理管理 -->
+        <div class="card">
+            <div class="card-header">
+                <h2 class="card-title">SOCKS5 代理管理</h2>
+                <div class="header-buttons">
+                    <button class="btn btn-primary" onclick="showSocks5ProxyModal()">
+                        ➕ 添加SOCKS5代理
+                    </button>
+                    <button class="btn btn-info" onclick="testAllSocks5Proxies()">
+                        🔍 测试所有SOCKS5代理
+                    </button>
+                </div>
+            </div>
+            <div class="card-body">
+                <div class="table-container">
+                    <table id="socks5ProxyTable">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>名称</th>
+                                <th>地址</th>
+                                <th>端口</th>
+                                <th>用户名</th>
+                                <th>状态</th>
+                                <th>响应时间</th>
+                                <th>成功/失败</th>
+                                <th>最后检查</th>
+                                <th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <!-- SOCKS5代理列表将通过JavaScript加载 -->
+                        </tbody>
+                    </table>
+                </div>
             </div>
         </div>
     </div>
 </div>
+
+<!-- HTTP代理模态框 -->
+<div id="httpProxyModal" class="modal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3 class="modal-title" id="httpModalTitle">添加HTTP代理</h3>
+            <button class="modal-close" onclick="closeHttpProxyModal()">&times;</button>
+        </div>
+        <div class="modal-body">
+            <form id="httpProxyForm">
+                <input type="hidden" id="httpProxyId" name="id">
+                <input type="hidden" id="httpFormAction" name="action" value="add">
+                
+                <div class="form-group">
+                    <label for="httpProxyName">代理名称 *</label>
+                    <input type="text" id="httpProxyName" name="name" required 
+                           placeholder="例: HTTP代理1">
+                </div>
+                
+                <div class="form-group">
+                    <label for="httpProxyHost">代理地址 *</label>
+                    <input type="text" id="httpProxyHost" name="host" required 
+                           placeholder="例: 127.0.0.1">
+                </div>
+                
+                <div class="form-group">
+                    <label for="httpProxyPort">端口 *</label>
+                    <input type="number" id="httpProxyPort" name="port" required 
+                           placeholder="例: 8080">
+                </div>
+                
+                <div class="form-group">
+                    <label for="httpProxyUsername">用户名</label>
+                    <input type="text" id="httpProxyUsername" name="username" 
+                           placeholder="可选：代理用户名">
+                </div>
+                
+                <div class="form-group">
+                    <label for="httpProxyPassword">密码</label>
+                    <input type="password" id="httpProxyPassword" name="password" 
+                           placeholder="可选：代理密码">
+                </div>
+                
+                <div class="form-group">
+                    <label for="httpProxyRemarks">备注</label>
+                    <input type="text" id="httpProxyRemarks" name="remarks" 
+                           placeholder="可选：备注信息">
+                </div>
+            </form>
+        </div>
+        <div class="modal-footer">
+            <button type="button" class="btn" onclick="closeHttpProxyModal()">取消</button>
+            <button type="button" class="btn btn-warning" onclick="testHttpProxy()">测试连接</button>
+            <button type="button" class="btn btn-primary" onclick="saveHttpProxy()">保存</button>
+        </div>
+    </div>
+</div>
+
+<!-- SOCKS5代理模态框 -->
+<div id="socks5ProxyModal" class="modal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3 class="modal-title" id="socks5ModalTitle">添加SOCKS5代理</h3>
+            <button class="modal-close" onclick="closeSocks5ProxyModal()">&times;</button>
+        </div>
+        <div class="modal-body">
+            <form id="socks5ProxyForm">
+                <input type="hidden" id="socks5ProxyId" name="id">
+                <input type="hidden" id="socks5FormAction" name="action" value="add">
+                
+                <div class="form-group">
+                    <label for="socks5ProxyName">代理名称 *</label>
+                    <input type="text" id="socks5ProxyName" name="name" required 
+                           placeholder="例: SOCKS5代理1">
+                </div>
+                
+                <div class="form-group">
+                    <label for="socks5ProxyHost">代理地址 *</label>
+                    <input type="text" id="socks5ProxyHost" name="host" required 
+                           placeholder="例: 127.0.0.1">
+                </div>
+                
+                <div class="form-group">
+                    <label for="socks5ProxyPort">端口 *</label>
+                    <input type="number" id="socks5ProxyPort" name="port" required 
+                           placeholder="例: 1080">
+                </div>
+                
+                <div class="form-group">
+                    <label for="socks5ProxyUsername">用户名</label>
+                    <input type="text" id="socks5ProxyUsername" name="username" 
+                           placeholder="可选：代理用户名">
+                </div>
+                
+                <div class="form-group">
+                    <label for="socks5ProxyPassword">密码</label>
+                    <input type="password" id="socks5ProxyPassword" name="password" 
+                           placeholder="可选：代理密码">
+                </div>
+                
+                <div class="form-group">
+                    <label for="socks5ProxyRemarks">备注</label>
+                    <input type="text" id="socks5ProxyRemarks" name="remarks" 
+                           placeholder="可选：备注信息">
+                </div>
+            </form>
+        </div>
+        <div class="modal-footer">
+            <button type="button" class="btn" onclick="closeSocks5ProxyModal()">取消</button>
+            <button type="button" class="btn btn-warning" onclick="testSocks5Proxy()">测试连接</button>
+            <button type="button" class="btn btn-primary" onclick="saveSocks5Proxy()">保存</button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // 页面加载时获取代理列表
+    document.addEventListener('DOMContentLoaded', function() {
+        loadHttpProxies();
+        loadSocks5Proxies();
+    });
+    
+    // ============== HTTP代理管理 ==============
+    
+    // 加载HTTP代理列表
+    async function loadHttpProxies() {
+        try {
+            const response = await fetch('/admin/api/proxy/http', {
+                method: 'GET',
+                headers: {
+                    'Content-Type': 'application/json',
+                }
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                renderHttpProxyTable(data.data);
+            } else {
+                showToast('加载HTTP代理列表失败', 'error');
+            }
+        } catch (error) {
+            console.error('加载HTTP代理列表失败:', error);
+            showToast('网络错误，请稍后重试', 'error');
+        }
+    }
+    
+    // 渲染HTTP代理表格
+    function renderHttpProxyTable(proxies) {
+        const tbody = document.querySelector('#httpProxyTable tbody');
+        tbody.innerHTML = '';
+        
+        if (proxies.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="10" style="text-align: center; color: #6b7280;">暂无HTTP代理</td></tr>';
+            return;
+        }
+        
+        proxies.forEach(proxy => {
+            const row = document.createElement('tr');
+            const statusClass = proxy.status ? 'online' : 'offline';
+            const statusText = proxy.status ? '在线' : '离线';
+            
+            row.innerHTML = `
+                <td>${proxy.id}</td>
+                <td>${escapeHtml(proxy.name)}</td>
+                <td>${escapeHtml(proxy.host)}</td>
+                <td>${proxy.port}</td>
+                <td>${escapeHtml(proxy.username || '-')}</td>
+                <td><span class="status ${statusClass}">${statusText}</span></td>
+                <td>${proxy.response_time || 0}ms</td>
+                <td>${proxy.success_count || 0}/${proxy.fail_count || 0}</td>
+                <td>${formatDateTime(proxy.last_check)}</td>
+                <td>
+                    <button class="btn btn-warning" onclick="testHttpProxyById(${proxy.id})" style="margin-right: 5px;">测试</button>
+                    <button class="btn btn-success" onclick="editHttpProxy(${proxy.id})" style="margin-right: 5px;">编辑</button>
+                    <button class="btn btn-danger" onclick="deleteHttpProxy(${proxy.id})">删除</button>
+                </td>
+            `;
+            tbody.appendChild(row);
+        });
+    }
+    
+    // 显示HTTP代理模态框
+    function showHttpProxyModal() {
+        document.getElementById('httpModalTitle').textContent = '添加HTTP代理';
+        document.getElementById('httpFormAction').value = 'add';
+        document.getElementById('httpProxyForm').reset();
+        document.getElementById('httpProxyId').value = '';
+        document.getElementById('httpProxyModal').classList.add('show');
+    }
+    
+    // 关闭HTTP代理模态框
+    function closeHttpProxyModal() {
+        document.getElementById('httpProxyModal').classList.remove('show');
+    }
+    
+    // 保存HTTP代理
+    async function saveHttpProxy() {
+        const form = document.getElementById('httpProxyForm');
+        const formData = new FormData(form);
+        
+        const data = {
+            action: formData.get('action'),
+            name: formData.get('name'),
+            host: formData.get('host'),
+            port: parseInt(formData.get('port')),
+            username: formData.get('username'),
+            password: formData.get('password'),
+            remarks: formData.get('remarks')
+        };
+        
+        if (data.action === 'edit') {
+            data.id = parseInt(formData.get('id'));
+        }
+        
+        try {
+            const response = await fetch('/admin/api/proxy/http', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(data)
+            });
+            
+            const result = await response.json();
+            
+            if (result.success) {
+                showToast(result.message || '保存成功', 'success');
+                closeHttpProxyModal();
+                loadHttpProxies();
+            } else {
+                showToast(result.message || '保存失败', 'error');
+            }
+        } catch (error) {
+            console.error('保存HTTP代理失败:', error);
+            showToast('网络错误，请稍后重试', 'error');
+        }
+    }
+    
+    // 删除HTTP代理
+    async function deleteHttpProxy(id) {
+        if (!confirm('确定要删除这个HTTP代理吗？')) {
+            return;
+        }
+        
+        try {
+            const response = await fetch('/admin/api/proxy/http', {
+                method: 'DELETE',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ id: id })
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                showToast('HTTP代理删除成功', 'success');
+                loadHttpProxies();
+            } else {
+                showToast(data.message || '删除失败', 'error');
+            }
+        } catch (error) {
+            console.error('删除HTTP代理失败:', error);
+            showToast('网络错误，请稍后重试', 'error');
+        }
+    }
+    
+    // ============== SOCKS5代理管理 ==============
+    
+    // 加载SOCKS5代理列表
+    async function loadSocks5Proxies() {
+        try {
+            const response = await fetch('/admin/api/proxy/socks5', {
+                method: 'GET',
+                headers: {
+                    'Content-Type': 'application/json',
+                }
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                renderSocks5ProxyTable(data.data);
+            } else {
+                showToast('加载SOCKS5代理列表失败', 'error');
+            }
+        } catch (error) {
+            console.error('加载SOCKS5代理列表失败:', error);
+            showToast('网络错误，请稍后重试', 'error');
+        }
+    }
+    
+    // 渲染SOCKS5代理表格
+    function renderSocks5ProxyTable(proxies) {
+        const tbody = document.querySelector('#socks5ProxyTable tbody');
+        tbody.innerHTML = '';
+        
+        if (proxies.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="10" style="text-align: center; color: #6b7280;">暂无SOCKS5代理</td></tr>';
+            return;
+        }
+        
+        proxies.forEach(proxy => {
+            const row = document.createElement('tr');
+            const statusClass = proxy.status ? 'online' : 'offline';
+            const statusText = proxy.status ? '在线' : '离线';
+            
+            row.innerHTML = `
+                <td>${proxy.id}</td>
+                <td>${escapeHtml(proxy.name)}</td>
+                <td>${escapeHtml(proxy.host)}</td>
+                <td>${proxy.port}</td>
+                <td>${escapeHtml(proxy.username || '-')}</td>
+                <td><span class="status ${statusClass}">${statusText}</span></td>
+                <td>${proxy.response_time || 0}ms</td>
+                <td>${proxy.success_count || 0}/${proxy.fail_count || 0}</td>
+                <td>${formatDateTime(proxy.last_check)}</td>
+                <td>
+                    <button class="btn btn-warning" onclick="testSocks5ProxyById(${proxy.id})" style="margin-right: 5px;">测试</button>
+                    <button class="btn btn-success" onclick="editSocks5Proxy(${proxy.id})" style="margin-right: 5px;">编辑</button>
+                    <button class="btn btn-danger" onclick="deleteSocks5Proxy(${proxy.id})">删除</button>
+                </td>
+            `;
+            tbody.appendChild(row);
+        });
+    }
+    
+    // 显示SOCKS5代理模态框
+    function showSocks5ProxyModal() {
+        document.getElementById('socks5ModalTitle').textContent = '添加SOCKS5代理';
+        document.getElementById('socks5FormAction').value = 'add';
+        document.getElementById('socks5ProxyForm').reset();
+        document.getElementById('socks5ProxyId').value = '';
+        document.getElementById('socks5ProxyModal').classList.add('show');
+    }
+    
+    // 关闭SOCKS5代理模态框
+    function closeSocks5ProxyModal() {
+        document.getElementById('socks5ProxyModal').classList.remove('show');
+    }
+    
+    // 保存SOCKS5代理
+    async function saveSocks5Proxy() {
+        const form = document.getElementById('socks5ProxyForm');
+        const formData = new FormData(form);
+        
+        const data = {
+            action: formData.get('action'),
+            name: formData.get('name'),
+            host: formData.get('host'),
+            port: parseInt(formData.get('port')),
+            username: formData.get('username'),
+            password: formData.get('password'),
+            remarks: formData.get('remarks')
+        };
+        
+        if (data.action === 'edit') {
+            data.id = parseInt(formData.get('id'));
+        }
+        
+        try {
+            const response = await fetch('/admin/api/proxy/socks5', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(data)
+            });
+            
+            const result = await response.json();
+            
+            if (result.success) {
+                showToast(result.message || '保存成功', 'success');
+                closeSocks5ProxyModal();
+                loadSocks5Proxies();
+            } else {
+                showToast(result.message || '保存失败', 'error');
+            }
+        } catch (error) {
+            console.error('保存SOCKS5代理失败:', error);
+            showToast('网络错误，请稍后重试', 'error');
+        }
+    }
+    
+    // 删除SOCKS5代理
+    async function deleteSocks5Proxy(id) {
+        if (!confirm('确定要删除这个SOCKS5代理吗？')) {
+            return;
+        }
+        
+        try {
+            const response = await fetch('/admin/api/proxy/socks5', {
+                method: 'DELETE',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ id: id })
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                showToast('SOCKS5代理删除成功', 'success');
+                loadSocks5Proxies();
+            } else {
+                showToast(data.message || '删除失败', 'error');
+            }
+        } catch (error) {
+            console.error('删除SOCKS5代理失败:', error);
+            showToast('网络错误，请稍后重试', 'error');
+        }
+    }
+    
+    // ============== 代理测试功能 ==============
+    
+    // 测试单个HTTP代理
+    async function testHttpProxy() {
+        const form = document.getElementById('httpProxyForm');
+        const formData = new FormData(form);
+        
+        const data = {
+            host: formData.get('host'),
+            port: parseInt(formData.get('port')),
+            username: formData.get('username'),
+            password: formData.get('password')
+        };
+        
+        try {
+            showToast('正在测试HTTP代理连接...', 'info');
+            
+            const response = await fetch('/admin/api/proxy/test-http', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(data)
+            });
+            
+            const result = await response.json();
+            
+            if (result.success) {
+                showToast(`测试成功！响应时间: ${result.response_time}ms`, 'success');
+            } else {
+                showToast(`测试失败: ${result.message}`, 'error');
+            }
+        } catch (error) {
+            console.error('测试HTTP代理失败:', error);
+            showToast('测试失败，请检查网络连接', 'error');
+        }
+    }
+    
+    // 测试单个SOCKS5代理
+    async function testSocks5Proxy() {
+        const form = document.getElementById('socks5ProxyForm');
+        const formData = new FormData(form);
+        
+        const data = {
+            host: formData.get('host'),
+            port: parseInt(formData.get('port')),
+            username: formData.get('username'),
+            password: formData.get('password')
+        };
+        
+        try {
+            showToast('正在测试SOCKS5代理连接...', 'info');
+            
+            const response = await fetch('/admin/api/proxy/test-socks5', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(data)
+            });
+            
+            const result = await response.json();
+            
+            if (result.success) {
+                showToast(`测试成功！响应时间: ${result.response_time}ms`, 'success');
+            } else {
+                showToast(`测试失败: ${result.message}`, 'error');
+            }
+        } catch (error) {
+            console.error('测试SOCKS5代理失败:', error);
+            showToast('测试失败，请检查网络连接', 'error');
+        }
+    }
+    
+    // 通过ID测试HTTP代理
+    async function testHttpProxyById(id) {
+        try {
+            showToast('正在测试HTTP代理...', 'info');
+            
+            const response = await fetch(`/admin/api/proxy/test-http/${id}`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                }
+            });
+            
+            const result = await response.json();
+            
+            if (result.success) {
+                showToast(`测试成功！响应时间: ${result.response_time}ms`, 'success');
+                loadHttpProxies(); // 刷新列表显示最新状态
+            } else {
+                showToast(`测试失败: ${result.message}`, 'error');
+            }
+        } catch (error) {
+            console.error('测试HTTP代理失败:', error);
+            showToast('测试失败，请检查网络连接', 'error');
+        }
+    }
+    
+    // 通过ID测试SOCKS5代理
+    async function testSocks5ProxyById(id) {
+        try {
+            showToast('正在测试SOCKS5代理...', 'info');
+            
+            const response = await fetch(`/admin/api/proxy/test-socks5/${id}`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                }
+            });
+            
+            const result = await response.json();
+            
+            if (result.success) {
+                showToast(`测试成功！响应时间: ${result.response_time}ms`, 'success');
+                loadSocks5Proxies(); // 刷新列表显示最新状态
+            } else {
+                showToast(`测试失败: ${result.message}`, 'error');
+            }
+        } catch (error) {
+            console.error('测试SOCKS5代理失败:', error);
+            showToast('测试失败，请检查网络连接', 'error');
+        }
+    }
+    
+    // 测试所有HTTP代理
+    async function testAllHttpProxies() {
+        try {
+            showToast('正在测试所有HTTP代理...', 'info');
+            
+            const response = await fetch('/admin/api/proxy/test-all-http', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                }
+            });
+            
+            const result = await response.json();
+            
+            if (result.success) {
+                showToast(`批量测试完成：${result.tested}个代理已测试`, 'success');
+                loadHttpProxies(); // 刷新列表
+            } else {
+                showToast(`批量测试失败: ${result.message}`, 'error');
+            }
+        } catch (error) {
+            console.error('批量测试HTTP代理失败:', error);
+            showToast('批量测试失败，请检查网络连接', 'error');
+        }
+    }
+    
+    // 测试所有SOCKS5代理
+    async function testAllSocks5Proxies() {
+        try {
+            showToast('正在测试所有SOCKS5代理...', 'info');
+            
+            const response = await fetch('/admin/api/proxy/test-all-socks5', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                }
+            });
+            
+            const result = await response.json();
+            
+            if (result.success) {
+                showToast(`批量测试完成：${result.tested}个代理已测试`, 'success');
+                loadSocks5Proxies(); // 刷新列表
+            } else {
+                showToast(`批量测试失败: ${result.message}`, 'error');
+            }
+        } catch (error) {
+            console.error('批量测试SOCKS5代理失败:', error);
+            showToast('批量测试失败，请检查网络连接', 'error');
+        }
+    }
+    
+    // ============== 工具函数 ==============
+    
+    // 点击模态框外部关闭
+    document.getElementById('httpProxyModal').addEventListener('click', function(e) {
+        if (e.target === this) {
+            closeHttpProxyModal();
+        }
+    });
+    
+    document.getElementById('socks5ProxyModal').addEventListener('click', function(e) {
+        if (e.target === this) {
+            closeSocks5ProxyModal();
+        }
+    });
+    
+    // Toast通知系统
+    function showToast(message, type = 'info', duration = 3000) {
+        const container = document.getElementById('toast-container');
+        
+        const toast = document.createElement('div');
+        toast.className = `toast ${type}`;
+        toast.textContent = message;
+        
+        container.appendChild(toast);
+        
+        setTimeout(() => {
+            toast.classList.add('show');
+        }, 10);
+        
+        setTimeout(() => {
+            toast.classList.remove('show');
+            setTimeout(() => {
+                if (container.contains(toast)) {
+                    container.removeChild(toast);
+                }
+            }, 300);
+        }, duration);
+    }
+    
+    // 工具函数
+    function escapeHtml(text) {
+        if (!text) return '';
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+    
+    function formatDateTime(dateString) {
+        if (!dateString) return '-';
+        return new Date(dateString).toLocaleString('zh-CN');
+    }
+</script>
 {% endblock %}
