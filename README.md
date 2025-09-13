@@ -220,6 +220,75 @@ DELETE /admin/api/mailbox
 }
 ```
 
+### 代理管理 API
+```http
+# 获取代理配置
+GET /admin/api/proxy-config
+
+# 开启代理（自动选择）
+POST /admin/api/proxy-config
+{
+    "action": "enable_proxy"
+}
+
+# 关闭代理
+POST /admin/api/proxy-config
+{
+    "action": "disable_proxy"
+}
+
+# 获取HTTP代理列表
+GET /admin/api/proxies/http
+
+# 添加HTTP代理
+POST /admin/api/proxies/http
+{
+    "action": "add",
+    "name": "代理名称",
+    "host": "127.0.0.1",
+    "port": 8080,
+    "username": "用户名",
+    "password": "密码",
+    "remarks": "备注"
+}
+
+# 测试代理
+POST /admin/api/proxies/http
+{
+    "action": "test",
+    "id": 1
+}
+```
+
+## 代理功能使用说明
+
+### 代理池管理
+
+系统支持HTTP和SOCKS5两种代理类型：
+
+1. **添加代理**：
+   - 在代理池页面点击"添加HTTP代理"或"添加SOCKS5代理"
+   - 填写代理信息（地址、端口、用户名、密码等）
+   - 可在保存前点击"测试代理"验证连接
+
+2. **开启代理**：
+   - 点击"🌐 开启代理"按钮
+   - 系统自动选择第一个可用代理（HTTP优先，然后SOCKS5）
+   - 按ID升序测试直到找到可用代理
+
+3. **代理状态**：
+   - 🟢 在线：代理可用
+   - 🔴 离线：代理不可用  
+   - 🟡 测试：正在测试中
+
+### 邮件服务代理支持
+
+开启代理后，以下功能强制通过代理连接：
+- 前端邮件获取（首页）
+- 邮箱管理页面的"测试"功能
+- 添加邮箱时的连接验证
+```
+
 ## 数据库结构
 
 ### mail_accounts（邮箱账号表）
