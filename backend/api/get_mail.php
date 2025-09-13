@@ -9,7 +9,7 @@ header('Access-Control-Allow-Origin: *');
 header('Access-Control-Allow-Methods: GET, POST');
 header('Access-Control-Allow-Headers: Content-Type');
 
-require_once '../utils/mail_fetcher.php';
+require_once '../utils/python_mail_bridge.php';
 
 // 只允许POST请求
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
@@ -50,66 +50,33 @@ try {
         exit();
     }
     
-    // 使用完整的IMAP扩展检查函数
-    // require_once '../api.php';
-    // $imapInfo = checkImapExtension();
+    // 使用Python邮件服务
+    $fetcher = new PythonMailFetcher($email);
     
-    // 简化的IMAP扩展检查（无需身份验证）
-    if (!extension_loaded('imap')) {
-        echo json_encode([
-            'success' => false,
-            'message' => 'PHP IMAP扩展未加载，请联系管理员配置',
-            'error_type' => 'extension_issue'
-        ]);
-        $db->close();
-        exit();
-    }
+    // 获取最新邮件
+    $result = $fetcher->getLatestMail();
     
-    // 创建邮件获取器实例
-    $fetcher = new MailFetcher(
-        $account['server'],
-        $account['port'],
-        $account['username'],
-        $account['password'],
-        $account['protocol'],
-        $account['ssl'] == 1
-    );
-    
-    // 连接并获取最新邮件
-    if ($fetcher->connect()) {
-        $result = $fetcher->getLatestMail();
-        $proxyInfo = $fetcher->getProxyInfo();
-        $fetcher->close();
-        
-        if ($result['success']) {
-            if ($result['mail']) {
-                echo json_encode([
-                    'success' => true,
-                    'message' => '邮件获取成功',
-                    'mail' => $result['mail'],
-                    'proxy' => $proxyInfo
-                ]);
-            } else {
-                echo json_encode([
-                    'success' => true,
-                    'message' => '邮箱中暂无邮件',
-                    'mail' => null,
-                    'proxy' => $proxyInfo
-                ]);
-            }
+    if ($result['success']) {
+        if (isset($result['mail'])) {
+            echo json_encode([
+                'success' => true,
+                'message' => '邮件获取成功',
+                'mail' => $result['mail'],
+                'proxy' => $result['proxy'] ?? ['enabled' => false, 'info' => null]
+            ]);
         } else {
             echo json_encode([
-                'success' => false,
-                'message' => $result['message'],
-                'proxy' => $proxyInfo
+                'success' => true,
+                'message' => '邮箱中暂无邮件',
+                'mail' => null,
+                'proxy' => $result['proxy'] ?? ['enabled' => false, 'info' => null]
             ]);
         }
     } else {
-        $proxyInfo = $fetcher->getProxyInfo();
         echo json_encode([
             'success' => false,
-            'message' => '无法连接到邮件服务器，请检查邮箱配置',
-            'proxy' => $proxyInfo
+            'message' => $result['message'],
+            'proxy' => $result['proxy'] ?? ['enabled' => false, 'info' => null]
         ]);
     }
     
