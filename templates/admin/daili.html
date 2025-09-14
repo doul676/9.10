@@ -1095,14 +1095,14 @@
             const statusBadge = getStatusBadge(proxy.status, proxy.response_time);
             const proxyType = proxy.proxy_type.toLowerCase();
             
-            // 使用实际的数据库ID，确保显示与实际ID一致
-            const unifiedId = proxy.id;
+            // 使用统一ID（如果存在），否则显示数据库ID
+            const unifiedId = proxy.unified_id && proxy.unified_id > 0 ? proxy.unified_id : proxy.id;
             
             row.innerHTML = `
                 <td><input type="checkbox" class="proxy-checkbox" value="${proxyType}-${proxy.id}" onchange="toggleProxySelection('${proxyType}', ${proxy.id})"></td>
                 <td><strong>${unifiedId}</strong></td>
                 <td><span style="background: ${proxyType === 'http' ? '#dbeafe' : '#fef3c7'}; color: ${proxyType === 'http' ? '#1e40af' : '#92400e'}; padding: 2px 6px; border-radius: 4px; font-size: 12px; font-weight: 500;">${proxy.proxy_type}</span></td>
-                <td>${escapeHtml(proxy.name) || '空白'}</td>
+                <td>${escapeHtml(proxy.name) || ''}</td>
                 <td>${escapeHtml(proxy.host)}:${proxy.port}</td>
                 <td>${escapeHtml(proxy.username || '-')}</td>
                 <td>${proxy.password ? '******' : '-'}</td>
@@ -1112,7 +1112,7 @@
                 <td>${escapeHtml(proxy.remarks || '-')}</td>
                 <td>
                     <div class="actions" style="display: flex; gap: 5px; flex-wrap: wrap;">
-                        <button class="btn btn-primary btn-small" onclick="switchProxy('${proxyType}', ${proxy.id}, '${escapeHtml(proxy.name) || '空白'}')" title="切换到此代理">切换</button>
+                        <button class="btn btn-primary btn-small" onclick="switchProxy('${proxyType}', ${proxy.id}, '${escapeHtml(proxy.name) || ''}')" title="切换到此代理">切换</button>
                         <button class="btn btn-success btn-small" onclick="editProxy('${proxyType}', ${proxy.id})">编辑</button>
                         <button class="btn btn-warning btn-small" onclick="testSingleProxy('${proxyType}', ${proxy.id})">测试</button>
                         <button class="btn btn-danger btn-small" onclick="deleteProxy('${proxyType}', ${proxy.id})">删除</button>

@@ -14,9 +14,14 @@ import sys
 import time
 import requests
 import threading
+import logging
 from datetime import datetime, timezone
 from flask import Flask, render_template, request, session, redirect, url_for, flash, jsonify, g
 from werkzeug.security import check_password_hash, generate_password_hash
+
+# Setup logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
@@ -91,6 +96,9 @@ def init_db():
                             cursor.execute(statement)
                     db.commit()
         
+        # 数据库迁移：为现有代理表添加unified_id列
+        migrate_proxy_tables(db, db_type)
+        
         # 创建管理员用户表（兼容原有PHP版本）
         if db_type == 'sqlite':
             db.execute('''
@@ -141,6 +149,102 @@ def init_db():
         else:
             db.commit()
 
+def migrate_proxy_tables(db, db_type):
+    """迁移代理表，添加unified_id字段"""
+    try:
+        # 检查http_proxies表是否有unified_id列
+        if db_type == 'sqlite':
+            result = db.execute("PRAGMA table_info(http_proxies)").fetchall()
+            columns = [col[1] for col in result]
+            
+            if 'unified_id' not in columns:
+                db.execute('ALTER TABLE http_proxies ADD COLUMN unified_id INTEGER DEFAULT 0')
+                logger.info("Added unified_id column to http_proxies table")
+                
+        else:
+            cursor = db.cursor()
+            if db_type == 'mysql':
+                cursor.execute("SHOW COLUMNS FROM http_proxies LIKE 'unified_id'")
+                if not cursor.fetchone():
+                    cursor.execute('ALTER TABLE http_proxies ADD COLUMN unified_id INT DEFAULT 0')
+                    logger.info("Added unified_id column to http_proxies table")
+            elif db_type == 'postgresql':
+                cursor.execute("SELECT column_name FROM information_schema.columns WHERE table_name='http_proxies' AND column_name='unified_id'")
+                if not cursor.fetchone():
+                    cursor.execute('ALTER TABLE http_proxies ADD COLUMN unified_id INTEGER DEFAULT 0')
+                    logger.info("Added unified_id column to http_proxies table")
+        
+        # 检查socks5_proxies表是否有unified_id列
+        if db_type == 'sqlite':
+            result = db.execute("PRAGMA table_info(socks5_proxies)").fetchall()
+            columns = [col[1] for col in result]
+            
+            if 'unified_id' not in columns:
+                db.execute('ALTER TABLE socks5_proxies ADD COLUMN unified_id INTEGER DEFAULT 0')
+                logger.info("Added unified_id column to socks5_proxies table")
+                
+        else:
+            cursor = db.cursor()
+            if db_type == 'mysql':
+                cursor.execute("SHOW COLUMNS FROM socks5_proxies LIKE 'unified_id'")
+                if not cursor.fetchone():
+                    cursor.execute('ALTER TABLE socks5_proxies ADD COLUMN unified_id INT DEFAULT 0')
+                    logger.info("Added unified_id column to socks5_proxies table")
+            elif db_type == 'postgresql':
+                cursor.execute("SELECT column_name FROM information_schema.columns WHERE table_name='socks5_proxies' AND column_name='unified_id'")
+                if not cursor.fetchone():
+                    cursor.execute('ALTER TABLE socks5_proxies ADD COLUMN unified_id INTEGER DEFAULT 0')
+                    logger.info("Added unified_id column to socks5_proxies table")
+        
+        # 为现有代理分配统一ID
+        assign_unified_ids_to_existing_proxies(db, db_type)
+        
+        if db_type != 'sqlite':
+            db.commit()
+        else:
+            db.commit()
+            
+    except Exception as e:
+        logger.error(f"Error during proxy table migration: {e}")
+
+def assign_unified_ids_to_existing_proxies(db, db_type):
+    """为现有代理分配统一ID"""
+    try:
+        # 获取所有没有unified_id的HTTP代理
+        if db_type == 'sqlite':
+            http_proxies = db.execute('SELECT id FROM http_proxies WHERE unified_id = 0').fetchall()
+            for proxy in http_proxies:
+                proxy_id = proxy['id']
+                unified_id = get_next_unified_proxy_id(db, 'http', proxy_id)
+                update_proxy_unified_id(db, 'http_proxies', proxy_id, unified_id)
+                
+            # 获取所有没有unified_id的SOCKS5代理
+            socks5_proxies = db.execute('SELECT id FROM socks5_proxies WHERE unified_id = 0').fetchall()
+            for proxy in socks5_proxies:
+                proxy_id = proxy['id']
+                unified_id = get_next_unified_proxy_id(db, 'socks5', proxy_id)
+                update_proxy_unified_id(db, 'socks5_proxies', proxy_id, unified_id)
+        else:
+            cursor = db.cursor()
+            cursor.execute('SELECT id FROM http_proxies WHERE unified_id = 0')
+            http_proxies = cursor.fetchall()
+            for proxy in http_proxies:
+                proxy_id = proxy[0]
+                unified_id = get_next_unified_proxy_id(db, 'http', proxy_id)
+                update_proxy_unified_id(db, 'http_proxies', proxy_id, unified_id)
+                
+            cursor.execute('SELECT id FROM socks5_proxies WHERE unified_id = 0')
+            socks5_proxies = cursor.fetchall()
+            for proxy in socks5_proxies:
+                proxy_id = proxy[0]
+                unified_id = get_next_unified_proxy_id(db, 'socks5', proxy_id)
+                update_proxy_unified_id(db, 'socks5_proxies', proxy_id, unified_id)
+        
+        logger.info("Assigned unified IDs to existing proxies")
+        
+    except Exception as e:
+        logger.error(f"Error assigning unified IDs to existing proxies: {e}")
+
 @app.teardown_appcontext
 def close_db(exception):
     """关闭数据库连接"""
@@ -156,6 +260,52 @@ def get_account_count():
         return result['count'] if result else 0
     except:
         return 0
+
+def get_next_unified_proxy_id(db, proxy_type, proxy_table_id):
+    """获取下一个统一代理ID"""
+    try:
+        db_type = app.config['DATABASE_TYPE']
+        
+        # 插入到统一ID管理表
+        if db_type == 'sqlite':
+            db.execute('''
+                INSERT INTO unified_proxy_ids (proxy_type, proxy_table_id)
+                VALUES (?, ?)
+            ''', (proxy_type, proxy_table_id))
+            # 获取刚插入的ID
+            result = db.execute('SELECT last_insert_rowid() as id').fetchone()
+            unified_id = result['id']
+        else:
+            cursor = db.cursor()
+            cursor.execute('''
+                INSERT INTO unified_proxy_ids (proxy_type, proxy_table_id)
+                VALUES (%s, %s)
+            ''', (proxy_type, proxy_table_id))
+            unified_id = cursor.lastrowid
+        
+        return unified_id
+    except Exception as e:
+        logger.error(f"Error getting unified proxy ID: {e}")
+        raise
+
+def update_proxy_unified_id(db, table_name, proxy_id, unified_id):
+    """更新代理的统一ID"""
+    try:
+        db_type = app.config['DATABASE_TYPE']
+        
+        if db_type == 'sqlite':
+            db.execute(f'''
+                UPDATE {table_name} SET unified_id = ? WHERE id = ?
+            ''', (unified_id, proxy_id))
+        else:
+            cursor = db.cursor()
+            cursor.execute(f'''
+                UPDATE {table_name} SET unified_id = %s WHERE id = %s
+            ''', (unified_id, proxy_id))
+            
+    except Exception as e:
+        logger.error(f"Error updating proxy unified ID: {e}")
+        raise
 
 # ===============================
 # 前端页面路由
@@ -1178,32 +1328,47 @@ def _add_proxy(db, table_name, data, proxy_type):
             'message': '请填写代理地址和端口'
         })
     
-    # 如果没有提供名称，设置为"空白"
+    # 如果没有提供名称，保持为空字符串
     if not name:
-        name = "空白"
+        name = ""
     
     try:
         now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        
+        # 先插入代理记录（不包含unified_id）
         if app.config['DATABASE_TYPE'] == 'sqlite':
-            db.execute(f'''
+            cursor = db.execute(f'''
                 INSERT INTO {table_name} (name, host, port, username, password, remarks, created_at, updated_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             ''', (name, host, port, username, password, remarks, now, now))
-            db.commit()
+            proxy_id = cursor.lastrowid
         else:
             cursor = db.cursor()
             cursor.execute(f'''
                 INSERT INTO {table_name} (name, host, port, username, password, remarks, created_at, updated_at)
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
             ''', (name, host, port, username, password, remarks, now, now))
-            db.commit()
+            proxy_id = cursor.lastrowid
+            
+        # 获取统一ID
+        unified_id = get_next_unified_proxy_id(db, proxy_type, proxy_id)
+        
+        # 更新代理记录的unified_id（如果列存在）
+        try:
+            update_proxy_unified_id(db, table_name, proxy_id, unified_id)
+        except:
+            # 如果unified_id列不存在，继续执行
+            pass
+        
+        db.commit()
         
         return jsonify({
             'success': True,
-            'message': f'{proxy_type.upper()}代理添加成功'
+            'message': f'{proxy_type.upper()}代理添加成功，统一ID: {unified_id}'
         })
         
     except Exception as e:
+        logger.error(f"Error adding proxy: {e}")
         return jsonify({
             'success': False,
             'message': f'添加失败: {str(e)}'
