@@ -3141,10 +3141,69 @@ def api_admin_generate_card_api_page(card_key):
                 card_result = dict(zip(columns, card_result))
         
         if not card_result:
-            return jsonify({
-                'success': False,
-                'message': '卡密不存在'
-            }), 404
+            # 返回包含"此卡密不存在"消息的HTML页面而不是JSON
+            error_content = """<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>API取件页面 - 卡密不存在</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .error-container {
+            background: white;
+            border-radius: 20px;
+            padding: 40px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            text-align: center;
+            max-width: 500px;
+            width: 100%;
+        }
+        
+        .error-icon {
+            font-size: 64px;
+            margin-bottom: 20px;
+            color: #ef4444;
+        }
+        
+        .error-title {
+            font-size: 24px;
+            color: #1e293b;
+            margin-bottom: 15px;
+            font-weight: 600;
+        }
+        
+        .error-message {
+            color: #6b7280;
+            font-size: 16px;
+            line-height: 1.6;
+        }
+    </style>
+</head>
+<body>
+    <div class="error-container">
+        <div class="error-icon">❌</div>
+        <div class="error-title">此卡密不存在</div>
+        <div class="error-message">请检查卡密是否正确，或联系管理员获取有效卡密</div>
+    </div>
+</body>
+</html>"""
+            return error_content, 404, {'Content-Type': 'text/html; charset=utf-8'}
         
         # 检查卡密是否已绑定邮箱
         has_bound_email = card_result.get('bound_email_id') is not None
@@ -3152,29 +3211,17 @@ def api_admin_generate_card_api_page(card_key):
         
         # 根据绑定状态生成不同的API页面内容
         if has_bound_email:
-            # 已绑定邮箱：无输入框，直接显示获取邮件按钮
+            # 已绑定邮箱：页面无输入框，不显示当前卡密和绑定邮箱，仅有"获取邮件"按钮
             input_section = f"""
-            <div class="bound-email-info">
-                <div class="email-info">
-                    <span class="email-label">绑定邮箱:</span>
-                    <span class="email-address">{bound_email}</span>
-                </div>
-                <p class="info-text">此卡密已绑定邮箱，点击下方按钮直接获取邮件</p>
-            </div>
-            
             <div class="action-group">
                 <button class="get-mail-btn" onclick="getMail()">获取邮件</button>
             </div>"""
         else:
-            # 未绑定邮箱：有输入框，可手动输入邮箱
+            # 未绑定邮箱：页面仅有输入框和"获取邮件"按钮
             input_section = f"""
-            <div class="unbound-email-info">
-                <p class="info-text">此卡密未绑定邮箱，请输入已添加的邮箱地址进行API取件</p>
-            </div>
-            
             <div class="input-group">
-                <input type="email" id="emailInput" placeholder="请输入邮箱地址进行API取件" required>
-                <button class="get-mail-btn" onclick="getMail()">API取件</button>
+                <input type="email" id="emailInput" placeholder="请输入邮箱地址" required>
+                <button class="get-mail-btn" onclick="getMail()">获取邮件</button>
             </div>"""
         
         api_content = f"""<!DOCTYPE html>
@@ -3182,7 +3229,7 @@ def api_admin_generate_card_api_page(card_key):
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>API取件页面 - {card_key}</title>
+    <title>API取件页面</title>
     <style>
         * {{
             margin: 0;
@@ -3439,30 +3486,72 @@ def api_admin_generate_card_api_page(card_key):
             font-family: 'Courier New', monospace;
             font-weight: 600;
         }}
+        
+        /* Toast Notifications */
+        .toast-container {{
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 3000;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            max-width: 400px;
+        }}
+        
+        .toast {{
+            padding: 15px 20px;
+            border-radius: 10px;
+            color: white;
+            font-weight: 500;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+            transform: translateX(450px);
+            opacity: 0;
+            transition: all 0.3s ease;
+            position: relative;
+            background: #6b7280;
+            margin-bottom: 10px;
+        }}
+        
+        .toast.show {{
+            transform: translateX(0);
+            opacity: 1;
+        }}
+        
+        .toast.success {{
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+        }}
+        
+        .toast.error {{
+            background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+        }}
+        
+        .toast.info {{
+            background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+        }}
+        
+        .toast.warning {{
+            background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+        }}
     </style>
 </head>
 <body>
+    <!-- Toast notification container -->
+    <div id="toast-container" class="toast-container"></div>
+    
     <div class="container">
         <div class="header">
             <h1>📧 API邮件查看</h1>
-            <p>专用API取件页面</p>
+            <p>API取件页面</p>
         </div>
         
         <div class="main-card">
-            <div class="api-info">
-                <strong>当前卡密:</strong> <span class="card-key">{card_key}</span>
-                <br><br>
-                此页面专为卡密 <strong>{card_key}</strong> 生成，可用于API自动取件。
-            </div>
-            
             {input_section}
             
             <div class="loading" id="loading">
                 <div class="spinner"></div>
                 <div>正在通过API获取邮件，请稍候...</div>
             </div>
-            
-            <div id="message"></div>
         </div>
         
         <div class="mail-display" id="mailDisplay">
@@ -3509,7 +3598,6 @@ def api_admin_generate_card_api_page(card_key):
         
         async function getMail() {{
             const loading = document.getElementById('loading');
-            const message = document.getElementById('message');
             const mailDisplay = document.getElementById('mailDisplay');
             const getMailBtn = document.querySelector('.get-mail-btn');
             
@@ -3524,12 +3612,12 @@ def api_admin_generate_card_api_page(card_key):
                 email = emailInput.value.trim();
                 
                 if (!email) {{
-                    showMessage('请输入邮箱地址', 'error');
+                    showToast('请输入邮箱地址', 'error');
                     return;
                 }}
                 
                 if (!isValidEmail(email)) {{
-                    showMessage('请输入有效的邮箱地址', 'error');
+                    showToast('请输入有效的邮箱地址', 'error');
                     return;
                 }}
             }}
@@ -3537,8 +3625,7 @@ def api_admin_generate_card_api_page(card_key):
             // 显示加载状态
             loading.style.display = 'block';
             getMailBtn.disabled = true;
-            getMailBtn.textContent = hasBoundEmail ? '获取中...' : 'API取件中...';
-            message.innerHTML = '';
+            getMailBtn.textContent = '获取中...';
             mailDisplay.style.display = 'none';
             
             try {{
@@ -3559,22 +3646,22 @@ def api_admin_generate_card_api_page(card_key):
                 if (data.success) {{
                     if (data.mail) {{
                         displayMail(data.mail);
-                        showMessage('邮件获取成功', 'success');
+                        showToast('邮件获取成功', 'success');
                     }} else {{
-                        showMessage('邮箱中暂无邮件', 'info');
+                        showToast('邮箱中暂无邮件', 'info');
                     }}
                 }} else {{
-                    showMessage(data.message || '获取邮件失败', 'error');
+                    showToast(data.message || '获取邮件失败', 'error');
                 }}
                 
             }} catch (error) {{
                 console.error('API请求失败:', error);
-                showMessage('网络请求失败，请检查网络连接', 'error');
+                showToast('网络请求失败，请检查网络连接', 'error');
             }} finally {{
                 // 隐藏加载状态
                 loading.style.display = 'none';
                 getMailBtn.disabled = false;
-                getMailBtn.textContent = hasBoundEmail ? '获取邮件' : 'API取件';
+                getMailBtn.textContent = '获取邮件';
             }}
         }}
         
@@ -3590,13 +3677,36 @@ def api_admin_generate_card_api_page(card_key):
         }}
         
         function showMessage(text, type) {{
-            const message = document.getElementById('message');
-            message.innerHTML = `<div class="message ${{type}}">${{text}}</div>`;
+            showToast(text, type);
         }}
         
         function isValidEmail(email) {{
             const re = /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/;
             return re.test(email);
+        }}
+        
+        // Toast notification system
+        function showToast(message, type = 'info', duration = 3000) {{
+            const container = document.getElementById('toast-container');
+            
+            const toast = document.createElement('div');
+            toast.className = `toast ${{type}}`;
+            toast.textContent = message;
+            
+            container.appendChild(toast);
+            
+            setTimeout(() => {{
+                toast.classList.add('show');
+            }}, 10);
+            
+            setTimeout(() => {{
+                toast.classList.remove('show');
+                setTimeout(() => {{
+                    if (container.contains(toast)) {{
+                        container.removeChild(toast);
+                    }}
+                }}, 300);
+            }}, duration);
         }}
         
         function formatFileSize(bytes) {{
