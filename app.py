@@ -3117,22 +3117,28 @@ def api_admin_generate_card_api_page(card_key):
             card_query = """
                 SELECT c.*, e.email, e.server 
                 FROM cards c 
-                LEFT JOIN mailbox e ON c.bound_email_id = e.id 
+                LEFT JOIN mail_accounts e ON c.bound_email_id = e.id 
                 WHERE c.card_key = ?
             """
             card_result = db.execute(card_query, (card_key,)).fetchone()
+            if card_result:
+                card_result = dict(card_result)  # Convert Row to dict
         else:
             cursor = db.cursor()
             card_query = """
                 SELECT c.*, e.email, e.server 
                 FROM cards c 
-                LEFT JOIN mailbox e ON c.bound_email_id = e.id 
+                LEFT JOIN mail_accounts e ON c.bound_email_id = e.id 
                 WHERE c.card_key = %s
             """
             cursor.execute(card_query, (card_key,))
             card_result = cursor.fetchone()
             if card_result and hasattr(card_result, '_asdict'):
                 card_result = card_result._asdict()
+            elif card_result:
+                # Handle tuple result
+                columns = [desc[0] for desc in cursor.description]
+                card_result = dict(zip(columns, card_result))
         
         if not card_result:
             return jsonify({
