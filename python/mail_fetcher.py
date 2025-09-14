@@ -220,7 +220,8 @@ class ProxyMailFetcher:
             error_message = str(e)
             
             # Don't double-wrap error messages that already contain connection info
-            if "代理" not in error_message and "直连" not in error_message:
+            # Check for various patterns including parentheses to avoid duplication
+            if not any(pattern in error_message for pattern in ["代理", "直连", "(代理)", "(直连)", "通过代理", "通过直连"]):
                 if self.proxy_enabled:
                     error_message += f" (通过{connection_method}连接)"
                 else:
