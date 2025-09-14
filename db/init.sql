@@ -76,6 +76,14 @@ CREATE TABLE IF NOT EXISTS socks5_proxies (
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
+-- 统一代理ID管理表
+CREATE TABLE IF NOT EXISTS unified_proxy_ids (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    proxy_type TEXT NOT NULL, -- 'http' or 'socks5'
+    proxy_table_id INTEGER NOT NULL, -- 对应http_proxies或socks5_proxies的id
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
 -- 卡密管理表
 CREATE TABLE IF NOT EXISTS cards (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -171,6 +179,8 @@ CREATE INDEX IF NOT EXISTS idx_http_proxies_host_port ON http_proxies(host, port
 CREATE INDEX IF NOT EXISTS idx_http_proxies_status ON http_proxies(status);
 CREATE INDEX IF NOT EXISTS idx_socks5_proxies_host_port ON socks5_proxies(host, port);
 CREATE INDEX IF NOT EXISTS idx_socks5_proxies_status ON socks5_proxies(status);
+CREATE INDEX IF NOT EXISTS idx_unified_proxy_ids_type ON unified_proxy_ids(proxy_type);
+CREATE INDEX IF NOT EXISTS idx_unified_proxy_ids_table_id ON unified_proxy_ids(proxy_table_id);
 CREATE INDEX IF NOT EXISTS idx_cards_key ON cards(card_key);
 CREATE INDEX IF NOT EXISTS idx_cards_status ON cards(status);
 CREATE INDEX IF NOT EXISTS idx_card_logs_card_id ON card_logs(card_id);
