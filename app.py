@@ -163,16 +163,19 @@ def migrate_proxy_tables(db, db_type):
                 
         else:
             cursor = db.cursor()
-            if db_type == 'mysql':
-                cursor.execute("SHOW COLUMNS FROM http_proxies LIKE 'unified_id'")
-                if not cursor.fetchone():
-                    cursor.execute('ALTER TABLE http_proxies ADD COLUMN unified_id INT DEFAULT 0')
-                    logger.info("Added unified_id column to http_proxies table")
-            elif db_type == 'postgresql':
-                cursor.execute("SELECT column_name FROM information_schema.columns WHERE table_name='http_proxies' AND column_name='unified_id'")
-                if not cursor.fetchone():
-                    cursor.execute('ALTER TABLE http_proxies ADD COLUMN unified_id INTEGER DEFAULT 0')
-                    logger.info("Added unified_id column to http_proxies table")
+            try:
+                if db_type == 'mysql':
+                    cursor.execute("SHOW COLUMNS FROM http_proxies LIKE 'unified_id'")
+                    if not cursor.fetchone():
+                        cursor.execute('ALTER TABLE http_proxies ADD COLUMN unified_id INT DEFAULT 0')
+                        logger.info("Added unified_id column to http_proxies table")
+                elif db_type == 'postgresql':
+                    cursor.execute("SELECT column_name FROM information_schema.columns WHERE table_name='http_proxies' AND column_name='unified_id'")
+                    if not cursor.fetchone():
+                        cursor.execute('ALTER TABLE http_proxies ADD COLUMN unified_id INTEGER DEFAULT 0')
+                        logger.info("Added unified_id column to http_proxies table")
+            except Exception as e:
+                logger.error(f"Error checking/adding unified_id to http_proxies: {e}")
         
         # 检查socks5_proxies表是否有unified_id列
         if db_type == 'sqlite':
@@ -185,16 +188,19 @@ def migrate_proxy_tables(db, db_type):
                 
         else:
             cursor = db.cursor()
-            if db_type == 'mysql':
-                cursor.execute("SHOW COLUMNS FROM socks5_proxies LIKE 'unified_id'")
-                if not cursor.fetchone():
-                    cursor.execute('ALTER TABLE socks5_proxies ADD COLUMN unified_id INT DEFAULT 0')
-                    logger.info("Added unified_id column to socks5_proxies table")
-            elif db_type == 'postgresql':
-                cursor.execute("SELECT column_name FROM information_schema.columns WHERE table_name='socks5_proxies' AND column_name='unified_id'")
-                if not cursor.fetchone():
-                    cursor.execute('ALTER TABLE socks5_proxies ADD COLUMN unified_id INTEGER DEFAULT 0')
-                    logger.info("Added unified_id column to socks5_proxies table")
+            try:
+                if db_type == 'mysql':
+                    cursor.execute("SHOW COLUMNS FROM socks5_proxies LIKE 'unified_id'")
+                    if not cursor.fetchone():
+                        cursor.execute('ALTER TABLE socks5_proxies ADD COLUMN unified_id INT DEFAULT 0')
+                        logger.info("Added unified_id column to socks5_proxies table")
+                elif db_type == 'postgresql':
+                    cursor.execute("SELECT column_name FROM information_schema.columns WHERE table_name='socks5_proxies' AND column_name='unified_id'")
+                    if not cursor.fetchone():
+                        cursor.execute('ALTER TABLE socks5_proxies ADD COLUMN unified_id INTEGER DEFAULT 0')
+                        logger.info("Added unified_id column to socks5_proxies table")
+            except Exception as e:
+                logger.error(f"Error checking/adding unified_id to socks5_proxies: {e}")
         
         # 为现有代理分配统一ID
         assign_unified_ids_to_existing_proxies(db, db_type)
