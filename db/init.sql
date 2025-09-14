@@ -143,6 +143,23 @@ INSERT OR IGNORE INTO system_config (config_key, config_value, config_type, desc
 ('site_url', 'http://localhost:8005', 'string', '站点URL', 0),
 ('admin_email', 'admin@example.com', 'string', '管理员邮箱', 0);
 
+-- 代理配置管理表（统一代理设置）
+CREATE TABLE IF NOT EXISTS proxy_config (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    config_key TEXT NOT NULL UNIQUE,
+    config_value TEXT NOT NULL,
+    description TEXT DEFAULT '',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 插入默认代理配置
+INSERT OR IGNORE INTO proxy_config (config_key, config_value, description) VALUES 
+('proxy_enabled', '0', '是否启用代理功能'),
+('active_proxy_type', '', '当前激活的代理类型（http/socks5）'),
+('active_proxy_id', '0', '当前激活的代理ID'),
+('proxy_auto_select', '1', '是否自动选择序号ID为1的代理');
+
 -- 创建索引（增强版）
 CREATE INDEX IF NOT EXISTS idx_mail_accounts_email ON mail_accounts(email);
 CREATE INDEX IF NOT EXISTS idx_mail_accounts_created_at ON mail_accounts(created_at);
@@ -161,3 +178,4 @@ CREATE INDEX IF NOT EXISTS idx_card_logs_created_at ON card_logs(created_at);
 CREATE INDEX IF NOT EXISTS idx_mail_logs_email ON mail_logs(email);
 CREATE INDEX IF NOT EXISTS idx_mail_logs_created_at ON mail_logs(created_at);
 CREATE INDEX IF NOT EXISTS idx_system_config_key ON system_config(config_key);
+CREATE INDEX IF NOT EXISTS idx_proxy_config_key ON proxy_config(config_key);
