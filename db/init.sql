@@ -94,7 +94,7 @@ CREATE TABLE IF NOT EXISTS cards (
     status INTEGER DEFAULT 1,       -- 1: 可用, 0: 禁用, 2: 已用完
     expired_at DATETIME DEFAULT NULL,  -- 过期时间
     bound_email_id INTEGER DEFAULT NULL,  -- 绑定的邮箱ID
-    email_days_filter INTEGER DEFAULT 7,  -- 收取多少天内的邮件
+    email_days_filter INTEGER DEFAULT 1,  -- 收取多少天内的邮件
     sender_filter TEXT DEFAULT '',  -- 指定发件人邮箱地址过滤 (逗号分隔多个地址)
     remarks TEXT DEFAULT '',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
