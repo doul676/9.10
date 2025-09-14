@@ -704,6 +704,9 @@
                     <button class="btn btn-success" onclick="showBatchGenerateModal()">
                         <i>📦</i> 批量生成卡密
                     </button>
+                    <button class="btn btn-secondary" onclick="openRecycleBin()">
+                        <i>🗂️</i> 回收站
+                    </button>
                     <button class="btn btn-danger" onclick="batchDeleteCards()" style="display: none;" id="batchDeleteBtn">
                         <i>🗑️</i> 批量删除
                     </button>
@@ -1234,6 +1237,12 @@
         selectedCards.clear();
         loadCardStats();
         loadCardList(currentPage);
+    }
+    
+    // 打开回收站
+    function openRecycleBin() {
+        // 在新窗口中打开回收站页面
+        window.open('/admin/recycle-bin', '_blank');
     }
 
     // 切换单个卡密选择

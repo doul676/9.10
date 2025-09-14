@@ -172,6 +172,31 @@ INSERT OR IGNORE INTO proxy_config (config_key, config_value, description) VALUE
 ('active_proxy_id', '0', '当前激活的代理ID'),
 ('proxy_auto_select', '1', '是否自动选择序号ID为1的代理');
 
+-- 卡密回收站表
+CREATE TABLE IF NOT EXISTS cards_recycle_bin (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    original_card_id INTEGER NOT NULL,
+    card_key TEXT NOT NULL,
+    card_type TEXT NOT NULL DEFAULT 'general',
+    usage_limit INTEGER DEFAULT 1,
+    used_count INTEGER DEFAULT 0,
+    status INTEGER DEFAULT 0,  -- 0: 回收站中
+    expired_at DATETIME DEFAULT NULL,
+    bound_email_id INTEGER DEFAULT NULL,
+    email_days_filter INTEGER DEFAULT 1,
+    sender_filter TEXT DEFAULT '',
+    remarks TEXT DEFAULT '',
+    delete_reason TEXT DEFAULT '',  -- 删除原因：'expired', 'used_up', 'manual_delete'
+    original_created_at DATETIME DEFAULT NULL,
+    original_updated_at DATETIME DEFAULT NULL,
+    deleted_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    deleted_by TEXT DEFAULT 'system'  -- 删除者：'system', 'admin:username'
+);
+
+CREATE INDEX IF NOT EXISTS idx_cards_recycle_bin_key ON cards_recycle_bin(card_key);
+CREATE INDEX IF NOT EXISTS idx_cards_recycle_bin_deleted_at ON cards_recycle_bin(deleted_at);
+CREATE INDEX IF NOT EXISTS idx_cards_recycle_bin_reason ON cards_recycle_bin(delete_reason);
+CREATE INDEX IF NOT EXISTS idx_cards_recycle_bin_original_id ON cards_recycle_bin(original_card_id);
 -- 创建索引（增强版）
 CREATE INDEX IF NOT EXISTS idx_mail_accounts_email ON mail_accounts(email);
 CREATE INDEX IF NOT EXISTS idx_mail_accounts_created_at ON mail_accounts(created_at);
