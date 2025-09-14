@@ -1458,10 +1458,13 @@
         // 生成API页面链接
         const apiUrl = `${window.location.origin}/admin/api/cards/generate-api/${cardKey}`;
         
+        // 打开API页面
+        window.open(apiUrl, '_blank');
+        
         // 复制链接到剪贴板
         copyToClipboard(apiUrl);
         
-        showToast('API链接已复制到剪贴板', 'success');
+        showToast('API页面已打开，链接已复制到剪贴板', 'success');
     }
 
     // 加载邮箱列表（用于绑定）- 更新为只获取未绑定的邮箱
