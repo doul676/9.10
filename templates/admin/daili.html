@@ -749,7 +749,7 @@
                         <thead>
                             <tr>
                                 <th><input type="checkbox" id="proxySelectAll" onchange="toggleSelectAll()"></th>
-                                <th>序号ID</th>
+                                <th>数据库ID</th>
                                 <th>类型</th>
                                 <th>代理名称</th>
                                 <th>地址:端口</th>
@@ -927,7 +927,7 @@
             statusIcon.textContent = '⚪';
             statusText.textContent = '未启用';
             statusText.style.color = '#6b7280';
-            statusDetails.textContent = '点击"开启代理"按钮自动选择序号ID为1的代理';
+            statusDetails.textContent = '点击"开启代理"按钮智能选择延迟最低的代理，或手动切换到指定代理';
             statusDetails.style.color = '#6b7280';
             
             enableBtn.style.display = 'inline-block';
@@ -1102,7 +1102,7 @@
                 <td><input type="checkbox" class="proxy-checkbox" value="${proxyType}-${proxy.id}" onchange="toggleProxySelection('${proxyType}', ${proxy.id})"></td>
                 <td><strong>${unifiedId}</strong></td>
                 <td><span style="background: ${proxyType === 'http' ? '#dbeafe' : '#fef3c7'}; color: ${proxyType === 'http' ? '#1e40af' : '#92400e'}; padding: 2px 6px; border-radius: 4px; font-size: 12px; font-weight: 500;">${proxy.proxy_type}</span></td>
-                <td>${escapeHtml(proxy.name)}</td>
+                <td>${escapeHtml(proxy.name) || '空白'}</td>
                 <td>${escapeHtml(proxy.host)}:${proxy.port}</td>
                 <td>${escapeHtml(proxy.username || '-')}</td>
                 <td>${proxy.password ? '******' : '-'}</td>
@@ -1112,7 +1112,7 @@
                 <td>${escapeHtml(proxy.remarks || '-')}</td>
                 <td>
                     <div class="actions" style="display: flex; gap: 5px; flex-wrap: wrap;">
-                        <button class="btn btn-primary btn-small" onclick="switchProxy('${proxyType}', ${proxy.id}, '${escapeHtml(proxy.name)}')" title="切换到此代理">切换</button>
+                        <button class="btn btn-primary btn-small" onclick="switchProxy('${proxyType}', ${proxy.id}, '${escapeHtml(proxy.name) || '空白'}')" title="切换到此代理">切换</button>
                         <button class="btn btn-success btn-small" onclick="editProxy('${proxyType}', ${proxy.id})">编辑</button>
                         <button class="btn btn-warning btn-small" onclick="testSingleProxy('${proxyType}', ${proxy.id})">测试</button>
                         <button class="btn btn-danger btn-small" onclick="deleteProxy('${proxyType}', ${proxy.id})">删除</button>
