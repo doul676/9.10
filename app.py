@@ -153,6 +153,9 @@ def init_db():
             # 数据库迁移：为现有代理表添加unified_id列
             migrate_proxy_tables(db, db_type)
             
+            # 数据库迁移：为cards表添加新字段
+            migrate_cards_table(db, db_type)
+            
             # 创建管理员用户表（兼容原有PHP版本）
             create_admin_table(db, db_type)
             
@@ -298,6 +301,60 @@ def migrate_proxy_tables(db, db_type):
             
     except Exception as e:
         logger.error(f"Error during proxy table migration: {e}")
+
+def migrate_cards_table(db, db_type):
+    """迁移cards表，添加新的邮件管理字段"""
+    try:
+        # 检查cards表是否有新字段
+        new_columns = [
+            ('bound_email_id', 'INTEGER DEFAULT NULL'),
+            ('email_days_filter', 'INTEGER DEFAULT 7'),
+            ('sender_filter', 'TEXT DEFAULT \'\'')
+        ]
+        
+        for column_name, column_def in new_columns:
+            if db_type == 'sqlite':
+                # 检查列是否存在
+                result = db.execute("PRAGMA table_info(cards)").fetchall()
+                existing_columns = [col[1] for col in result]
+                
+                if column_name not in existing_columns:
+                    if db_type == 'sqlite':
+                        if column_name == 'bound_email_id':
+                            db.execute('ALTER TABLE cards ADD COLUMN bound_email_id INTEGER DEFAULT NULL')
+                        elif column_name == 'email_days_filter':
+                            db.execute('ALTER TABLE cards ADD COLUMN email_days_filter INTEGER DEFAULT 7')
+                        elif column_name == 'sender_filter':
+                            db.execute('ALTER TABLE cards ADD COLUMN sender_filter TEXT DEFAULT \'\'')
+                    logger.info(f"Added {column_name} column to cards table")
+                    
+            else:
+                cursor = db.cursor()
+                try:
+                    if db_type == 'mysql':
+                        cursor.execute(f"SHOW COLUMNS FROM cards LIKE '{column_name}'")
+                        if not cursor.fetchone():
+                            mysql_def = column_def.replace('INTEGER', 'INT').replace('TEXT', 'TEXT')
+                            cursor.execute(f'ALTER TABLE cards ADD COLUMN {column_name} {mysql_def}')
+                            logger.info(f"Added {column_name} column to cards table")
+                    elif db_type == 'postgresql':
+                        cursor.execute(f"SELECT column_name FROM information_schema.columns WHERE table_name='cards' AND column_name='{column_name}'")
+                        if not cursor.fetchone():
+                            pg_def = column_def.replace('INTEGER', 'INTEGER').replace('TEXT', 'TEXT')
+                            cursor.execute(f'ALTER TABLE cards ADD COLUMN {column_name} {pg_def}')
+                            logger.info(f"Added {column_name} column to cards table")
+                except Exception as e:
+                    logger.error(f"Error checking/adding {column_name} to cards: {e}")
+        
+        if db_type != 'sqlite':
+            db.commit()
+        else:
+            db.commit()
+            
+        logger.info("Cards table migration completed successfully")
+        
+    except Exception as e:
+        logger.error(f"Error during cards table migration: {e}")
 
 def assign_unified_ids_to_existing_proxies(db, db_type):
     """为现有代理分配统一ID（按创建时间顺序，确保ID连续）"""
@@ -2858,6 +2915,9 @@ def _edit_card(db, data):
     usage_limit = data.get('usage_limit', 1)
     expired_at = data.get('expired_at')
     remarks = data.get('remarks', '')
+    bound_email_id = data.get('bound_email_id')
+    email_days_filter = data.get('email_days_filter', 7)
+    sender_filter = data.get('sender_filter', '')
     
     if not card_id:
         return jsonify({
@@ -2867,6 +2927,21 @@ def _edit_card(db, data):
     
     try:
         now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        
+        # 验证bound_email_id是否有效（如果提供）
+        if bound_email_id:
+            if app.config['DATABASE_TYPE'] == 'sqlite':
+                email_exists = db.execute('SELECT id FROM mail_accounts WHERE id = ?', (bound_email_id,)).fetchone()
+            else:
+                cursor = db.cursor()
+                cursor.execute('SELECT id FROM mail_accounts WHERE id = %s', (bound_email_id,))
+                email_exists = cursor.fetchone()
+            
+            if not email_exists:
+                return jsonify({
+                    'success': False,
+                    'message': '指定的邮箱不存在'
+                })
         
         if app.config['DATABASE_TYPE'] == 'sqlite':
             # 检查卡密是否存在
@@ -2880,9 +2955,10 @@ def _edit_card(db, data):
             # 更新卡密
             db.execute('''
                 UPDATE cards 
-                SET usage_limit = ?, expired_at = ?, remarks = ?, updated_at = ?
+                SET usage_limit = ?, expired_at = ?, remarks = ?, 
+                    bound_email_id = ?, email_days_filter = ?, sender_filter = ?, updated_at = ?
                 WHERE id = ?
-            ''', (usage_limit, expired_at, remarks, now, card_id))
+            ''', (usage_limit, expired_at, remarks, bound_email_id, email_days_filter, sender_filter, now, card_id))
             db.commit()
         else:
             cursor = db.cursor()
@@ -2898,9 +2974,10 @@ def _edit_card(db, data):
             # 更新卡密
             cursor.execute('''
                 UPDATE cards 
-                SET usage_limit = %s, expired_at = %s, remarks = %s, updated_at = %s
+                SET usage_limit = %s, expired_at = %s, remarks = %s, 
+                    bound_email_id = %s, email_days_filter = %s, sender_filter = %s, updated_at = %s
                 WHERE id = %s
-            ''', (usage_limit, expired_at, remarks, now, card_id))
+            ''', (usage_limit, expired_at, remarks, bound_email_id, email_days_filter, sender_filter, now, card_id))
             db.commit()
         
         return jsonify({
@@ -2973,6 +3050,69 @@ def _bind_email_to_card(db, data):
         return jsonify({
             'success': False,
             'message': f'绑定失败: {str(e)}'
+        })
+
+@app.route('/admin/api/cards/<int:card_id>/generate-api', methods=['POST'])
+@admin_required
+def api_admin_generate_card_api(card_id):
+    """为卡密生成API密钥"""
+    db = get_db()
+    db_type = app.config['DATABASE_TYPE']
+    
+    try:
+        # 检查卡密是否存在
+        if db_type == 'sqlite':
+            card = db.execute('SELECT * FROM cards WHERE id = ?', (card_id,)).fetchone()
+        else:
+            cursor = db.cursor()
+            cursor.execute('SELECT * FROM cards WHERE id = %s', (card_id,))
+            card = cursor.fetchone()
+        
+        if not card:
+            return jsonify({
+                'success': False,
+                'message': '卡密不存在'
+            })
+        
+        # 生成API密钥 (使用card_key作为基础生成)
+        import hashlib
+        import time
+        
+        if db_type == 'sqlite':
+            card_dict = dict(card)
+            card_key = card_dict['card_key']
+        else:
+            columns = [desc[0] for desc in cursor.description] if 'cursor' in locals() else []
+            card_dict = dict(zip(columns, card)) if columns else {'card_key': card[1]}
+            card_key = card_dict['card_key']
+        
+        # 生成API密钥 - 使用卡密+时间戳+固定盐值的SHA256
+        timestamp = str(int(time.time()))
+        salt = "mail_system_api_2024"
+        api_key = hashlib.sha256(f"{card_key}_{timestamp}_{salt}".encode()).hexdigest()[:32]
+        
+        return jsonify({
+            'success': True,
+            'message': 'API密钥生成成功',
+            'api_key': api_key,
+            'usage_instructions': {
+                'endpoint': f'/api/get_mail',
+                'method': 'POST',
+                'headers': {
+                    'Content-Type': 'application/json',
+                    'Authorization': f'Bearer {api_key}'
+                },
+                'body': {
+                    'email': '目标邮箱地址',
+                    'card_key': card_key
+                }
+            }
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': f'生成API密钥失败: {str(e)}'
         })
 
 @app.route('/admin/api/card-logs')
