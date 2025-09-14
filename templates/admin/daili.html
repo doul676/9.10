@@ -794,7 +794,7 @@
                     <div class="form-group">
                         <label for="proxyName">代理名称</label>
                         <input type="text" id="proxyName" name="name" 
-                               placeholder="留空将自动生成（未命名1、未命名2...）">
+                               placeholder="留空将默认设置为"空白"">
                     </div>
                     
                     <div class="form-group">
@@ -1055,17 +1055,12 @@
                     ...socks5Data.data.map(proxy => ({ ...proxy, proxy_type: 'SOCKS5' }))
                 ];
                 
-                // 统一ID排序：先按创建时间排序，再按实际数据库ID排序，确保严格递增的序号ID分配
+                // 按ID排序，确保显示与实际数据库ID一致
                 allProxies.sort((a, b) => {
-                    // 首先按创建时间排序
-                    const dateA = new Date(a.created_at || '1970-01-01');
-                    const dateB = new Date(b.created_at || '1970-01-01');
-                    
-                    if (dateA.getTime() !== dateB.getTime()) {
-                        return dateA.getTime() - dateB.getTime();
+                    // 按代理类型分组，然后按ID排序
+                    if (a.proxy_type !== b.proxy_type) {
+                        return a.proxy_type.localeCompare(b.proxy_type);
                     }
-                    
-                    // 创建时间相同时，按ID排序
                     return a.id - b.id;
                 });
                 
@@ -1100,9 +1095,8 @@
             const statusBadge = getStatusBadge(proxy.status, proxy.response_time);
             const proxyType = proxy.proxy_type.toLowerCase();
             
-            // 使用统一的序号ID：全局排序后的索引 + 1
-            const globalIndex = allProxies.findIndex(p => p.id === proxy.id && p.proxy_type === proxy.proxy_type);
-            const unifiedId = globalIndex + 1;
+            // 使用实际的数据库ID，确保显示与实际ID一致
+            const unifiedId = proxy.id;
             
             row.innerHTML = `
                 <td><input type="checkbox" class="proxy-checkbox" value="${proxyType}-${proxy.id}" onchange="toggleProxySelection('${proxyType}', ${proxy.id})"></td>
