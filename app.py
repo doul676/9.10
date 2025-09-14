@@ -1001,9 +1001,6 @@ def api_admin_mailbox():
                 cursor.execute('DELETE FROM mail_accounts WHERE id = %s', (account_id,))
                 db.commit()
             
-            # 重新排序邮箱ID
-            reorder_mailbox_ids(db, app.config['DATABASE_TYPE'])
-            
             return jsonify({
                 'success': True,
                 'message': '邮箱删除成功'
@@ -1449,9 +1446,6 @@ def _batch_delete_mailbox(db, data):
             placeholders = ','.join(['%s' for _ in account_ids])
             cursor.execute(f'DELETE FROM mail_accounts WHERE id IN ({placeholders})', account_ids)
             db.commit()
-        
-        # 重新排序邮箱ID
-        reorder_mailbox_ids(db, app.config['DATABASE_TYPE'])
         
         return jsonify({
             'success': True,
@@ -1952,11 +1946,10 @@ def _perform_proxy_test(proxy, proxy_type):
         username = proxy['username'] or None
         password = proxy['password'] or None
         
-        # 优化测试目标 - 使用更快的目标进行测试
+        # 优化测试目标 - 使用baidu.com和163.com进行测试
         test_urls = [
-            ('http://httpbin.org/ip', 8),      # 快速IP检测服务
-            ('http://baidu.com', 10),          # 国内网站
-            ('http://163.com', 10)             # 备用网站
+            ('http://baidu.com', 10),          # 百度网站
+            ('http://163.com', 10)             # 网易163网站
         ]
         results = []
         
@@ -1991,22 +1984,11 @@ def _perform_proxy_test(proxy, proxy_type):
                 )
                 response_time = int((time.time() - start_time) * 1000)
                 
-                # 检测真实IP（如果是httpbin.org）
-                real_ip = 'Unknown'
-                if 'httpbin.org' in url and response.status_code == 200:
-                    try:
-                        import json
-                        ip_data = response.json()
-                        real_ip = ip_data.get('origin', 'Unknown')
-                    except:
-                        pass
-                
                 if response.status_code == 200:
                     results.append({
                         'url': url,
                         'success': True,
                         'response_time': response_time,
-                        'ip': real_ip,
                         'status_code': response.status_code
                     })
                     # 如果第一个测试成功，就不再测试其他URL以提高性能
@@ -2077,10 +2059,6 @@ def _perform_proxy_test(proxy, proxy_type):
             avg_response_time = successful_tests[0]['response_time']
             message = f"测试成功，延迟: {avg_response_time}ms"
             
-            # 如果检测到真实IP，显示在消息中
-            if 'ip' in successful_tests[0] and successful_tests[0]['ip'] != 'Unknown':
-                message += f"，IP: {successful_tests[0]['ip']}"
-                
             if len(successful_tests) > 1:
                 message += f"，成功: {len(successful_tests)}/{len(results)}"
                 

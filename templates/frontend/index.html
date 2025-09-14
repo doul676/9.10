@@ -615,16 +615,16 @@
                     displayMail(data.mail);
                     // 组合成功消息包含连接状态
                     let successMessage = '';
-                    if (data.proxy && data.proxy.enabled && data.proxy.info) {
-                        successMessage = '【邮件获取成功（代理）】';
+                    if (data.proxy && data.proxy.enabled) {
+                        successMessage = '邮件获取成功（代理）';
                     } else {
-                        successMessage = '【邮件获取成功（直连）】';
+                        successMessage = '邮件获取成功（直连）';
                     }
                     showMessage(successMessage, 'success');
                 } else {
                     // 组合无邮件消息包含连接状态
                     let noMailMessage = '邮箱中暂无邮件';
-                    if (data.proxy && data.proxy.enabled && data.proxy.info) {
+                    if (data.proxy && data.proxy.enabled) {
                         noMailMessage += ' (通过代理)';
                     } else {
                         noMailMessage += ' (直连)';
@@ -634,8 +634,12 @@
             } else {
                 // 组合失败消息包含连接状态
                 let errorMessage = data.message || '获取邮件失败';
-                if (data.proxy && data.proxy.enabled && data.proxy.info) {
-                    errorMessage += ` (代理连接: ${data.proxy.info.name})`;
+                if (data.proxy && data.proxy.enabled) {
+                    if (data.proxy.info && data.proxy.info.name) {
+                        errorMessage += ` (代理连接: ${data.proxy.info.name})`;
+                    } else {
+                        errorMessage += ' (代理连接)';
+                    }
                 } else {
                     errorMessage += ' (直连)';
                 }
