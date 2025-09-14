@@ -649,8 +649,16 @@
                 </div>
 
                 <!-- 搜索框 -->
-                <div class="form-group" style="max-width: 300px;">
-                    <input type="text" class="form-control" id="searchInput" placeholder="搜索卡密..." onkeyup="searchCards()">
+                <div class="form-group" style="max-width: 500px;">
+                    <div style="display: flex; gap: 10px; align-items: center;">
+                        <input type="text" class="form-control" id="searchInput" placeholder="搜索卡密..." onkeyup="searchCards()" style="flex: 1;">
+                        <button class="btn btn-primary btn-sm" onclick="searchCards()" title="搜索">
+                            <i>🔍</i> 搜索
+                        </button>
+                        <button class="btn btn-secondary btn-sm" onclick="clearSearch()" title="清除搜索">
+                            <i>🗑️</i> 清除
+                        </button>
+                    </div>
                 </div>
 
                 <!-- 卡密列表 -->
@@ -666,9 +674,9 @@
                                 <th>使用次数</th>
                                 <th>使用时间</th>
                                 <th>过期时间</th>
+                                <th>绑定邮箱</th>
                                 <th>备注</th>
                                 <th>创建时间</th>
-                                <th>状态</th>
                                 <th>操作</th>
                             </tr>
                         </thead>
@@ -786,6 +794,42 @@
             </div>
         </div>
     </div>
+
+    <!-- 编辑卡密弹窗 -->
+    <div id="editModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 class="modal-title">编辑卡密</h3>
+                <button class="modal-close" onclick="closeModal('editModal')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form id="editForm">
+                    <input type="hidden" name="card_id" id="editCardId">
+                    <div class="form-group">
+                        <label class="form-label">卡密</label>
+                        <input type="text" class="form-control" id="editCardKey" readonly>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">使用次数限制</label>
+                        <input type="number" class="form-control" name="usage_limit" id="editUsageLimit" min="1" required>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">过期时间</label>
+                        <input type="datetime-local" class="form-control" name="expired_at" id="editExpiredAt">
+                        <small style="color: #6b7280;">留空则永不过期</small>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">备注</label>
+                        <input type="text" class="form-control" name="remarks" id="editRemarks" placeholder="卡密用途说明">
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="closeModal('editModal')">取消</button>
+                <button type="button" class="btn btn-primary" onclick="saveEdit()">保存</button>
+            </div>
+        </div>
+    </div>
 </div>
 {% endblock %}
 
@@ -793,7 +837,7 @@
 <script>
     // 全局变量
     let currentPage = 1;
-    let perPage = 10;
+    let perPage = 20;
     let totalPages = 1;
     let selectedCards = new Set();
     let allCards = [];
@@ -868,29 +912,35 @@
             return;
         }
 
-        tbody.innerHTML = cards.map(card => `
+        tbody.innerHTML = cards.map((card, index) => `
             <tr>
                 <td>
                     <input type="checkbox" class="card-checkbox" value="${card.id}" 
                            onchange="toggleCardSelection(${card.id})" 
                            ${selectedCards.has(card.id) ? 'checked' : ''}>
                 </td>
-                <td>${card.id}</td>
+                <td>${index + 1 + (currentPage - 1) * perPage}</td>
                 <td>
-                    <code style="background: #f3f4f6; padding: 2px 6px; border-radius: 4px; font-family: monospace;">
-                        ${card.card_key}
-                    </code>
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <code style="background: #f3f4f6; padding: 2px 6px; border-radius: 4px; font-family: monospace;">
+                            ${card.card_key}
+                        </code>
+                        <button class="btn btn-sm" onclick="copyToClipboard('${card.card_key}')" 
+                                title="复制卡密" style="padding: 2px 6px; background: #e5e7eb; border: none; border-radius: 4px; cursor: pointer;">
+                            📋
+                        </button>
+                    </div>
                 </td>
                 <td>${card.used_count}/${card.usage_limit}</td>
                 <td>${card.last_used_at || '-'}</td>
                 <td>${card.expired_at || '永不过期'}</td>
-                <td>${card.remarks || '-'}</td>
+                <td>${getBoundEmail(card.remarks) || '-'}</td>
+                <td>${getCardRemarks(card.remarks) || '-'}</td>
                 <td>${formatDateTime(card.created_at)}</td>
-                <td>${getStatusBadge(card)}</td>
                 <td>
                     <div style="display: flex; gap: 5px;">
-                        <button class="btn btn-sm btn-primary" onclick="showBindEmailModal(${card.id}, '${card.card_key}')" 
-                                title="绑定邮箱">📧</button>
+                        <button class="btn btn-sm btn-primary" onclick="showEditModal(${card.id}, '${card.card_key}', '${card.remarks || ''}', '${card.expired_at || ''}', ${card.usage_limit})" 
+                                title="编辑">✏️</button>
                         <button class="btn btn-sm btn-success" onclick="apiPickup('${card.card_key}')" 
                                 title="API取件">📥</button>
                         <button class="btn btn-sm btn-danger" onclick="deleteCard(${card.id})" 
@@ -901,7 +951,54 @@
         `).join('');
     }
 
-    // 获取状态徽章
+    // 复制到剪贴板
+    function copyToClipboard(text) {
+        if (navigator.clipboard && window.isSecureContext) {
+            navigator.clipboard.writeText(text).then(() => {
+                showAlert('success', '卡密已复制到剪贴板');
+            }).catch(() => {
+                fallbackCopyToClipboard(text);
+            });
+        } else {
+            fallbackCopyToClipboard(text);
+        }
+    }
+
+    // 备用复制方法
+    function fallbackCopyToClipboard(text) {
+        const textArea = document.createElement('textarea');
+        textArea.value = text;
+        textArea.style.position = 'fixed';
+        textArea.style.left = '-999999px';
+        textArea.style.top = '-999999px';
+        document.body.appendChild(textArea);
+        textArea.focus();
+        textArea.select();
+        try {
+            document.execCommand('copy');
+            showAlert('success', '卡密已复制到剪贴板');
+        } catch (err) {
+            showAlert('error', '复制失败，请手动复制');
+        }
+        document.body.removeChild(textArea);
+    }
+
+    // 从备注中提取绑定邮箱
+    function getBoundEmail(remarks) {
+        if (!remarks) return '';
+        const match = remarks.match(/绑定邮箱:\s*([^\s,，；;]+)/);
+        return match ? match[1] : '';
+    }
+
+    // 从备注中提取实际备注内容（排除绑定邮箱部分）
+    function getCardRemarks(remarks) {
+        if (!remarks) return '';
+        // 如果包含绑定邮箱信息，则提取其他部分
+        if (remarks.includes('绑定邮箱:')) {
+            return remarks.replace(/绑定邮箱:\s*[^\s,，；;]+\s*[,，；;]?\s*/, '').trim();
+        }
+        return remarks;
+    }
     function getStatusBadge(card) {
         const now = new Date();
         const expiredAt = card.expired_at ? new Date(card.expired_at) : null;
@@ -969,6 +1066,12 @@
 
     // 搜索卡密
     function searchCards() {
+        loadCardList(1);
+    }
+
+    // 清除搜索
+    function clearSearch() {
+        document.getElementById('searchInput').value = '';
         loadCardList(1);
     }
 
@@ -1212,7 +1315,63 @@
             });
     }
 
-    // 显示绑定邮箱弹窗
+    // 显示编辑卡密弹窗
+    function showEditModal(cardId, cardKey, remarks, expiredAt, usageLimit) {
+        document.getElementById('editCardId').value = cardId;
+        document.getElementById('editCardKey').value = cardKey;
+        document.getElementById('editUsageLimit').value = usageLimit;
+        document.getElementById('editExpiredAt').value = expiredAt ? formatDateTimeForInput(expiredAt) : '';
+        document.getElementById('editRemarks').value = getCardRemarks(remarks) || '';
+        document.getElementById('editModal').classList.add('show');
+    }
+
+    // 保存编辑
+    function saveEdit() {
+        const form = document.getElementById('editForm');
+        const formData = new FormData(form);
+        
+        const data = {
+            action: 'edit',
+            card_id: parseInt(formData.get('card_id')),
+            usage_limit: parseInt(formData.get('usage_limit')),
+            expired_at: formData.get('expired_at') || null,
+            remarks: formData.get('remarks') || ''
+        };
+
+        fetch('/admin/api/cards', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(data)
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                showAlert('success', data.message);
+                closeModal('editModal');
+                refreshCardList();
+            } else {
+                showAlert('error', data.message);
+            }
+        })
+        .catch(error => {
+            console.error('编辑卡密失败:', error);
+            showAlert('error', '网络错误，请稍后重试');
+        });
+    }
+
+    // 格式化日期时间用于输入框
+    function formatDateTimeForInput(dateString) {
+        if (!dateString) return '';
+        const date = new Date(dateString);
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        const hours = String(date.getHours()).padStart(2, '0');
+        const minutes = String(date.getMinutes()).padStart(2, '0');
+        return `${year}-${month}-${day}T${hours}:${minutes}`;
+    }
     function showBindEmailModal(cardId, cardKey) {
         document.getElementById('bindCardId').value = cardId;
         document.getElementById('bindCardKey').value = cardKey;
