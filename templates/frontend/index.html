@@ -462,6 +462,10 @@
         background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
     }
     
+    .toast.warning {
+        background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+    }
+    
     .toast::after {
         content: '';
         position: absolute;
@@ -613,12 +617,20 @@
             if (data.success) {
                 if (data.mail) {
                     displayMail(data.mail);
-                    // 组合成功消息包含连接状态
+                    // 组合成功消息包含连接状态和访问方式
                     let successMessage = '';
-                    if (data.proxy && data.proxy.enabled) {
-                        successMessage = '邮件获取成功（代理）';
+                    if (data.access_method === 'admin_login') {
+                        successMessage = '邮件获取成功（管理员）';
+                    } else if (data.access_method === 'card_key') {
+                        successMessage = '邮件获取成功（卡密）';
                     } else {
-                        successMessage = '邮件获取成功（直连）';
+                        successMessage = '邮件获取成功';
+                    }
+                    
+                    if (data.proxy && data.proxy.enabled) {
+                        successMessage += '（代理）';
+                    } else {
+                        successMessage += '（直连）';
                     }
                     showMessage(successMessage, 'success');
                 } else {
@@ -632,24 +644,29 @@
                     showMessage(noMailMessage, 'info');
                 }
             } else {
-                // 组合失败消息包含连接状态 - 避免重复添加连接指示符
-                let errorMessage = data.message || '获取邮件失败';
-                
-                // 检查消息是否已经包含连接指示符，避免重复添加
-                const hasConnectionInfo = /\(直连\)|\(代理\)|\(通过.*\)|\(代理连接.*\)/.test(errorMessage);
-                
-                if (!hasConnectionInfo) {
-                    if (data.proxy && data.proxy.enabled) {
-                        if (data.proxy.info && data.proxy.info.name) {
-                            errorMessage += ` (代理连接: ${data.proxy.info.name})`;
+                // 检查是否需要登录
+                if (data.require_login) {
+                    showToast('请先登录管理员账号以使用邮件查看功能', 'warning', 5000);
+                } else {
+                    // 组合失败消息包含连接状态 - 避免重复添加连接指示符
+                    let errorMessage = data.message || '获取邮件失败';
+                    
+                    // 检查消息是否已经包含连接指示符，避免重复添加
+                    const hasConnectionInfo = /\(直连\)|\(代理\)|\(通过.*\)|\(代理连接.*\)/.test(errorMessage);
+                    
+                    if (!hasConnectionInfo) {
+                        if (data.proxy && data.proxy.enabled) {
+                            if (data.proxy.info && data.proxy.info.name) {
+                                errorMessage += ` (代理连接: ${data.proxy.info.name})`;
+                            } else {
+                                errorMessage += ' (代理连接)';
+                            }
                         } else {
-                            errorMessage += ' (代理连接)';
+                            errorMessage += ' (直连)';
                         }
-                    } else {
-                        errorMessage += ' (直连)';
                     }
+                    showMessage(errorMessage, 'error');
                 }
-                showMessage(errorMessage, 'error');
             }
             
         } catch (error) {

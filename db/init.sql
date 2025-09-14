@@ -102,6 +102,27 @@ CREATE TABLE IF NOT EXISTS cards (
     FOREIGN KEY (bound_email_id) REFERENCES mail_accounts(id)
 );
 
+-- 卡密回收站表（独立数据库概念，但仍在同一文件中）
+CREATE TABLE IF NOT EXISTS card_recycle_bin (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    original_card_id INTEGER,  -- 原卡密的ID
+    card_key TEXT NOT NULL,
+    card_type TEXT NOT NULL DEFAULT 'general',
+    usage_limit INTEGER DEFAULT 1,
+    used_count INTEGER DEFAULT 0,
+    status INTEGER DEFAULT 0,  -- 0: 删除, 2: 已用完, 3: 过期
+    expired_at DATETIME DEFAULT NULL,
+    bound_email_id INTEGER DEFAULT NULL,
+    email_days_filter INTEGER DEFAULT 1,
+    sender_filter TEXT DEFAULT '',
+    remarks TEXT DEFAULT '',
+    deleted_reason TEXT DEFAULT '',  -- 删除原因：manual_delete, used_up, expired
+    deleted_at DATETIME DEFAULT CURRENT_TIMESTAMP,  -- 删除时间
+    deleted_by TEXT DEFAULT '',  -- 删除者（admin用户名）
+    created_at DATETIME DEFAULT NULL,  -- 原创建时间
+    updated_at DATETIME DEFAULT NULL   -- 原更新时间
+);
+
 -- 卡密使用日志表
 CREATE TABLE IF NOT EXISTS card_logs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -187,6 +208,9 @@ CREATE INDEX IF NOT EXISTS idx_unified_proxy_ids_type ON unified_proxy_ids(proxy
 CREATE INDEX IF NOT EXISTS idx_unified_proxy_ids_table_id ON unified_proxy_ids(proxy_table_id);
 CREATE INDEX IF NOT EXISTS idx_cards_key ON cards(card_key);
 CREATE INDEX IF NOT EXISTS idx_cards_status ON cards(status);
+CREATE INDEX IF NOT EXISTS idx_card_recycle_bin_key ON card_recycle_bin(card_key);
+CREATE INDEX IF NOT EXISTS idx_card_recycle_bin_deleted_at ON card_recycle_bin(deleted_at);
+CREATE INDEX IF NOT EXISTS idx_card_recycle_bin_status ON card_recycle_bin(status);
 CREATE INDEX IF NOT EXISTS idx_card_logs_card_id ON card_logs(card_id);
 CREATE INDEX IF NOT EXISTS idx_card_logs_created_at ON card_logs(created_at);
 CREATE INDEX IF NOT EXISTS idx_mail_logs_email ON mail_logs(email);
