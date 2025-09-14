@@ -881,11 +881,20 @@ class ProxyMailFetcher:
             
         try:
             # Simple parsing - can be enhanced for more complex cases
+            address_header = address_header.strip()
+            
             if '<' in address_header and '>' in address_header:
+                # Format: Name <email@domain.com>
                 name_part = address_header.split('<')[0].strip().strip('"')
                 email_part = address_header.split('<')[1].split('>')[0].strip()
                 return self._decode_header(name_part) or email_part, email_part
+            elif '(' in address_header and ')' in address_header:
+                # Format: email@domain.com (Name)
+                email_part = address_header.split('(')[0].strip()
+                name_part = address_header.split('(')[1].split(')')[0].strip()
+                return name_part or email_part, email_part
             else:
+                # Simple format: just email
                 return address_header.strip(), address_header.strip()
         except:
             return address_header, address_header
