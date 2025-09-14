@@ -1160,7 +1160,14 @@ def _add_proxy(db, table_name, data, proxy_type):
     """添加代理"""
     name = data.get('name', '').strip()
     host = data.get('host', '').strip()
-    port = int(data.get('port', 0))
+    port_value = data.get('port')
+    
+    # Handle port conversion more safely
+    try:
+        port = int(port_value) if port_value is not None else 0
+    except (ValueError, TypeError):
+        port = 0
+    
     username = data.get('username', '').strip()
     password = data.get('password', '').strip()
     remarks = data.get('remarks', '').strip()
@@ -1213,7 +1220,14 @@ def _edit_proxy(db, table_name, data):
     
     name = data.get('name', '').strip()
     host = data.get('host', '').strip()
-    port = int(data.get('port', 0))
+    port_value = data.get('port')
+    
+    # Handle port conversion more safely
+    try:
+        port = int(port_value) if port_value is not None else 0
+    except (ValueError, TypeError):
+        port = 0
+    
     username = data.get('username', '').strip()
     password = data.get('password', '').strip()
     remarks = data.get('remarks', '').strip()
@@ -1304,7 +1318,14 @@ def _test_proxy(db, table_name, data, proxy_type):
 def _test_new_proxy(data, proxy_type):
     """测试新代理（无需保存到数据库）"""
     host = data.get('host', '').strip()
-    port = int(data.get('port', 0))
+    port_value = data.get('port')
+    
+    # Handle port conversion more safely
+    try:
+        port = int(port_value) if port_value is not None else 0
+    except (ValueError, TypeError):
+        port = 0
+    
     username = data.get('username', '').strip()
     password = data.get('password', '').strip()
     name = data.get('name', '').strip() or f"临时代理"
