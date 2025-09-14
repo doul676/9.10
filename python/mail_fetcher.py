@@ -673,27 +673,99 @@ class ProxyMailFetcher:
         """Close the connection (alias for disconnect)"""
         self.disconnect()
                 
-    def get_latest_mail(self):
-        """Get the latest email from the mailbox"""
+    def get_latest_mail_filtered(self, filter_params=None):
+        """Get the latest email from the mailbox with filtering support"""
         if not self.connection:
             raise Exception("未连接到邮件服务器")
-            
+        
+        filter_params = filter_params or {}
+        days_filter = filter_params.get('days_filter')
+        sender_filter = filter_params.get('sender_filter', [])
+        
         try:
-            # Search for all messages
-            status, messages = self.connection.search(None, 'ALL')
+            # Search for messages with date filtering if specified
+            search_criteria = ['ALL']
+            
+            # Add date filter if specified (only messages within X days)
+            if days_filter:
+                from datetime import datetime, timedelta
+                since_date = datetime.now() - timedelta(days=days_filter)
+                # IMAP date format: DD-Mon-YYYY
+                since_date_str = since_date.strftime('%d-%b-%Y')
+                search_criteria = ['SINCE', since_date_str]
+            
+            # Search for messages
+            status, messages = self.connection.search(None, *search_criteria)
             
             if status != 'OK' or not messages[0]:
                 return {
                     'success': True,
-                    'message': '邮箱中没有邮件',
+                    'message': '邮箱中没有符合条件的邮件',
                     'mail': None
                 }
             
-            # Get the latest message (highest number)
+            # Get all matching message IDs
             mail_ids = messages[0].split()
-            latest_id = mail_ids[-1]
             
-            # Fetch message data
+            # If we have sender filter, we need to check each message
+            if sender_filter:
+                filtered_mail_ids = []
+                
+                # Process sender filter - clean and normalize email addresses
+                normalized_senders = []
+                for sender in sender_filter:
+                    sender_clean = sender.strip().lower()
+                    if sender_clean:
+                        normalized_senders.append(sender_clean)
+                
+                if normalized_senders:
+                    # Check each message's sender
+                    for mail_id in reversed(mail_ids):  # Check from newest to oldest
+                        try:
+                            # Fetch header only for efficiency
+                            status, header_data = self.connection.fetch(mail_id, '(BODY[HEADER.FIELDS (FROM)])')
+                            
+                            if status == 'OK' and header_data[0]:
+                                header_text = header_data[0][1].decode('utf-8', errors='ignore')
+                                
+                                # Extract From header
+                                from_header = ''
+                                for line in header_text.split('\n'):
+                                    if line.lower().startswith('from:'):
+                                        from_header = line[5:].strip()
+                                        break
+                                
+                                if from_header:
+                                    # Parse the sender email address
+                                    _, sender_email = self._parse_address(from_header)
+                                    sender_email_lower = sender_email.lower()
+                                    
+                                    # Check if sender matches any of the allowed senders
+                                    if any(allowed_sender in sender_email_lower or sender_email_lower == allowed_sender 
+                                          for allowed_sender in normalized_senders):
+                                        filtered_mail_ids.append(mail_id)
+                                        
+                        except Exception as e:
+                            logger.warning(f"Error checking sender for mail {mail_id}: {e}")
+                            continue
+                    
+                    if not filtered_mail_ids:
+                        return {
+                            'success': True,
+                            'message': f'邮箱中没有来自指定发件人的邮件 (过滤条件: {", ".join(sender_filter)})',
+                            'mail': None
+                        }
+                    
+                    # Use the latest filtered message
+                    latest_id = filtered_mail_ids[0]  # Already sorted newest first
+                else:
+                    # If sender filter is empty, use latest message
+                    latest_id = mail_ids[-1]
+            else:
+                # No sender filter, use the latest message
+                latest_id = mail_ids[-1]
+            
+            # Fetch the selected message data
             status, msg_data = self.connection.fetch(latest_id, '(RFC822)')
             
             if status != 'OK':
@@ -706,6 +778,16 @@ class ProxyMailFetcher:
             # Extract email information
             mail_info = self._parse_email(email_message)
             
+            # Add filtering information to the response
+            filter_info = []
+            if days_filter:
+                filter_info.append(f"最近{days_filter}天内")
+            if sender_filter:
+                filter_info.append(f"发件人: {', '.join(sender_filter)}")
+            
+            if filter_info:
+                mail_info['filter_applied'] = '; '.join(filter_info)
+            
             return {
                 'success': True,
                 'mail': mail_info
@@ -716,6 +798,10 @@ class ProxyMailFetcher:
                 'success': False,
                 'message': f'获取邮件失败: {str(e)}'
             }
+            
+    def get_latest_mail(self):
+        """Get the latest email from the mailbox (legacy method, calls filtered version)"""
+        return self.get_latest_mail_filtered()
             
     def _parse_email(self, email_message):
         """Parse email message and extract information"""
@@ -795,11 +881,20 @@ class ProxyMailFetcher:
             
         try:
             # Simple parsing - can be enhanced for more complex cases
+            address_header = address_header.strip()
+            
             if '<' in address_header and '>' in address_header:
+                # Format: Name <email@domain.com>
                 name_part = address_header.split('<')[0].strip().strip('"')
                 email_part = address_header.split('<')[1].split('>')[0].strip()
                 return self._decode_header(name_part) or email_part, email_part
+            elif '(' in address_header and ')' in address_header:
+                # Format: email@domain.com (Name)
+                email_part = address_header.split('(')[0].strip()
+                name_part = address_header.split('(')[1].split(')')[0].strip()
+                return name_part or email_part, email_part
             else:
+                # Simple format: just email
                 return address_header.strip(), address_header.strip()
         except:
             return address_header, address_header
@@ -1077,12 +1172,34 @@ class ProxyMailFetcher:
 
 def main():
     """Main function for CLI usage"""
-    if len(sys.argv) < 2:
-        print("Usage: python mail_fetcher.py <email> [--test-connection]")
-        sys.exit(1)
-        
-    email_address = sys.argv[1]
-    test_mode = len(sys.argv) > 2 and sys.argv[2] == '--test-connection'
+    import argparse
+    
+    parser = argparse.ArgumentParser(description='Email Fetcher with Card Filtering')
+    parser.add_argument('email', help='Email address to fetch from')
+    parser.add_argument('--test-connection', action='store_true', help='Test connection only')
+    parser.add_argument('--days-filter', type=int, default=None, help='Filter emails within X days')
+    parser.add_argument('--sender-filter', type=str, default='', help='Filter by sender email addresses (comma separated)')
+    parser.add_argument('--card-key', type=str, default='', help='Card key for usage tracking')
+    
+    try:
+        args = parser.parse_args()
+    except:
+        # Fallback to old argument parsing for compatibility
+        if len(sys.argv) < 2:
+            print("Usage: python mail_fetcher.py <email> [--test-connection]")
+            sys.exit(1)
+            
+        email_address = sys.argv[1]
+        test_mode = len(sys.argv) > 2 and sys.argv[2] == '--test-connection'
+        days_filter = None
+        sender_filter = ''
+        card_key = ''
+    else:
+        email_address = args.email
+        test_mode = args.test_connection
+        days_filter = args.days_filter
+        sender_filter = args.sender_filter
+        card_key = args.card_key
     
     try:
         # Get email account from database
@@ -1130,9 +1247,16 @@ def main():
                 proxy_info = fetcher.get_proxy_info()
                 result['proxy'] = proxy_info
             else:
-                # Connect and get latest mail
+                # Connect and get latest mail with filtering
                 if fetcher.connect():
-                    result = fetcher.get_latest_mail()
+                    # Apply filtering parameters if provided
+                    filter_params = {}
+                    if days_filter is not None:
+                        filter_params['days_filter'] = days_filter
+                    if sender_filter:
+                        filter_params['sender_filter'] = sender_filter.split(',')
+                    
+                    result = fetcher.get_latest_mail_filtered(filter_params)
                     proxy_info = fetcher.get_proxy_info()
                     result['proxy'] = proxy_info
                     fetcher.close()

@@ -902,28 +902,177 @@ def admin_system():
 
 @app.route('/api/get_mail', methods=['POST'])
 def api_get_mail():
-    """获取邮件 API（简化版本 - 调用现有Python脚本）"""
+    """获取邮件 API（增强版本 - 支持卡密验证和邮件过滤）"""
     try:
         data = request.get_json()
-        if not data or not data.get('email'):
+        if not data:
+            return jsonify({
+                'success': False,
+                'message': '请求数据无效'
+            })
+            
+        email = data.get('email', '').strip()
+        card_key = data.get('card_key', '') or request.headers.get('X-Card-Key', '')
+        
+        # 验证请求参数
+        if not email:
             return jsonify({
                 'success': False,
                 'message': '请提供邮箱地址'
             })
+            
+        if not card_key:
+            return jsonify({
+                'success': False,
+                'message': '请提供卡密'
+            })
         
-        email = data['email'].strip()
+        # 验证卡密并获取卡密信息
+        db = get_db()
+        db_type = app.config['DATABASE_TYPE']
         
-        # 调用现有的Python邮件获取器脚本
         try:
-            result = subprocess.run([
+            # 查询卡密信息
+            if db_type == 'sqlite':
+                card_result = db.execute('''
+                    SELECT c.*, e.email as bound_email, e.server, e.username, e.password, 
+                           e.port, e.protocol, e.ssl
+                    FROM cards c 
+                    LEFT JOIN mail_accounts e ON c.bound_email_id = e.id 
+                    WHERE c.card_key = ?
+                ''', (card_key,)).fetchone()
+            else:
+                cursor = db.cursor()
+                cursor.execute('''
+                    SELECT c.*, e.email as bound_email, e.server, e.username, e.password, 
+                           e.port, e.protocol, e.ssl
+                    FROM cards c 
+                    LEFT JOIN mail_accounts e ON c.bound_email_id = e.id 
+                    WHERE c.card_key = %s
+                ''', (card_key,))
+                card_result = cursor.fetchone()
+            
+            if not card_result:
+                return jsonify({
+                    'success': False,
+                    'message': '卡密不存在或已失效'
+                })
+            
+            # 转换为字典
+            if db_type == 'sqlite':
+                card_info = dict(card_result)
+            else:
+                columns = [desc[0] for desc in cursor.description]
+                card_info = dict(zip(columns, card_result))
+            
+            # 验证卡密状态
+            now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            
+            # 检查卡密是否启用
+            if card_info['status'] != 1:
+                return jsonify({
+                    'success': False,
+                    'message': '卡密已被禁用'
+                })
+            
+            # 检查是否已过期
+            if card_info['expired_at'] and card_info['expired_at'] <= now:
+                return jsonify({
+                    'success': False,
+                    'message': '卡密已过期'
+                })
+            
+            # 检查使用次数是否已用完
+            if card_info['used_count'] >= card_info['usage_limit']:
+                return jsonify({
+                    'success': False,
+                    'message': '卡密使用次数已用完'
+                })
+            
+            # 如果卡密绑定了邮箱，检查邮箱是否匹配
+            if card_info['bound_email_id'] and card_info['bound_email']:
+                if email != card_info['bound_email']:
+                    return jsonify({
+                        'success': False,
+                        'message': f'此卡密只能用于邮箱: {card_info["bound_email"]}'
+                    })
+                # 使用绑定邮箱信息直接获取邮件
+                use_bound_email = True
+            else:
+                # 如果没有绑定邮箱，需要在数据库中查找邮箱配置
+                use_bound_email = False
+            
+            # 调用Python邮件获取器脚本，传递卡密过滤参数
+            script_args = [
                 sys.executable, 
                 os.path.join(os.path.dirname(__file__), 'python', 'mail_fetcher.py'),
                 email
-            ], capture_output=True, text=True, timeout=30)
+            ]
+            
+            # 添加卡密过滤参数
+            if card_info.get('email_days_filter'):
+                script_args.extend(['--days-filter', str(card_info['email_days_filter'])])
+            
+            if card_info.get('sender_filter'):
+                script_args.extend(['--sender-filter', card_info['sender_filter']])
+            
+            # 添加卡密标识用于后续处理
+            script_args.extend(['--card-key', card_key])
+            
+            result = subprocess.run(script_args, capture_output=True, text=True, timeout=30)
             
             if result.returncode == 0:
                 # 解析JSON输出
                 response_data = json.loads(result.stdout)
+                
+                # 如果邮件获取成功，更新卡密使用次数
+                if response_data.get('success') and response_data.get('mail'):
+                    # 增加使用次数
+                    new_used_count = card_info['used_count'] + 1
+                    
+                    # 记录使用日志
+                    user_ip = request.environ.get('HTTP_X_FORWARDED_FOR') or request.environ.get('REMOTE_ADDR') or 'unknown'
+                    user_agent = request.headers.get('User-Agent', 'unknown')
+                    
+                    if db_type == 'sqlite':
+                        # 更新卡密使用次数
+                        db.execute('''
+                            UPDATE cards SET used_count = ?, updated_at = CURRENT_TIMESTAMP 
+                            WHERE id = ?
+                        ''', (new_used_count, card_info['id']))
+                        
+                        # 插入使用日志
+                        db.execute('''
+                            INSERT INTO card_logs (card_id, card_key, user_ip, user_agent, action, result, created_at)
+                            VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                        ''', (card_info['id'], card_key, user_ip, user_agent, 'use', 
+                              f'成功获取邮件: {response_data["mail"]["subject"]}'))
+                        
+                        db.commit()
+                    else:
+                        cursor = db.cursor()
+                        # 更新卡密使用次数
+                        cursor.execute('''
+                            UPDATE cards SET used_count = %s, updated_at = CURRENT_TIMESTAMP 
+                            WHERE id = %s
+                        ''', (new_used_count, card_info['id']))
+                        
+                        # 插入使用日志
+                        cursor.execute('''
+                            INSERT INTO card_logs (card_id, card_key, user_ip, user_agent, action, result, created_at)
+                            VALUES (%s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
+                        ''', (card_info['id'], card_key, user_ip, user_agent, 'use', 
+                              f'成功获取邮件: {response_data["mail"]["subject"]}'))
+                        
+                        db.commit()
+                    
+                    # 更新响应数据，包含剩余使用次数
+                    response_data['card_info'] = {
+                        'remaining_uses': card_info['usage_limit'] - new_used_count,
+                        'total_uses': card_info['usage_limit'],
+                        'used_count': new_used_count
+                    }
+                
                 return jsonify(response_data)
             else:
                 return jsonify({
@@ -942,12 +1091,14 @@ def api_get_mail():
                 'message': '邮件服务响应格式错误'
             })
         except Exception as e:
+            logger.error(f"Database or processing error in get_mail: {e}")
             return jsonify({
                 'success': False,
                 'message': f'邮件服务错误: {str(e)}'
             })
             
     except Exception as e:
+        logger.error(f"General error in get_mail: {e}")
         return jsonify({
             'success': False,
             'message': f'服务器错误: {str(e)}'
@@ -3645,7 +3796,7 @@ def api_admin_generate_card_api_page(card_key):
                 
                 if (data.success) {{
                     if (data.mail) {{
-                        displayMail(data.mail);
+                        displayMailWithCardInfo(data);
                         showToast('邮件获取成功', 'success');
                     }} else {{
                         showToast('邮箱中暂无邮件', 'info');
@@ -3674,6 +3825,19 @@ def api_admin_generate_card_api_page(card_key):
             document.getElementById('mailBody').textContent = mail.body || '(邮件内容为空)';
             
             document.getElementById('mailDisplay').style.display = 'block';
+        }}
+        
+        function displayMailWithCardInfo(data) {{
+            if (data.mail) {{
+                displayMail(data.mail);
+                
+                // 显示卡密使用信息
+                if (data.card_info) {{
+                    const cardInfo = data.card_info;
+                    const cardMessage = `邮件获取成功！剩余使用次数: ${{cardInfo.remaining_uses}}/${{cardInfo.total_uses}}`;
+                    showToast(cardMessage, 'success', 5000);
+                }}
+            }}
         }}
         
         function showMessage(text, type) {{
