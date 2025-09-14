@@ -3108,7 +3108,75 @@ def api_admin_card_available_emails(card_id):
 def api_admin_generate_card_api_page(card_key):
     """为卡密生成API页面"""
     try:
-        # 生成API页面内容
+        # 获取数据库连接
+        db = get_db()
+        db_type = app.config['DATABASE_TYPE']
+        
+        # 查询卡密信息，包括绑定的邮箱
+        if db_type == 'sqlite':
+            card_query = """
+                SELECT c.*, e.email, e.server 
+                FROM cards c 
+                LEFT JOIN mail_accounts e ON c.bound_email_id = e.id 
+                WHERE c.card_key = ?
+            """
+            card_result = db.execute(card_query, (card_key,)).fetchone()
+            if card_result:
+                card_result = dict(card_result)  # Convert Row to dict
+        else:
+            cursor = db.cursor()
+            card_query = """
+                SELECT c.*, e.email, e.server 
+                FROM cards c 
+                LEFT JOIN mail_accounts e ON c.bound_email_id = e.id 
+                WHERE c.card_key = %s
+            """
+            cursor.execute(card_query, (card_key,))
+            card_result = cursor.fetchone()
+            if card_result and hasattr(card_result, '_asdict'):
+                card_result = card_result._asdict()
+            elif card_result:
+                # Handle tuple result
+                columns = [desc[0] for desc in cursor.description]
+                card_result = dict(zip(columns, card_result))
+        
+        if not card_result:
+            return jsonify({
+                'success': False,
+                'message': '卡密不存在'
+            }), 404
+        
+        # 检查卡密是否已绑定邮箱
+        has_bound_email = card_result.get('bound_email_id') is not None
+        bound_email = card_result.get('email') if has_bound_email else None
+        
+        # 根据绑定状态生成不同的API页面内容
+        if has_bound_email:
+            # 已绑定邮箱：无输入框，直接显示获取邮件按钮
+            input_section = f"""
+            <div class="bound-email-info">
+                <div class="email-info">
+                    <span class="email-label">绑定邮箱:</span>
+                    <span class="email-address">{bound_email}</span>
+                </div>
+                <p class="info-text">此卡密已绑定邮箱，点击下方按钮直接获取邮件</p>
+            </div>
+            
+            <div class="action-group">
+                <button class="get-mail-btn" onclick="getMail()">获取邮件</button>
+            </div>"""
+        else:
+            # 未绑定邮箱：有输入框，可手动输入邮箱
+            input_section = f"""
+            <div class="unbound-email-info">
+                <p class="info-text">此卡密未绑定邮箱，请输入已添加的邮箱地址进行API取件</p>
+            </div>
+            
+            <div class="input-group">
+                <input type="email" id="emailInput" placeholder="请输入邮箱地址进行API取件" required>
+                <button class="get-mail-btn" onclick="getMail()">API取件</button>
+            </div>"""
+        
         api_content = f"""<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -3163,6 +3231,54 @@ def api_admin_generate_card_api_page(card_key):
             display: flex;
             margin-bottom: 20px;
             gap: 15px;
+        }}
+        
+        .action-group {{
+            text-align: center;
+            margin-bottom: 20px;
+        }}
+        
+        .bound-email-info {{
+            margin-bottom: 25px;
+            padding: 20px;
+            background: #f8fafc;
+            border-radius: 12px;
+            border-left: 4px solid #667eea;
+        }}
+        
+        .unbound-email-info {{
+            margin-bottom: 20px;
+            padding: 15px;
+            background: #fef3c7;
+            border-radius: 12px;
+            border-left: 4px solid #f59e0b;
+        }}
+        
+        .email-info {{
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 10px;
+        }}
+        
+        .email-label {{
+            font-weight: 600;
+            color: #374151;
+        }}
+        
+        .email-address {{
+            background: #667eea;
+            color: white;
+            padding: 4px 10px;
+            border-radius: 6px;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+        }}
+        
+        .info-text {{
+            color: #6b7280;
+            font-size: 14px;
+            margin: 0;
         }}
         
         .input-group input {{
@@ -3339,10 +3455,7 @@ def api_admin_generate_card_api_page(card_key):
                 此页面专为卡密 <strong>{card_key}</strong> 生成，可用于API自动取件。
             </div>
             
-            <div class="input-group">
-                <input type="email" id="emailInput" placeholder="请输入邮箱地址进行API取件" required>
-                <button class="get-mail-btn" onclick="getMail()">API取件</button>
-            </div>
+            {input_section}
             
             <div class="loading" id="loading">
                 <div class="spinner"></div>
@@ -3380,36 +3493,51 @@ def api_admin_generate_card_api_page(card_key):
     </div>
     
     <script>
-        // 回车键触发获取邮件
-        document.getElementById('emailInput').addEventListener('keypress', function(e) {{
-            if (e.key === 'Enter') {{
-                getMail();
-            }}
-        }});
+        // 检查是否已绑定邮箱
+        const hasBoundEmail = {str(has_bound_email).lower()};
+        const boundEmail = "{bound_email if bound_email else ''}";
+        
+        // 回车键触发获取邮件（仅在有输入框时）
+        const emailInput = document.getElementById('emailInput');
+        if (emailInput) {{
+            emailInput.addEventListener('keypress', function(e) {{
+                if (e.key === 'Enter') {{
+                    getMail();
+                }}
+            }});
+        }}
         
         async function getMail() {{
-            const emailInput = document.getElementById('emailInput');
             const loading = document.getElementById('loading');
             const message = document.getElementById('message');
             const mailDisplay = document.getElementById('mailDisplay');
             const getMailBtn = document.querySelector('.get-mail-btn');
             
-            const email = emailInput.value.trim();
+            let email;
             
-            if (!email) {{
-                showMessage('请输入邮箱地址', 'error');
-                return;
-            }}
-            
-            if (!isValidEmail(email)) {{
-                showMessage('请输入有效的邮箱地址', 'error');
-                return;
+            if (hasBoundEmail) {{
+                // 已绑定邮箱，直接使用绑定的邮箱
+                email = boundEmail;
+            }} else {{
+                // 未绑定邮箱，从输入框获取
+                const emailInput = document.getElementById('emailInput');
+                email = emailInput.value.trim();
+                
+                if (!email) {{
+                    showMessage('请输入邮箱地址', 'error');
+                    return;
+                }}
+                
+                if (!isValidEmail(email)) {{
+                    showMessage('请输入有效的邮箱地址', 'error');
+                    return;
+                }}
             }}
             
             // 显示加载状态
             loading.style.display = 'block';
             getMailBtn.disabled = true;
-            getMailBtn.textContent = 'API取件中...';
+            getMailBtn.textContent = hasBoundEmail ? '获取中...' : 'API取件中...';
             message.innerHTML = '';
             mailDisplay.style.display = 'none';
             
@@ -3431,12 +3559,12 @@ def api_admin_generate_card_api_page(card_key):
                 if (data.success) {{
                     if (data.mail) {{
                         displayMail(data.mail);
-                        showMessage('API邮件获取成功', 'success');
+                        showMessage('邮件获取成功', 'success');
                     }} else {{
                         showMessage('邮箱中暂无邮件', 'info');
                     }}
                 }} else {{
-                    showMessage(data.message || 'API获取邮件失败', 'error');
+                    showMessage(data.message || '获取邮件失败', 'error');
                 }}
                 
             }} catch (error) {{
@@ -3446,7 +3574,7 @@ def api_admin_generate_card_api_page(card_key):
                 // 隐藏加载状态
                 loading.style.display = 'none';
                 getMailBtn.disabled = false;
-                getMailBtn.textContent = 'API取件';
+                getMailBtn.textContent = hasBoundEmail ? '获取邮件' : 'API取件';
             }}
         }}
         
