@@ -2482,12 +2482,434 @@ def api_admin_proxy_config():
 @app.route('/admin/api/cards', methods=['GET', 'POST', 'DELETE'])
 @admin_required
 def api_admin_cards():
-    """卡密管理 API（Stub实现）"""
-    return jsonify({
-        'success': True,
-        'message': '卡密管理功能正在开发中',
-        'data': []
-    })
+    """卡密管理 API"""
+    db = get_db()
+    db_type = app.config['DATABASE_TYPE']
+    
+    if request.method == 'GET':
+        # 获取卡密列表（支持分页和搜索）
+        page = int(request.args.get('page', 1))
+        per_page = int(request.args.get('per_page', 10))
+        search = request.args.get('search', '').strip()
+        
+        offset = (page - 1) * per_page
+        
+        # 构建查询条件
+        where_clause = ""
+        params = []
+        if search:
+            where_clause = "WHERE card_key LIKE ? OR remarks LIKE ?"
+            search_param = f"%{search}%"
+            params = [search_param, search_param]
+        
+        # 获取总数
+        if db_type == 'sqlite':
+            count_sql = f"SELECT COUNT(*) as count FROM cards {where_clause}"
+            count_result = db.execute(count_sql, params).fetchone()
+            total = count_result['count']
+            
+            # 获取分页数据
+            sql = f"""
+                SELECT *, 
+                    (SELECT created_at FROM card_logs WHERE card_id = cards.id ORDER BY created_at DESC LIMIT 1) as last_used_at
+                FROM cards {where_clause}
+                ORDER BY id DESC 
+                LIMIT ? OFFSET ?
+            """
+            cards = db.execute(sql, params + [per_page, offset]).fetchall()
+        else:
+            cursor = db.cursor()
+            placeholder = '%s'
+            where_mysql = where_clause.replace('?', placeholder) if where_clause else ""
+            
+            count_sql = f"SELECT COUNT(*) as count FROM cards {where_mysql}"
+            cursor.execute(count_sql, params)
+            total = cursor.fetchone()[0]
+            
+            sql = f"""
+                SELECT c.*, 
+                    (SELECT created_at FROM card_logs WHERE card_id = c.id ORDER BY created_at DESC LIMIT 1) as last_used_at
+                FROM cards c {where_mysql}
+                ORDER BY c.id DESC 
+                LIMIT {per_page} OFFSET {offset}
+            """
+            cursor.execute(sql, params)
+            cards = cursor.fetchall()
+        
+        return jsonify({
+            'success': True,
+            'data': [dict(card) for card in cards],
+            'pagination': {
+                'page': page,
+                'per_page': per_page,
+                'total': total,
+                'pages': (total + per_page - 1) // per_page
+            }
+        })
+    
+    elif request.method == 'POST':
+        # 添加或处理卡密
+        data = request.get_json()
+        action = data.get('action')
+        
+        if action == 'generate':
+            return _generate_card(db, data)
+        elif action == 'batch_generate':
+            return _batch_generate_cards(db, data)
+        elif action == 'bind_email':
+            return _bind_email_to_card(db, data)
+        else:
+            return jsonify({
+                'success': False,
+                'message': '无效的操作类型'
+            })
+    
+    elif request.method == 'DELETE':
+        # 删除卡密
+        data = request.get_json()
+        
+        if 'action' in data and data['action'] == 'batch_delete':
+            return _batch_delete_cards(db, data)
+        else:
+            card_id = data.get('id')
+            if not card_id:
+                return jsonify({
+                    'success': False,
+                    'message': '缺少卡密ID'
+                })
+            
+            try:
+                if db_type == 'sqlite':
+                    db.execute('DELETE FROM cards WHERE id = ?', (card_id,))
+                    db.commit()
+                else:
+                    cursor = db.cursor()
+                    cursor.execute('DELETE FROM cards WHERE id = %s', (card_id,))
+                    db.commit()
+                
+                return jsonify({
+                    'success': True,
+                    'message': '卡密删除成功'
+                })
+                
+            except Exception as e:
+                return jsonify({
+                    'success': False,
+                    'message': f'删除失败: {str(e)}'
+                })
+
+@app.route('/admin/api/cards/stats')
+@admin_required
+def api_admin_card_stats():
+    """卡密统计 API"""
+    db = get_db()
+    db_type = app.config['DATABASE_TYPE']
+    
+    try:
+        now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        
+        if db_type == 'sqlite':
+            # 总数
+            total_result = db.execute('SELECT COUNT(*) as count FROM cards').fetchone()
+            total = total_result['count']
+            
+            # 可用数量（状态正常、未过期、未用完）
+            active_result = db.execute('''
+                SELECT COUNT(*) as count FROM cards 
+                WHERE status = 1 
+                AND (expired_at IS NULL OR expired_at > ?) 
+                AND used_count < usage_limit
+            ''', (now,)).fetchone()
+            active = active_result['count']
+            
+            # 已使用完
+            used_result = db.execute('''
+                SELECT COUNT(*) as count FROM cards 
+                WHERE used_count >= usage_limit
+            ''').fetchone()
+            used = used_result['count']
+            
+            # 已过期
+            expired_result = db.execute('''
+                SELECT COUNT(*) as count FROM cards 
+                WHERE expired_at IS NOT NULL AND expired_at <= ?
+            ''', (now,)).fetchone()
+            expired = expired_result['count']
+            
+        else:
+            cursor = db.cursor()
+            
+            # 总数
+            cursor.execute('SELECT COUNT(*) as count FROM cards')
+            total = cursor.fetchone()[0]
+            
+            # 可用数量
+            cursor.execute('''
+                SELECT COUNT(*) as count FROM cards 
+                WHERE status = 1 
+                AND (expired_at IS NULL OR expired_at > %s) 
+                AND used_count < usage_limit
+            ''', (now,))
+            active = cursor.fetchone()[0]
+            
+            # 已使用完
+            cursor.execute('''
+                SELECT COUNT(*) as count FROM cards 
+                WHERE used_count >= usage_limit
+            ''')
+            used = cursor.fetchone()[0]
+            
+            # 已过期
+            cursor.execute('''
+                SELECT COUNT(*) as count FROM cards 
+                WHERE expired_at IS NOT NULL AND expired_at <= %s
+            ''', (now,))
+            expired = cursor.fetchone()[0]
+        
+        return jsonify({
+            'success': True,
+            'stats': {
+                'total': total,
+                'active': active,
+                'used': used,
+                'expired': expired
+            }
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': f'获取统计数据失败: {str(e)}'
+        })
+
+def _generate_card_key():
+    """生成12位随机小写字母和数字的卡密"""
+    import random
+    import string
+    
+    # 小写字母和数字
+    chars = string.ascii_lowercase + string.digits
+    return ''.join(random.choice(chars) for _ in range(12))
+
+def _generate_card(db, data):
+    """生成单个卡密"""
+    usage_limit = data.get('usage_limit', 1)
+    expired_at = data.get('expired_at')
+    remarks = data.get('remarks', '')
+    
+    try:
+        # 生成唯一卡密
+        max_attempts = 10
+        for _ in range(max_attempts):
+            card_key = _generate_card_key()
+            
+            # 检查是否已存在
+            if app.config['DATABASE_TYPE'] == 'sqlite':
+                existing = db.execute('SELECT id FROM cards WHERE card_key = ?', (card_key,)).fetchone()
+            else:
+                cursor = db.cursor()
+                cursor.execute('SELECT id FROM cards WHERE card_key = %s', (card_key,))
+                existing = cursor.fetchone()
+            
+            if not existing:
+                break
+        else:
+            return jsonify({
+                'success': False,
+                'message': '生成卡密失败，请重试'
+            })
+        
+        # 插入卡密
+        now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        if app.config['DATABASE_TYPE'] == 'sqlite':
+            db.execute('''
+                INSERT INTO cards (card_key, usage_limit, expired_at, remarks, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+            ''', (card_key, usage_limit, expired_at, remarks, now, now))
+            db.commit()
+        else:
+            cursor = db.cursor()
+            cursor.execute('''
+                INSERT INTO cards (card_key, usage_limit, expired_at, remarks, created_at, updated_at)
+                VALUES (%s, %s, %s, %s, %s, %s)
+            ''', (card_key, usage_limit, expired_at, remarks, now, now))
+            db.commit()
+        
+        return jsonify({
+            'success': True,
+            'message': f'卡密生成成功：{card_key}',
+            'card_key': card_key
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': f'生成卡密失败: {str(e)}'
+        })
+
+def _batch_generate_cards(db, data):
+    """批量生成卡密"""
+    count = data.get('count', 1)
+    usage_limit = data.get('usage_limit', 1)
+    expired_at = data.get('expired_at')
+    remarks = data.get('remarks', '')
+    
+    if count > 100:
+        return jsonify({
+            'success': False,
+            'message': '一次最多生成100个卡密'
+        })
+    
+    try:
+        generated_cards = []
+        now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        
+        for i in range(count):
+            # 生成唯一卡密
+            max_attempts = 10
+            for _ in range(max_attempts):
+                card_key = _generate_card_key()
+                
+                # 检查是否已存在（包括已生成的）
+                if card_key not in generated_cards:
+                    if app.config['DATABASE_TYPE'] == 'sqlite':
+                        existing = db.execute('SELECT id FROM cards WHERE card_key = ?', (card_key,)).fetchone()
+                    else:
+                        cursor = db.cursor()
+                        cursor.execute('SELECT id FROM cards WHERE card_key = %s', (card_key,))
+                        existing = cursor.fetchone()
+                    
+                    if not existing:
+                        generated_cards.append(card_key)
+                        break
+            else:
+                return jsonify({
+                    'success': False,
+                    'message': f'生成第{i+1}个卡密失败，请重试'
+                })
+        
+        # 批量插入
+        if app.config['DATABASE_TYPE'] == 'sqlite':
+            for card_key in generated_cards:
+                db.execute('''
+                    INSERT INTO cards (card_key, usage_limit, expired_at, remarks, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                ''', (card_key, usage_limit, expired_at, remarks, now, now))
+            db.commit()
+        else:
+            cursor = db.cursor()
+            for card_key in generated_cards:
+                cursor.execute('''
+                    INSERT INTO cards (card_key, usage_limit, expired_at, remarks, created_at, updated_at)
+                    VALUES (%s, %s, %s, %s, %s, %s)
+                ''', (card_key, usage_limit, expired_at, remarks, now, now))
+            db.commit()
+        
+        return jsonify({
+            'success': True,
+            'message': f'批量生成成功，共生成 {len(generated_cards)} 个卡密',
+            'generated_count': len(generated_cards),
+            'card_keys': generated_cards
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': f'批量生成失败: {str(e)}'
+        })
+
+def _batch_delete_cards(db, data):
+    """批量删除卡密"""
+    card_ids = data.get('ids', [])
+    
+    if not card_ids:
+        return jsonify({
+            'success': False,
+            'message': '请选择要删除的卡密'
+        })
+    
+    try:
+        if app.config['DATABASE_TYPE'] == 'sqlite':
+            placeholders = ','.join(['?' for _ in card_ids])
+            db.execute(f'DELETE FROM cards WHERE id IN ({placeholders})', card_ids)
+            db.commit()
+        else:
+            cursor = db.cursor()
+            placeholders = ','.join(['%s' for _ in card_ids])
+            cursor.execute(f'DELETE FROM cards WHERE id IN ({placeholders})', card_ids)
+            db.commit()
+        
+        return jsonify({
+            'success': True,
+            'message': f'成功删除 {len(card_ids)} 个卡密'
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': f'批量删除失败: {str(e)}'
+        })
+
+def _bind_email_to_card(db, data):
+    """绑定邮箱到卡密"""
+    card_id = data.get('card_id')
+    email_id = data.get('email_id')
+    
+    if not card_id or not email_id:
+        return jsonify({
+            'success': False,
+            'message': '请提供卡密ID和邮箱ID'
+        })
+    
+    try:
+        # 验证卡密和邮箱是否存在
+        if app.config['DATABASE_TYPE'] == 'sqlite':
+            card = db.execute('SELECT * FROM cards WHERE id = ?', (card_id,)).fetchone()
+            email = db.execute('SELECT * FROM mail_accounts WHERE id = ?', (email_id,)).fetchone()
+        else:
+            cursor = db.cursor()
+            cursor.execute('SELECT * FROM cards WHERE id = %s', (card_id,))
+            card = cursor.fetchone()
+            cursor.execute('SELECT * FROM mail_accounts WHERE id = %s', (email_id,))
+            email = cursor.fetchone()
+        
+        if not card:
+            return jsonify({
+                'success': False,
+                'message': '卡密不存在'
+            })
+        
+        if not email:
+            return jsonify({
+                'success': False,
+                'message': '邮箱不存在'
+            })
+        
+        # 更新卡密备注，记录绑定的邮箱
+        if app.config['DATABASE_TYPE'] == 'sqlite':
+            email_dict = dict(email)
+            new_remarks = f"绑定邮箱: {email_dict['email']}"
+            db.execute('UPDATE cards SET remarks = ? WHERE id = ?', (new_remarks, card_id))
+            db.commit()
+        else:
+            cursor = db.cursor()
+            # 获取邮箱信息
+            cursor.execute('SELECT email FROM mail_accounts WHERE id = %s', (email_id,))
+            email_address = cursor.fetchone()[0]
+            new_remarks = f"绑定邮箱: {email_address}"
+            cursor.execute('UPDATE cards SET remarks = %s WHERE id = %s', (new_remarks, card_id))
+            db.commit()
+        
+        return jsonify({
+            'success': True,
+            'message': '邮箱绑定成功'
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': f'绑定失败: {str(e)}'
+        })
 
 @app.route('/admin/api/card-logs')
 @admin_required
