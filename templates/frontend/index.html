@@ -632,16 +632,22 @@
                     showMessage(noMailMessage, 'info');
                 }
             } else {
-                // 组合失败消息包含连接状态
+                // 组合失败消息包含连接状态 - 避免重复添加连接指示符
                 let errorMessage = data.message || '获取邮件失败';
-                if (data.proxy && data.proxy.enabled) {
-                    if (data.proxy.info && data.proxy.info.name) {
-                        errorMessage += ` (代理连接: ${data.proxy.info.name})`;
+                
+                // 检查消息是否已经包含连接指示符，避免重复添加
+                const hasConnectionInfo = /\(直连\)|\(代理\)|\(通过.*\)|\(代理连接.*\)/.test(errorMessage);
+                
+                if (!hasConnectionInfo) {
+                    if (data.proxy && data.proxy.enabled) {
+                        if (data.proxy.info && data.proxy.info.name) {
+                            errorMessage += ` (代理连接: ${data.proxy.info.name})`;
+                        } else {
+                            errorMessage += ' (代理连接)';
+                        }
                     } else {
-                        errorMessage += ' (代理连接)';
+                        errorMessage += ' (直连)';
                     }
-                } else {
-                    errorMessage += ' (直连)';
                 }
                 showMessage(errorMessage, 'error');
             }

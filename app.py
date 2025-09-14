@@ -1684,6 +1684,11 @@ def api_admin_proxies(proxy_type):
             return _test_new_proxy(data, proxy_type)
         elif action == 'batch_delete':
             return _batch_delete_proxy(db, table_name, data)
+        else:
+            return jsonify({
+                'success': False,
+                'message': '无效的操作类型'
+            })
     
     elif request.method == 'DELETE':
         data = request.get_json()
@@ -2069,11 +2074,10 @@ def _perform_proxy_test(proxy, proxy_type):
                 'results': results
             }
         else:
-            # 所有测试都失败
-            error_messages = [r.get('error', '未知错误') for r in results]
+            # 所有测试都失败 - 简化错误消息，避免显示复杂的堆栈信息
             return {
                 'success': False,
-                'message': f"所有测试都失败了: {'; '.join(error_messages[:2])}",  # 只显示前两个错误
+                'message': "测试失败",
                 'avg_response_time': 0,
                 'results': results
             }
@@ -2081,7 +2085,7 @@ def _perform_proxy_test(proxy, proxy_type):
     except Exception as e:
         return {
             'success': False,
-            'message': f'测试异常: {str(e)}',
+            'message': '测试失败',
             'avg_response_time': 0,
             'results': []
         }
