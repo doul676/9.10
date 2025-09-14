@@ -15,6 +15,8 @@ import time
 import requests
 import threading
 import logging
+import string
+import random
 from datetime import datetime, timezone
 from flask import Flask, render_template, request, session, redirect, url_for, flash, jsonify, g
 from werkzeug.security import check_password_hash, generate_password_hash
@@ -717,6 +719,121 @@ def update_proxy_unified_id(db, table_name, proxy_id, unified_id):
         raise
 
 # ===============================
+# 卡密管理相关函数
+# ===============================
+
+def generate_card_key():
+    """生成12位随机字母和数字的卡密"""
+    characters = string.ascii_letters + string.digits  # 包含大小写字母和数字
+    card_key = ''.join(random.choice(characters) for _ in range(12))
+    return card_key
+
+def create_card_key(db, db_type, card_type='general', usage_limit=1, expired_at=None, remarks=''):
+    """创建单个卡密记录"""
+    card_key = generate_card_key()
+    
+    # 确保卡密唯一性，如果重复则重新生成
+    max_attempts = 100
+    attempts = 0
+    
+    while attempts < max_attempts:
+        if db_type == 'sqlite':
+            cursor = db.execute('SELECT COUNT(*) FROM cards WHERE card_key = ?', (card_key,))
+            count = cursor.fetchone()[0]
+        else:
+            cursor = db.cursor()
+            cursor.execute('SELECT COUNT(*) FROM cards WHERE card_key = %s', (card_key,))
+            count = cursor.fetchone()[0]
+            cursor.close()
+        
+        if count == 0:
+            break
+        
+        card_key = generate_card_key()
+        attempts += 1
+    
+    if attempts >= max_attempts:
+        raise Exception("无法生成唯一卡密，请稍后重试")
+    
+    # 插入卡密记录
+    if db_type == 'sqlite':
+        db.execute('''
+            INSERT INTO cards (card_key, card_type, usage_limit, expired_at, remarks) 
+            VALUES (?, ?, ?, ?, ?)
+        ''', (card_key, card_type, usage_limit, expired_at, remarks))
+    else:
+        cursor = db.cursor()
+        cursor.execute('''
+            INSERT INTO cards (card_key, card_type, usage_limit, expired_at, remarks) 
+            VALUES (%s, %s, %s, %s, %s)
+        ''', (card_key, card_type, usage_limit, expired_at, remarks))
+        cursor.close()
+    
+    return card_key
+
+def create_batch_card_keys(db, db_type, count, card_type='general', usage_limit=1, expired_at=None, remarks=''):
+    """批量创建卡密"""
+    if count <= 0 or count > 1000:
+        raise ValueError("批量生成数量必须在1-1000之间")
+    
+    generated_keys = []
+    
+    for i in range(count):
+        try:
+            card_key = create_card_key(db, db_type, card_type, usage_limit, expired_at, remarks)
+            generated_keys.append(card_key)
+        except Exception as e:
+            logger.error(f"批量生成第{i+1}个卡密时出错: {e}")
+            # 如果失败，继续尝试生成剩余的卡密
+            continue
+    
+    return generated_keys
+
+def get_all_cards(db, db_type, page=1, per_page=50):
+    """获取所有卡密列表，支持分页"""
+    offset = (page - 1) * per_page
+    
+    if db_type == 'sqlite':
+        # 获取总数
+        cursor = db.execute('SELECT COUNT(*) FROM cards')
+        total = cursor.fetchone()[0]
+        
+        # 获取分页数据
+        cursor = db.execute('''
+            SELECT id, card_key, card_type, usage_limit, used_count, status, 
+                   expired_at, remarks, created_at, updated_at
+            FROM cards 
+            ORDER BY created_at DESC, id DESC
+            LIMIT ? OFFSET ?
+        ''', (per_page, offset))
+        cards = cursor.fetchall()
+    else:
+        cursor = db.cursor()
+        
+        # 获取总数
+        cursor.execute('SELECT COUNT(*) FROM cards')
+        total = cursor.fetchone()[0]
+        
+        # 获取分页数据
+        cursor.execute('''
+            SELECT id, card_key, card_type, usage_limit, used_count, status, 
+                   expired_at, remarks, created_at, updated_at
+            FROM cards 
+            ORDER BY created_at DESC, id DESC
+            LIMIT %s OFFSET %s
+        ''', (per_page, offset))
+        cards = cursor.fetchall()
+        cursor.close()
+    
+    return {
+        'cards': cards,
+        'total': total,
+        'page': page,
+        'per_page': per_page,
+        'total_pages': (total + per_page - 1) // per_page
+    }
+
+# ===============================
 # 前端页面路由
 # ===============================
 
@@ -811,12 +928,148 @@ def admin_daili():
     return render_template('admin/daili.html',
                          admin_username=session.get('admin_username'))
 
-@app.route('/admin/kami')
+@app.route('/admin/kami', methods=['GET', 'POST'])
 @admin_required
 def admin_kami():
     """卡密管理页面"""
+    db = get_db()
+    db_type = app.config['DATABASE_TYPE']
+    
+    message = ''
+    error = ''
+    
+    if request.method == 'POST':
+        action = request.form.get('action')
+        
+        try:
+            if action == 'generate_single':
+                # 单个卡密生成
+                card_type = request.form.get('card_type', 'general')
+                usage_limit = int(request.form.get('usage_limit', 1))
+                expired_at = request.form.get('expired_at') or None
+                remarks = request.form.get('remarks', '')
+                
+                card_key = create_card_key(db, db_type, card_type, usage_limit, expired_at, remarks)
+                
+                if db_type != 'sqlite':
+                    db.commit()
+                else:
+                    db.commit()
+                
+                message = f'成功生成卡密: {card_key}'
+                
+            elif action == 'generate_batch':
+                # 批量卡密生成
+                count = int(request.form.get('batch_count', 1))
+                card_type = request.form.get('batch_card_type', 'general')
+                usage_limit = int(request.form.get('batch_usage_limit', 1))
+                expired_at = request.form.get('batch_expired_at') or None
+                remarks = request.form.get('batch_remarks', '')
+                
+                if count <= 0 or count > 1000:
+                    error = '批量生成数量必须在1-1000之间'
+                else:
+                    generated_keys = create_batch_card_keys(db, db_type, count, card_type, usage_limit, expired_at, remarks)
+                    
+                    if db_type != 'sqlite':
+                        db.commit()
+                    else:
+                        db.commit()
+                    
+                    message = f'成功批量生成 {len(generated_keys)} 个卡密'
+                    
+        except Exception as e:
+            logger.error(f"卡密生成错误: {e}")
+            error = f'操作失败: {str(e)}'
+            if db_type != 'sqlite':
+                try:
+                    db.rollback()
+                except:
+                    pass
+    
+    # 获取卡密列表
+    page = int(request.args.get('page', 1))
+    try:
+        cards_data = get_all_cards(db, db_type, page, 50)
+    except Exception as e:
+        logger.error(f"获取卡密列表错误: {e}")
+        cards_data = {'cards': [], 'total': 0, 'page': 1, 'per_page': 50, 'total_pages': 0}
+        if not error:
+            error = '获取卡密列表失败'
+    
     return render_template('admin/kami.html',
-                         admin_username=session.get('admin_username'))
+                         admin_username=session.get('admin_username'),
+                         message=message,
+                         error=error,
+                         cards_data=cards_data)
+
+@app.route('/admin/kami/manage', methods=['POST'])
+@admin_required
+def admin_kami_manage():
+    """卡密管理API - 启用/禁用/删除卡密"""
+    db = get_db()
+    db_type = app.config['DATABASE_TYPE']
+    
+    try:
+        data = request.get_json()
+        action = data.get('action')
+        card_id = int(data.get('card_id', 0))
+        
+        if not action or card_id <= 0:
+            return jsonify({'success': False, 'message': '参数错误'})
+        
+        if action == 'enable':
+            # 启用卡密
+            if db_type == 'sqlite':
+                db.execute('UPDATE cards SET status = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?', (card_id,))
+            else:
+                cursor = db.cursor()
+                cursor.execute('UPDATE cards SET status = 1, updated_at = CURRENT_TIMESTAMP WHERE id = %s', (card_id,))
+                cursor.close()
+            
+            message = '卡密已启用'
+            
+        elif action == 'disable':
+            # 禁用卡密
+            if db_type == 'sqlite':
+                db.execute('UPDATE cards SET status = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ?', (card_id,))
+            else:
+                cursor = db.cursor()
+                cursor.execute('UPDATE cards SET status = 0, updated_at = CURRENT_TIMESTAMP WHERE id = %s', (card_id,))
+                cursor.close()
+            
+            message = '卡密已禁用'
+            
+        elif action == 'delete':
+            # 删除卡密
+            if db_type == 'sqlite':
+                db.execute('DELETE FROM cards WHERE id = ?', (card_id,))
+            else:
+                cursor = db.cursor()
+                cursor.execute('DELETE FROM cards WHERE id = %s', (card_id,))
+                cursor.close()
+            
+            message = '卡密已删除'
+            
+        else:
+            return jsonify({'success': False, 'message': '不支持的操作'})
+        
+        # 提交更改
+        if db_type != 'sqlite':
+            db.commit()
+        else:
+            db.commit()
+        
+        return jsonify({'success': True, 'message': message})
+        
+    except Exception as e:
+        logger.error(f"卡密管理错误: {e}")
+        if db_type != 'sqlite':
+            try:
+                db.rollback()
+            except:
+                pass
+        return jsonify({'success': False, 'message': f'操作失败: {str(e)}'})
 
 @app.route('/admin/kamirizhi')
 @admin_required
