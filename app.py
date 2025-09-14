@@ -2513,7 +2513,7 @@ def api_admin_cards():
                 SELECT *, 
                     (SELECT created_at FROM card_logs WHERE card_id = cards.id ORDER BY created_at DESC LIMIT 1) as last_used_at
                 FROM cards {where_clause}
-                ORDER BY id DESC 
+                ORDER BY id ASC 
                 LIMIT ? OFFSET ?
             """
             cards = db.execute(sql, params + [per_page, offset]).fetchall()
@@ -2530,7 +2530,7 @@ def api_admin_cards():
                 SELECT c.*, 
                     (SELECT created_at FROM card_logs WHERE card_id = c.id ORDER BY created_at DESC LIMIT 1) as last_used_at
                 FROM cards c {where_mysql}
-                ORDER BY c.id DESC 
+                ORDER BY c.id ASC 
                 LIMIT {per_page} OFFSET {offset}
             """
             cursor.execute(sql, params)
@@ -2558,6 +2558,8 @@ def api_admin_cards():
             return _batch_generate_cards(db, data)
         elif action == 'bind_email':
             return _bind_email_to_card(db, data)
+        elif action == 'edit':
+            return _edit_card(db, data)
         else:
             return jsonify({
                 'success': False,
@@ -2848,6 +2850,68 @@ def _batch_delete_cards(db, data):
         return jsonify({
             'success': False,
             'message': f'批量删除失败: {str(e)}'
+        })
+
+def _edit_card(db, data):
+    """编辑卡密"""
+    card_id = data.get('card_id')
+    usage_limit = data.get('usage_limit', 1)
+    expired_at = data.get('expired_at')
+    remarks = data.get('remarks', '')
+    
+    if not card_id:
+        return jsonify({
+            'success': False,
+            'message': '缺少卡密ID'
+        })
+    
+    try:
+        now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        
+        if app.config['DATABASE_TYPE'] == 'sqlite':
+            # 检查卡密是否存在
+            card = db.execute('SELECT * FROM cards WHERE id = ?', (card_id,)).fetchone()
+            if not card:
+                return jsonify({
+                    'success': False,
+                    'message': '卡密不存在'
+                })
+            
+            # 更新卡密
+            db.execute('''
+                UPDATE cards 
+                SET usage_limit = ?, expired_at = ?, remarks = ?, updated_at = ?
+                WHERE id = ?
+            ''', (usage_limit, expired_at, remarks, now, card_id))
+            db.commit()
+        else:
+            cursor = db.cursor()
+            # 检查卡密是否存在
+            cursor.execute('SELECT * FROM cards WHERE id = %s', (card_id,))
+            card = cursor.fetchone()
+            if not card:
+                return jsonify({
+                    'success': False,
+                    'message': '卡密不存在'
+                })
+            
+            # 更新卡密
+            cursor.execute('''
+                UPDATE cards 
+                SET usage_limit = %s, expired_at = %s, remarks = %s, updated_at = %s
+                WHERE id = %s
+            ''', (usage_limit, expired_at, remarks, now, card_id))
+            db.commit()
+        
+        return jsonify({
+            'success': True,
+            'message': '卡密编辑成功'
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': f'编辑卡密失败: {str(e)}'
         })
 
 def _bind_email_to_card(db, data):
