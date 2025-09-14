@@ -214,39 +214,45 @@ def migrate_proxy_tables(db, db_type):
         logger.error(f"Error during proxy table migration: {e}")
 
 def assign_unified_ids_to_existing_proxies(db, db_type):
-    """为现有代理分配统一ID"""
+    """为现有代理分配统一ID（按创建时间顺序，确保ID连续）"""
     try:
-        # 获取所有没有unified_id的HTTP代理
+        # 获取所有需要分配unified_id的代理，按创建时间排序
+        all_proxies = []
+        
         if db_type == 'sqlite':
-            http_proxies = db.execute('SELECT id FROM http_proxies WHERE unified_id = 0').fetchall()
+            # 获取HTTP代理
+            http_proxies = db.execute('SELECT id, created_at FROM http_proxies WHERE unified_id = 0 ORDER BY created_at ASC, id ASC').fetchall()
             for proxy in http_proxies:
-                proxy_id = proxy['id']
-                unified_id = get_next_unified_proxy_id(db, 'http', proxy_id)
-                update_proxy_unified_id(db, 'http_proxies', proxy_id, unified_id)
-                
-            # 获取所有没有unified_id的SOCKS5代理
-            socks5_proxies = db.execute('SELECT id FROM socks5_proxies WHERE unified_id = 0').fetchall()
+                all_proxies.append(('http', proxy['id'], proxy['created_at']))
+            
+            # 获取SOCKS5代理
+            socks5_proxies = db.execute('SELECT id, created_at FROM socks5_proxies WHERE unified_id = 0 ORDER BY created_at ASC, id ASC').fetchall()
             for proxy in socks5_proxies:
-                proxy_id = proxy['id']
-                unified_id = get_next_unified_proxy_id(db, 'socks5', proxy_id)
-                update_proxy_unified_id(db, 'socks5_proxies', proxy_id, unified_id)
+                all_proxies.append(('socks5', proxy['id'], proxy['created_at']))
         else:
             cursor = db.cursor()
-            cursor.execute('SELECT id FROM http_proxies WHERE unified_id = 0')
+            # 获取HTTP代理
+            cursor.execute('SELECT id, created_at FROM http_proxies WHERE unified_id = 0 ORDER BY created_at ASC, id ASC')
             http_proxies = cursor.fetchall()
             for proxy in http_proxies:
-                proxy_id = proxy[0]
-                unified_id = get_next_unified_proxy_id(db, 'http', proxy_id)
-                update_proxy_unified_id(db, 'http_proxies', proxy_id, unified_id)
+                all_proxies.append(('http', proxy[0], proxy[1]))
                 
-            cursor.execute('SELECT id FROM socks5_proxies WHERE unified_id = 0')
+            # 获取SOCKS5代理
+            cursor.execute('SELECT id, created_at FROM socks5_proxies WHERE unified_id = 0 ORDER BY created_at ASC, id ASC')
             socks5_proxies = cursor.fetchall()
             for proxy in socks5_proxies:
-                proxy_id = proxy[0]
-                unified_id = get_next_unified_proxy_id(db, 'socks5', proxy_id)
-                update_proxy_unified_id(db, 'socks5_proxies', proxy_id, unified_id)
+                all_proxies.append(('socks5', proxy[0], proxy[1]))
         
-        logger.info("Assigned unified IDs to existing proxies")
+        # 按创建时间排序所有代理，确保ID是连续的
+        all_proxies.sort(key=lambda x: (x[2], x[1]))  # 按创建时间，然后按ID排序
+        
+        # 为每个代理分配统一ID
+        for proxy_type, proxy_id, created_at in all_proxies:
+            unified_id = get_next_unified_proxy_id(db, proxy_type, proxy_id)
+            table_name = f'{proxy_type}_proxies'
+            update_proxy_unified_id(db, table_name, proxy_id, unified_id)
+        
+        logger.info(f"Assigned unified IDs to {len(all_proxies)} existing proxies")
         
     except Exception as e:
         logger.error(f"Error assigning unified IDs to existing proxies: {e}")
