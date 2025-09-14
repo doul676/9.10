@@ -130,6 +130,14 @@ CREATE TABLE IF NOT EXISTS system_config (
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
+-- 代理配置表（统一管理HTTP和SOCKS5代理状态）
+CREATE TABLE IF NOT EXISTS proxy_config (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    config_key TEXT NOT NULL UNIQUE,
+    config_value TEXT NOT NULL,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
 -- 插入默认系统配置
 INSERT OR IGNORE INTO system_config (config_key, config_value, config_type, description, is_system) VALUES 
 ('system_name', '邮件查看系统', 'string', '系统名称', 1),
@@ -142,6 +150,12 @@ INSERT OR IGNORE INTO system_config (config_key, config_value, config_type, desc
 ('enable_registration', '0', 'boolean', '启用用户注册', 0),
 ('site_url', 'http://localhost:8005', 'string', '站点URL', 0),
 ('admin_email', 'admin@example.com', 'string', '管理员邮箱', 0);
+
+-- 插入默认代理配置
+INSERT OR IGNORE INTO proxy_config (config_key, config_value) VALUES 
+('proxy_enabled', '0'),
+('active_proxy_type', ''),
+('active_proxy_id', '0');
 
 -- 创建索引（增强版）
 CREATE INDEX IF NOT EXISTS idx_mail_accounts_email ON mail_accounts(email);
