@@ -475,6 +475,7 @@
         align-items: center;
         margin-bottom: 20px;
         gap: 20px;
+        flex-wrap: nowrap; /* Prevent wrapping unless specifically needed */
     }
     
     .search-box {
@@ -482,11 +483,12 @@
         gap: 10px;
         flex: 1;
         max-width: 400px;
+        min-width: 0; /* Allow shrinking */
     }
     
     .search-box input {
         flex: 1;
-        min-width: 200px;
+        min-width: 150px; /* Reduced from 200px to prevent early wrapping */
     }
     
     .page-controls select {
@@ -576,8 +578,8 @@
         color: #92400e;
     }
     
-    /* 响应式设计 */
-    @media (max-width: 768px) {
+    /* 响应式设计 - 更保守的断点避免不必要的换行 */
+    @media (max-width: 650px) {
         .sidebar {
             transform: translateX(-100%);
         }
