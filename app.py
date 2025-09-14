@@ -1568,51 +1568,145 @@ def api_admin_proxy_config():
         
         try:
             if action == 'enable_proxy':
-                # 开启代理功能 - 自动选择序号ID为1的代理
+                # 开启代理功能 - 测试所有代理，自动选择延迟最低的代理启用
                 
-                # 首先查找所有代理，按创建时间排序，选择最早创建的代理
-                proxy_found = None
-                proxy_type = None
+                # 获取所有可用的代理
+                all_proxies = []
                 
-                # 先查找HTTP代理
+                # 获取HTTP代理
                 if db_type == 'sqlite':
-                    http_proxy = db.execute('SELECT * FROM http_proxies WHERE status = 1 ORDER BY id ASC LIMIT 1').fetchone()
+                    http_proxies = db.execute('SELECT * FROM http_proxies WHERE status = 1').fetchall()
                 else:
                     cursor = db.cursor()
-                    cursor.execute('SELECT * FROM http_proxies WHERE status = 1 ORDER BY id ASC LIMIT 1')
-                    http_proxy = cursor.fetchone()
+                    cursor.execute('SELECT * FROM http_proxies WHERE status = 1')
+                    http_proxies = cursor.fetchall()
                 
-                # 再查找SOCKS5代理
+                if http_proxies:
+                    for proxy in http_proxies:
+                        if db_type == 'sqlite':
+                            proxy_dict = dict(proxy)
+                        else:
+                            columns = [desc[0] for desc in cursor.description]
+                            proxy_dict = dict(zip(columns, proxy))
+                        proxy_dict['proxy_type'] = 'http'
+                        all_proxies.append(proxy_dict)
+                
+                # 获取SOCKS5代理
                 if db_type == 'sqlite':
-                    socks5_proxy = db.execute('SELECT * FROM socks5_proxies WHERE status = 1 ORDER BY id ASC LIMIT 1').fetchone()
+                    socks5_proxies = db.execute('SELECT * FROM socks5_proxies WHERE status = 1').fetchall()
                 else:
                     cursor = db.cursor()
-                    cursor.execute('SELECT * FROM socks5_proxies WHERE status = 1 ORDER BY id ASC LIMIT 1')
-                    socks5_proxy = cursor.fetchone()
+                    cursor.execute('SELECT * FROM socks5_proxies WHERE status = 1')
+                    socks5_proxies = cursor.fetchall()
                 
-                # 选择ID最小的代理（优先HTTP，如果ID相同或HTTP不存在则选SOCKS5）
-                if http_proxy and socks5_proxy:
-                    if http_proxy[0] <= socks5_proxy[0]:  # ID comparison
-                        proxy_found = http_proxy
-                        proxy_type = 'http'
-                    else:
-                        proxy_found = socks5_proxy
-                        proxy_type = 'socks5'
-                elif http_proxy:
-                    proxy_found = http_proxy
-                    proxy_type = 'http'
-                elif socks5_proxy:
-                    proxy_found = socks5_proxy
-                    proxy_type = 'socks5'
+                if socks5_proxies:
+                    for proxy in socks5_proxies:
+                        if db_type == 'sqlite':
+                            proxy_dict = dict(proxy)
+                        else:
+                            columns = [desc[0] for desc in cursor.description]
+                            proxy_dict = dict(zip(columns, proxy))
+                        proxy_dict['proxy_type'] = 'socks5'
+                        all_proxies.append(proxy_dict)
                 
-                if not proxy_found:
+                if not all_proxies:
                     return jsonify({
                         'success': False,
                         'message': '没有找到可用的代理配置'
                     })
                 
-                # 更新代理配置
-                proxy_id = proxy_found[0]  # ID is first column
+                # 测试所有代理，选择延迟最低的
+                best_proxy = None
+                best_response_time = float('inf')
+                test_results = []
+                
+                for proxy in all_proxies:
+                    try:
+                        # 测试代理连接
+                        test_result = _perform_proxy_test(proxy, proxy['proxy_type'])
+                        test_results.append({
+                            'proxy': proxy,
+                            'result': test_result
+                        })
+                        
+                        # 如果测试成功且延迟更低，更新最佳代理
+                        if test_result['success'] and test_result['avg_response_time'] < best_response_time:
+                            best_proxy = proxy
+                            best_response_time = test_result['avg_response_time']
+                            
+                            # 更新数据库中的响应时间
+                            table_name = f"{proxy['proxy_type']}_proxies"
+                            now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                            
+                            if db_type == 'sqlite':
+                                db.execute(f'''
+                                    UPDATE {table_name}
+                                    SET last_check=?, response_time=?
+                                    WHERE id=?
+                                ''', (now, test_result['avg_response_time'], proxy['id']))
+                            else:
+                                cursor = db.cursor()
+                                cursor.execute(f'''
+                                    UPDATE {table_name}
+                                    SET last_check=%s, response_time=%s
+                                    WHERE id=%s
+                                ''', (now, test_result['avg_response_time'], proxy['id']))
+                        
+                    except Exception as e:
+                        test_results.append({
+                            'proxy': proxy,
+                            'result': {
+                                'success': False,
+                                'message': f'测试失败: {str(e)}',
+                                'avg_response_time': 0
+                            }
+                        })
+                
+                if not best_proxy:
+                    # 如果没有测试成功的代理，选择ID最小的作为备用
+                    all_proxies.sort(key=lambda x: x['id'])
+                    best_proxy = all_proxies[0]
+                    proxy_type = best_proxy['proxy_type']
+                    proxy_id = best_proxy['id']
+                    
+                    # 更新代理配置
+                    config_updates = [
+                        ('proxy_enabled', '1'),
+                        ('active_proxy_type', proxy_type),
+                        ('active_proxy_id', str(proxy_id))
+                    ]
+                    
+                    for key, value in config_updates:
+                        if db_type == 'sqlite':
+                            db.execute('''
+                                INSERT OR REPLACE INTO proxy_config (config_key, config_value, updated_at)
+                                VALUES (?, ?, CURRENT_TIMESTAMP)
+                            ''', (key, value))
+                        else:
+                            cursor = db.cursor()
+                            cursor.execute('''
+                                INSERT INTO proxy_config (config_key, config_value, updated_at)
+                                VALUES (%s, %s, CURRENT_TIMESTAMP)
+                                ON DUPLICATE KEY UPDATE config_value = VALUES(config_value), updated_at = CURRENT_TIMESTAMP
+                            ''' if db_type == 'mysql' else '''
+                                INSERT INTO proxy_config (config_key, config_value, updated_at)
+                                VALUES (%s, %s, CURRENT_TIMESTAMP)
+                                ON CONFLICT (config_key) DO UPDATE SET config_value = EXCLUDED.config_value, updated_at = CURRENT_TIMESTAMP
+                            ''', (key, value))
+                    
+                    if db_type != 'sqlite':
+                        db.commit()
+                    else:
+                        db.commit()
+                    
+                    return jsonify({
+                        'success': True,
+                        'message': f'代理已开启（备用选择），当前使用: {proxy_type.upper()} - {best_proxy["name"]} (ID: {proxy_id})，所有代理测试均失败，已选择ID最小的代理'
+                    })
+                
+                # 找到最佳代理，更新配置
+                proxy_type = best_proxy['proxy_type']
+                proxy_id = best_proxy['id']
                 
                 config_updates = [
                     ('proxy_enabled', '1'),
@@ -1643,20 +1737,9 @@ def api_admin_proxy_config():
                 else:
                     db.commit()
                 
-                # 获取代理名称用于返回消息
-                if db_type == 'sqlite':
-                    proxy_name = dict(proxy_found).get('name', '未知代理')
-                else:
-                    # Get column names for non-sqlite
-                    cursor.execute(f'DESCRIBE {proxy_type}_proxies' if db_type == 'mysql' else 
-                                 f'SELECT column_name FROM information_schema.columns WHERE table_name = \'{proxy_type}_proxies\'')
-                    columns = [row[0] for row in cursor.fetchall()]
-                    proxy_dict = dict(zip(columns, proxy_found))
-                    proxy_name = proxy_dict.get('name', '未知代理')
-                
                 return jsonify({
                     'success': True,
-                    'message': f'代理已开启，当前使用: {proxy_type.upper()} - {proxy_name} (ID: {proxy_id})'
+                    'message': f'代理已开启（智能选择），当前使用: {proxy_type.upper()} - {best_proxy["name"]} (ID: {proxy_id})，平均延迟: {best_response_time}ms'
                 })
                 
             elif action == 'disable_proxy':
