@@ -674,10 +674,40 @@ def _test_mailbox(db, data):
                 'message': '邮箱不存在'
             })
         
-        # 这里应该调用实际的邮箱连接测试
-        # 暂时返回模拟结果
-        test_result = "连接成功"
-        test_success = True
+        # 调用实际的邮箱连接测试
+        try:
+            result = subprocess.run([
+                sys.executable, 
+                os.path.join(os.path.dirname(__file__), 'python', 'mail_fetcher.py'),
+                account['email'] if app.config['DATABASE_TYPE'] == 'sqlite' else account[1],
+                '--test-connection'
+            ], capture_output=True, text=True, timeout=30)
+            
+            if result.returncode == 0:
+                # 解析JSON输出
+                response_data = json.loads(result.stdout)
+                test_success = response_data.get('success', False)
+                test_result = response_data.get('message', '测试完成')
+                
+                # 如果有诊断信息，添加到结果中
+                if 'diagnostics' in response_data:
+                    diagnostics = response_data['diagnostics']
+                    test_result += f"\n详细信息: {diagnostics.get('connection_test', '')}"
+                    if 'proxy_status' in diagnostics:
+                        test_result += f"\n代理状态: {diagnostics['proxy_status']}"
+            else:
+                test_success = False
+                test_result = f'测试失败: {result.stderr or "未知错误"}'
+                
+        except subprocess.TimeoutExpired:
+            test_success = False
+            test_result = '邮箱连接测试超时，请稍后重试'
+        except json.JSONDecodeError:
+            test_success = False
+            test_result = '邮箱服务响应格式错误'
+        except Exception as e:
+            test_success = False
+            test_result = f'邮箱测试错误: {str(e)}'
         
         # 更新测试结果
         now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
@@ -724,16 +754,56 @@ def _test_new_mailbox(data):
         })
     
     try:
-        # 这里应该调用实际的邮箱连接测试
-        # 可以使用类似的逻辑调用 mail_fetcher.py 进行实际测试
-        # 暂时返回模拟结果
-        test_result = "连接测试成功"
-        test_success = True
+        # 创建临时邮箱配置文件进行测试
+        import tempfile
+        import json
         
-        return jsonify({
-            'success': test_success,
-            'message': test_result
-        })
+        # 创建临时配置用于测试
+        temp_data = {
+            'email': email,
+            'username': email,
+            'password': password,
+            'server': server,
+            'port': port,
+            'protocol': protocol,
+            'ssl': 1 if ssl else 0
+        }
+        
+        # 创建临时文件
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as temp_file:
+            json.dump(temp_data, temp_file)
+            temp_file_path = temp_file.name
+        
+        try:
+            # 使用Python脚本直接测试
+            import os
+            from python.mail_fetcher import ProxyMailFetcher
+            
+            fetcher = ProxyMailFetcher(
+                server, port, email, password, protocol, ssl
+            )
+            
+            result = fetcher.test_connection()
+            test_success = result.get('success', False)
+            test_result = result.get('message', '测试完成')
+            
+            # 添加代理信息
+            if 'diagnostics' in result:
+                diagnostics = result['diagnostics']
+                if 'proxy_status' in diagnostics:
+                    test_result += f"\n代理状态: {diagnostics['proxy_status']}"
+            
+            return jsonify({
+                'success': test_success,
+                'message': test_result
+            })
+            
+        finally:
+            # 清理临时文件
+            try:
+                os.unlink(temp_file_path)
+            except:
+                pass
         
     except Exception as e:
         return jsonify({
