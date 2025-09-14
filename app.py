@@ -308,7 +308,7 @@ def migrate_cards_table(db, db_type):
         # 检查cards表是否有新字段
         new_columns = [
             ('bound_email_id', 'INTEGER DEFAULT NULL'),
-            ('email_days_filter', 'INTEGER DEFAULT 7'),
+            ('email_days_filter', 'INTEGER DEFAULT 1'),
             ('sender_filter', 'TEXT DEFAULT \'\'')
         ]
         
@@ -323,7 +323,7 @@ def migrate_cards_table(db, db_type):
                         if column_name == 'bound_email_id':
                             db.execute('ALTER TABLE cards ADD COLUMN bound_email_id INTEGER DEFAULT NULL')
                         elif column_name == 'email_days_filter':
-                            db.execute('ALTER TABLE cards ADD COLUMN email_days_filter INTEGER DEFAULT 7')
+                            db.execute('ALTER TABLE cards ADD COLUMN email_days_filter INTEGER DEFAULT 1')
                         elif column_name == 'sender_filter':
                             db.execute('ALTER TABLE cards ADD COLUMN sender_filter TEXT DEFAULT \'\'')
                     logger.info(f"Added {column_name} column to cards table")
@@ -3052,68 +3052,443 @@ def _bind_email_to_card(db, data):
             'message': f'绑定失败: {str(e)}'
         })
 
-@app.route('/admin/api/cards/<int:card_id>/generate-api', methods=['POST'])
+@app.route('/admin/api/cards/<int:card_id>/available-emails', methods=['GET'])
 @admin_required
-def api_admin_generate_card_api(card_id):
-    """为卡密生成API密钥"""
+def api_admin_card_available_emails(card_id):
+    """获取指定卡密可绑定的邮箱列表（排除已绑定的邮箱）"""
     db = get_db()
     db_type = app.config['DATABASE_TYPE']
     
     try:
-        # 检查卡密是否存在
+        # 获取所有邮箱
         if db_type == 'sqlite':
-            card = db.execute('SELECT * FROM cards WHERE id = ?', (card_id,)).fetchone()
+            all_emails = db.execute('SELECT * FROM mail_accounts ORDER BY email ASC').fetchall()
         else:
             cursor = db.cursor()
-            cursor.execute('SELECT * FROM cards WHERE id = %s', (card_id,))
-            card = cursor.fetchone()
+            cursor.execute('SELECT * FROM mail_accounts ORDER BY email ASC')
+            all_emails = cursor.fetchall()
         
-        if not card:
-            return jsonify({
-                'success': False,
-                'message': '卡密不存在'
-            })
-        
-        # 生成API密钥 (使用card_key作为基础生成)
-        import hashlib
-        import time
-        
+        # 获取已绑定的邮箱ID（排除当前卡密）
         if db_type == 'sqlite':
-            card_dict = dict(card)
-            card_key = card_dict['card_key']
+            bound_email_ids = db.execute('''
+                SELECT DISTINCT bound_email_id 
+                FROM cards 
+                WHERE bound_email_id IS NOT NULL AND id != ?
+            ''', (card_id,)).fetchall()
+            bound_ids = [row['bound_email_id'] for row in bound_email_ids]
         else:
-            columns = [desc[0] for desc in cursor.description] if 'cursor' in locals() else []
-            card_dict = dict(zip(columns, card)) if columns else {'card_key': card[1]}
-            card_key = card_dict['card_key']
+            cursor = db.cursor()
+            cursor.execute('''
+                SELECT DISTINCT bound_email_id 
+                FROM cards 
+                WHERE bound_email_id IS NOT NULL AND id != %s
+            ''', (card_id,))
+            bound_email_ids = cursor.fetchall()
+            bound_ids = [row[0] for row in bound_email_ids]
         
-        # 生成API密钥 - 使用卡密+时间戳+固定盐值的SHA256
-        timestamp = str(int(time.time()))
-        salt = "mail_system_api_2024"
-        api_key = hashlib.sha256(f"{card_key}_{timestamp}_{salt}".encode()).hexdigest()[:32]
+        # 过滤掉已绑定的邮箱
+        available_emails = []
+        for email in all_emails:
+            email_id = email['id'] if db_type == 'sqlite' else email[0]
+            if email_id not in bound_ids:
+                available_emails.append(dict(email) if db_type == 'sqlite' else dict(zip([desc[0] for desc in cursor.description], email)))
         
         return jsonify({
             'success': True,
-            'message': 'API密钥生成成功',
-            'api_key': api_key,
-            'usage_instructions': {
-                'endpoint': f'/api/get_mail',
-                'method': 'POST',
-                'headers': {
-                    'Content-Type': 'application/json',
-                    'Authorization': f'Bearer {api_key}'
-                },
-                'body': {
-                    'email': '目标邮箱地址',
-                    'card_key': card_key
-                }
-            }
+            'data': available_emails
         })
         
     except Exception as e:
         return jsonify({
             'success': False,
-            'message': f'生成API密钥失败: {str(e)}'
+            'message': f'获取可绑定邮箱列表失败: {str(e)}'
         })
+
+@app.route('/admin/api/cards/generate-api/<card_key>', methods=['GET'])
+def api_admin_generate_card_api_page(card_key):
+    """为卡密生成API页面"""
+    try:
+        # 生成API页面内容
+        api_content = f"""<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>API取件页面 - {card_key}</title>
+    <style>
+        * {{
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }}
+        
+        body {{
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }}
+        
+        .container {{
+            max-width: 800px;
+            margin: 0 auto;
+        }}
+        
+        .header {{
+            text-align: center;
+            color: white;
+            margin-bottom: 30px;
+        }}
+        
+        .header h1 {{
+            font-size: 32px;
+            margin-bottom: 10px;
+            text-shadow: 0 2px 4px rgba(0,0,0,0.3);
+        }}
+        
+        .header p {{
+            font-size: 16px;
+            opacity: 0.9;
+        }}
+        
+        .main-card {{
+            background: white;
+            border-radius: 20px;
+            padding: 40px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }}
+        
+        .input-group {{
+            display: flex;
+            margin-bottom: 20px;
+            gap: 15px;
+        }}
+        
+        .input-group input {{
+            flex: 1;
+            padding: 15px 20px;
+            border: 2px solid #e1e5e9;
+            border-radius: 12px;
+            font-size: 16px;
+            transition: all 0.3s ease;
+        }}
+        
+        .input-group input:focus {{
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }}
+        
+        .get-mail-btn {{
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            border-radius: 12px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            min-width: 120px;
+        }}
+        
+        .get-mail-btn:hover {{
+            transform: translateY(-2px);
+            box-shadow: 0 10px 25px rgba(102, 126, 234, 0.3);
+        }}
+        
+        .get-mail-btn:disabled {{
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }}
+        
+        .loading {{
+            display: none;
+            text-align: center;
+            padding: 20px;
+            color: #667eea;
+            font-size: 16px;
+        }}
+        
+        .loading .spinner {{
+            width: 40px;
+            height: 40px;
+            border: 4px solid #f3f4f6;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 15px;
+        }}
+        
+        @keyframes spin {{
+            0% {{ transform: rotate(0deg); }}
+            100% {{ transform: rotate(360deg); }}
+        }}
+        
+        .message {{
+            padding: 15px;
+            border-radius: 10px;
+            margin: 20px 0;
+            font-weight: 500;
+        }}
+        
+        .message.success {{
+            background: #d1fae5;
+            color: #065f46;
+            border: 1px solid #a7f3d0;
+        }}
+        
+        .message.error {{
+            background: #fee2e2;
+            color: #991b1b;
+            border: 1px solid #fca5a5;
+        }}
+        
+        .message.info {{
+            background: #dbeafe;
+            color: #1e40af;
+            border: 1px solid #93c5fd;
+        }}
+        
+        .mail-display {{
+            display: none;
+            background: #f8fafc;
+            border-radius: 15px;
+            padding: 25px;
+            margin-top: 25px;
+        }}
+        
+        .mail-header {{
+            margin-bottom: 20px;
+        }}
+        
+        .mail-subject {{
+            font-size: 20px;
+            font-weight: 600;
+            color: #1e293b;
+            margin-bottom: 15px;
+        }}
+        
+        .mail-meta {{
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }}
+        
+        .mail-meta-item {{
+            background: white;
+            padding: 12px 15px;
+            border-radius: 8px;
+            border-left: 4px solid #667eea;
+        }}
+        
+        .mail-meta-label {{
+            font-size: 12px;
+            color: #6b7280;
+            font-weight: 500;
+            display: block;
+            margin-bottom: 5px;
+        }}
+        
+        .mail-body {{
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            border: 1px solid #e5e7eb;
+            max-height: 400px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            line-height: 1.6;
+        }}
+        
+        .api-info {{
+            background: #f1f5f9;
+            padding: 20px;
+            border-radius: 10px;
+            margin-top: 20px;
+            font-size: 14px;
+            color: #475569;
+        }}
+        
+        .card-key {{
+            background: #667eea;
+            color: white;
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-family: 'Courier New', monospace;
+            font-weight: 600;
+        }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>📧 API邮件查看</h1>
+            <p>专用API取件页面</p>
+        </div>
+        
+        <div class="main-card">
+            <div class="api-info">
+                <strong>当前卡密:</strong> <span class="card-key">{card_key}</span>
+                <br><br>
+                此页面专为卡密 <strong>{card_key}</strong> 生成，可用于API自动取件。
+            </div>
+            
+            <div class="input-group">
+                <input type="email" id="emailInput" placeholder="请输入邮箱地址进行API取件" required>
+                <button class="get-mail-btn" onclick="getMail()">API取件</button>
+            </div>
+            
+            <div class="loading" id="loading">
+                <div class="spinner"></div>
+                <div>正在通过API获取邮件，请稍候...</div>
+            </div>
+            
+            <div id="message"></div>
+        </div>
+        
+        <div class="mail-display" id="mailDisplay">
+            <div class="mail-header">
+                <div class="mail-subject" id="mailSubject"></div>
+                <div class="mail-meta">
+                    <div class="mail-meta-item">
+                        <span class="mail-meta-label">发件人:</span>
+                        <span id="mailFrom"></span>
+                    </div>
+                    <div class="mail-meta-item">
+                        <span class="mail-meta-label">收件人:</span>
+                        <span id="mailTo"></span>
+                    </div>
+                    <div class="mail-meta-item">
+                        <span class="mail-meta-label">时间:</span>
+                        <span id="mailDate"></span>
+                    </div>
+                    <div class="mail-meta-item">
+                        <span class="mail-meta-label">大小:</span>
+                        <span id="mailSize"></span>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="mail-body" id="mailBody"></div>
+        </div>
+    </div>
+    
+    <script>
+        // 回车键触发获取邮件
+        document.getElementById('emailInput').addEventListener('keypress', function(e) {{
+            if (e.key === 'Enter') {{
+                getMail();
+            }}
+        }});
+        
+        async function getMail() {{
+            const emailInput = document.getElementById('emailInput');
+            const loading = document.getElementById('loading');
+            const message = document.getElementById('message');
+            const mailDisplay = document.getElementById('mailDisplay');
+            const getMailBtn = document.querySelector('.get-mail-btn');
+            
+            const email = emailInput.value.trim();
+            
+            if (!email) {{
+                showMessage('请输入邮箱地址', 'error');
+                return;
+            }}
+            
+            if (!isValidEmail(email)) {{
+                showMessage('请输入有效的邮箱地址', 'error');
+                return;
+            }}
+            
+            // 显示加载状态
+            loading.style.display = 'block';
+            getMailBtn.disabled = true;
+            getMailBtn.textContent = 'API取件中...';
+            message.innerHTML = '';
+            mailDisplay.style.display = 'none';
+            
+            try {{
+                const response = await fetch('/api/get_mail', {{
+                    method: 'POST',
+                    headers: {{
+                        'Content-Type': 'application/json',
+                        'X-Card-Key': '{card_key}'
+                    }},
+                    body: JSON.stringify({{ 
+                        email: email,
+                        card_key: '{card_key}'
+                    }})
+                }});
+                
+                const data = await response.json();
+                
+                if (data.success) {{
+                    if (data.mail) {{
+                        displayMail(data.mail);
+                        showMessage('API邮件获取成功', 'success');
+                    }} else {{
+                        showMessage('邮箱中暂无邮件', 'info');
+                    }}
+                }} else {{
+                    showMessage(data.message || 'API获取邮件失败', 'error');
+                }}
+                
+            }} catch (error) {{
+                console.error('API请求失败:', error);
+                showMessage('网络请求失败，请检查网络连接', 'error');
+            }} finally {{
+                // 隐藏加载状态
+                loading.style.display = 'none';
+                getMailBtn.disabled = false;
+                getMailBtn.textContent = 'API取件';
+            }}
+        }}
+        
+        function displayMail(mail) {{
+            document.getElementById('mailSubject').textContent = mail.subject || '(无主题)';
+            document.getElementById('mailFrom').textContent = mail.from || '未知';
+            document.getElementById('mailTo').textContent = mail.to || '未知';
+            document.getElementById('mailDate').textContent = mail.date || '未知';
+            document.getElementById('mailSize').textContent = formatFileSize(mail.size || 0);
+            document.getElementById('mailBody').textContent = mail.body || '(邮件内容为空)';
+            
+            document.getElementById('mailDisplay').style.display = 'block';
+        }}
+        
+        function showMessage(text, type) {{
+            const message = document.getElementById('message');
+            message.innerHTML = `<div class="message ${{type}}">${{text}}</div>`;
+        }}
+        
+        function isValidEmail(email) {{
+            const re = /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/;
+            return re.test(email);
+        }}
+        
+        function formatFileSize(bytes) {{
+            if (bytes === 0) return '0 Bytes';
+            const k = 1024;
+            const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+        }}
+    </script>
+</body>
+</html>"""
+        
+        return api_content, 200, {'Content-Type': 'text/html; charset=utf-8'}
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': f'生成API页面失败: {str(e)}'
+        }), 500
 
 @app.route('/admin/api/card-logs')
 @admin_required

@@ -315,37 +315,51 @@
     }
     
     /* Pagination */
-    .pagination {
+    .pagination-container {
+        margin-top: 20px;
         display: flex;
         justify-content: center;
         align-items: center;
         gap: 10px;
-        margin-top: 20px;
     }
     
-    .pagination button {
+    .pagination-info {
+        color: #6b7280;
+        font-size: 14px;
+        margin-right: 20px;
+    }
+    
+    .page-btn {
         padding: 8px 12px;
-        border: 1px solid #d1d5db;
+        border: 1px solid #e5e7eb;
         background: white;
         color: #374151;
+        text-decoration: none;
         border-radius: 6px;
-        cursor: pointer;
         transition: var(--transition);
+        cursor: pointer;
     }
     
-    .pagination button:hover:not(:disabled) {
+    .page-btn:hover {
         background: #f3f4f6;
+        border-color: #d1d5db;
     }
     
-    .pagination button.active {
+    .page-btn.active {
         background: var(--primary-color);
         color: white;
         border-color: var(--primary-color);
     }
     
-    .pagination button:disabled {
+    .page-btn:disabled {
         opacity: 0.5;
         cursor: not-allowed;
+    }
+    
+    .pagination-buttons {
+        display: flex;
+        gap: 5px;
+        align-items: center;
     }
     
     /* Modal */
@@ -742,8 +756,8 @@
                     </table>
                 </div>
 
-                <!-- 分页 -->
-                <div class="pagination" id="pagination">
+                <!-- 分页导航 -->
+                <div class="pagination-container" id="paginationContainer">
                     <!-- 分页按钮将通过JavaScript生成 -->
                 </div>
             </div>
@@ -871,7 +885,7 @@
                         </div>
                         <div class="form-group">
                             <label class="form-label">收取X天内的邮件</label>
-                            <input type="number" class="form-control" name="email_days_filter" id="editEmailDaysFilter" value="7" min="1" max="365">
+                            <input type="number" class="form-control" name="email_days_filter" id="editEmailDaysFilter" value="1" min="1" max="365">
                         </div>
                     </div>
                     
@@ -1038,7 +1052,7 @@
                 <td>${getBoundEmailInfo(card) || '-'}</td>
                 <td>
                     <div style="font-size: 12px;">
-                        <div>收取: ${card.email_days_filter || 7}天内</div>
+                        <div>收取: ${card.email_days_filter || 1}天内</div>
                         ${card.sender_filter ? `<div>发件人: ${card.sender_filter.substring(0, 20)}${card.sender_filter.length > 20 ? '...' : ''}</div>` : '<div>发件人: 不限制</div>'}
                     </div>
                 </td>
@@ -1157,35 +1171,51 @@
 
     // 渲染分页
     function renderPagination(pagination) {
-        const paginationEl = document.getElementById('pagination');
+        const container = document.getElementById('paginationContainer');
         totalPages = pagination.pages;
         
-        if (totalPages <= 1) {
-            paginationEl.innerHTML = '';
-            return;
+        let html = `<div class="pagination-info">共 ${pagination.total} 条记录，第 ${pagination.page} 页，共 ${pagination.pages} 页</div>`;
+        
+        if (pagination.pages > 1) {
+            html += '<div class="pagination-buttons">';
+            
+            // 上一页
+            if (pagination.page > 1) {
+                html += `<button class="page-btn" onclick="loadCardList(${pagination.page - 1})">« 上一页</button>`;
+            }
+            
+            // 页码按钮
+            let startPage = Math.max(1, pagination.page - 2);
+            let endPage = Math.min(pagination.pages, pagination.page + 2);
+            
+            if (startPage > 1) {
+                html += `<button class="page-btn" onclick="loadCardList(1)">1</button>`;
+                if (startPage > 2) {
+                    html += '<span class="page-btn" style="border: none; cursor: default;">...</span>';
+                }
+            }
+            
+            for (let i = startPage; i <= endPage; i++) {
+                const activeClass = i === pagination.page ? 'active' : '';
+                html += `<button class="page-btn ${activeClass}" onclick="loadCardList(${i})">${i}</button>`;
+            }
+            
+            if (endPage < pagination.pages) {
+                if (endPage < pagination.pages - 1) {
+                    html += '<span class="page-btn" style="border: none; cursor: default;">...</span>';
+                }
+                html += `<button class="page-btn" onclick="loadCardList(${pagination.pages})">${pagination.pages}</button>`;
+            }
+            
+            // 下一页
+            if (pagination.page < pagination.pages) {
+                html += `<button class="page-btn" onclick="loadCardList(${pagination.page + 1})">下一页 »</button>`;
+            }
+            
+            html += '</div>';
         }
-
-        let html = `
-            <button onclick="loadCardList(1)" ${currentPage === 1 ? 'disabled' : ''}>首页</button>
-            <button onclick="loadCardList(${currentPage - 1})" ${currentPage === 1 ? 'disabled' : ''}>上一页</button>
-        `;
-
-        // 显示页码按钮
-        const startPage = Math.max(1, currentPage - 2);
-        const endPage = Math.min(totalPages, currentPage + 2);
-
-        for (let i = startPage; i <= endPage; i++) {
-            html += `<button onclick="loadCardList(${i})" ${i === currentPage ? 'class="active"' : ''}>${i}</button>`;
-        }
-
-        html += `
-            <button onclick="loadCardList(${currentPage + 1})" ${currentPage === totalPages ? 'disabled' : ''}>下一页</button>
-            <button onclick="loadCardList(${totalPages})" ${currentPage === totalPages ? 'disabled' : ''}>末页</button>
-        `;
-
-        html += `<span style="margin-left: 20px; color: #6b7280;">第 ${currentPage} 页，共 ${totalPages} 页，共 ${pagination.total} 条</span>`;
-
-        paginationEl.innerHTML = html;
+        
+        container.innerHTML = html;
     }
 
     // 搜索卡密
@@ -1419,86 +1449,87 @@
 
     // 生成卡密API
     function generateCardAPI() {
-        const cardId = document.getElementById('editCardId').value;
-        if (!cardId) {
+        const cardKey = document.getElementById('editCardKey').value;
+        if (!cardKey) {
             showToast('请先选择卡密', 'error');
             return;
         }
 
-        fetch(`/admin/api/cards/${cardId}/generate-api`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            }
-        })
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                showToast('API密钥生成成功', 'success');
-                
-                // 显示API信息
-                const apiInfo = `
-API密钥: ${data.api_key}
-
-使用说明:
-接口地址: ${data.usage_instructions.endpoint}
-请求方法: ${data.usage_instructions.method}
-请求头: 
-  Content-Type: ${data.usage_instructions.headers['Content-Type']}
-  Authorization: ${data.usage_instructions.headers['Authorization']}
-请求体: ${JSON.stringify(data.usage_instructions.body, null, 2)}
-                `;
-                
-                // 创建一个新的弹窗显示API信息
-                alert(apiInfo); // 临时使用alert，后续可以改为更好的弹窗
-                
-            } else {
-                showToast(data.message, 'error');
-            }
-        })
-        .catch(error => {
-            console.error('生成API失败:', error);
-            showToast('网络错误，请稍后重试', 'error');
-        });
+        // 生成API页面链接
+        const apiUrl = `/admin/api/cards/generate-api/${cardKey}`;
+        
+        // 在新窗口中打开API页面
+        window.open(apiUrl, '_blank');
+        
+        showToast('API页面已在新窗口中打开', 'success');
     }
 
-    // 加载邮箱列表（用于绑定）
+    // 加载邮箱列表（用于绑定）- 更新为只获取未绑定的邮箱
     function loadEmailList(callback) {
-        fetch('/admin/api/mailbox?per_page=100')
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    // 更新绑定邮箱弹窗中的选择器
-                    const bindEmailSelect = document.getElementById('emailSelect');
-                    if (bindEmailSelect) {
-                        bindEmailSelect.innerHTML = '<option value="">请选择邮箱账号</option>';
-                        data.data.forEach(email => {
-                            const option = document.createElement('option');
-                            option.value = email.id;
-                            option.textContent = `${email.email} (${email.server})`;
-                            bindEmailSelect.appendChild(option);
-                        });
+        // 对于编辑模式，需要获取当前卡密可绑定的邮箱
+        const cardId = document.getElementById('editCardId').value;
+        
+        if (cardId) {
+            // 编辑模式：获取可绑定的邮箱
+            fetch(`/admin/api/cards/${cardId}/available-emails`)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        updateEmailSelectOptions(data.data);
+                        if (callback) callback();
                     }
-                    
-                    // 更新编辑弹窗中的选择器
-                    const editEmailSelect = document.getElementById('editBoundEmailId');
-                    if (editEmailSelect) {
-                        editEmailSelect.innerHTML = '<option value="">请选择邮箱账号</option>';
-                        data.data.forEach(email => {
-                            const option = document.createElement('option');
-                            option.value = email.id;
-                            option.textContent = `${email.email} (${email.server})`;
-                            editEmailSelect.appendChild(option);
-                        });
-                    }
-                    
+                })
+                .catch(error => {
+                    console.error('加载可绑定邮箱列表失败:', error);
                     if (callback) callback();
-                }
-            })
-            .catch(error => {
-                console.error('加载邮箱列表失败:', error);
-                if (callback) callback();
+                });
+        } else {
+            // 添加模式：获取所有未绑定的邮箱
+            fetch('/admin/api/mailbox?per_page=100')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        updateEmailSelectOptions(data.data);
+                        if (callback) callback();
+                    }
+                })
+                .catch(error => {
+                    console.error('加载邮箱列表失败:', error);
+                    if (callback) callback();
+                });
+        }
+    }
+    
+    // 更新邮箱选择器选项
+    function updateEmailSelectOptions(emails) {
+        // 更新绑定邮箱弹窗中的选择器
+        const bindEmailSelect = document.getElementById('emailSelect');
+        if (bindEmailSelect) {
+            bindEmailSelect.innerHTML = '<option value="">请选择邮箱账号</option>';
+            emails.forEach(email => {
+                const option = document.createElement('option');
+                option.value = email.id;
+                option.textContent = `${email.email} (${email.server})`;
+                bindEmailSelect.appendChild(option);
             });
+        }
+        
+        // 更新编辑弹窗中的选择器
+        const editEmailSelect = document.getElementById('editBoundEmailId');
+        if (editEmailSelect) {
+            const currentValue = editEmailSelect.value; // 保存当前值
+            editEmailSelect.innerHTML = '<option value="">请选择邮箱账号</option>';
+            emails.forEach(email => {
+                const option = document.createElement('option');
+                option.value = email.id;
+                option.textContent = `${email.email} (${email.server})`;
+                editEmailSelect.appendChild(option);
+            });
+            // 恢复当前值（如果还存在）
+            if (currentValue) {
+                editEmailSelect.value = currentValue;
+            }
+        }
     }
 
     // 显示编辑卡密弹窗
@@ -1516,7 +1547,7 @@ API密钥: ${data.api_key}
         document.getElementById('editExpiredAt').value = card.expired_at ? formatDateTimeForInput(card.expired_at) : '';
         document.getElementById('editRemarks').value = getCardRemarks(card.remarks) || '';
         document.getElementById('editBoundEmailId').value = card.bound_email_id || '';
-        document.getElementById('editEmailDaysFilter').value = card.email_days_filter || 7;
+        document.getElementById('editEmailDaysFilter').value = card.email_days_filter || 1;
         document.getElementById('editSenderFilter').value = card.sender_filter || '';
         
         // 确保邮箱选择器已加载
@@ -1537,7 +1568,7 @@ API密钥: ${data.api_key}
             expired_at: formData.get('expired_at') || null,
             remarks: formData.get('remarks') || '',
             bound_email_id: formData.get('bound_email_id') ? parseInt(formData.get('bound_email_id')) : null,
-            email_days_filter: parseInt(formData.get('email_days_filter')) || 7,
+            email_days_filter: parseInt(formData.get('email_days_filter')) || 1,
             sender_filter: formData.get('sender_filter') || ''
         };
 
