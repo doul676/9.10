@@ -36,70 +36,150 @@ app.config['DATABASE_TYPE'] = os.environ.get('DATABASE_TYPE', 'sqlite')  # sqlit
 os.makedirs(os.path.dirname(app.config['DATABASE']), exist_ok=True)
 
 def get_db():
-    """获取数据库连接（支持多数据库）"""
+    """获取数据库连接（支持多数据库）- 优化版本"""
     db = getattr(g, '_database', None)
     if db is None:
         db_type = app.config['DATABASE_TYPE']
         
-        if db_type == 'sqlite':
-            db = g._database = sqlite3.connect(app.config['DATABASE'])
-            db.row_factory = sqlite3.Row
-        elif db_type == 'mysql':
-            # MySQL连接（需要安装 mysql-connector-python）
-            import mysql.connector
-            db = g._database = mysql.connector.connect(
-                host=os.environ.get('MYSQL_HOST', 'localhost'),
-                user=os.environ.get('MYSQL_USER', 'root'),
-                password=os.environ.get('MYSQL_PASSWORD', ''),
-                database=os.environ.get('MYSQL_DATABASE', 'mail_system')
-            )
-        elif db_type == 'postgresql':
-            # PostgreSQL连接（需要安装 psycopg2-binary）
-            import psycopg2
-            from psycopg2.extras import RealDictCursor
-            db = g._database = psycopg2.connect(
-                host=os.environ.get('POSTGRES_HOST', 'localhost'),
-                user=os.environ.get('POSTGRES_USER', 'postgres'),
-                password=os.environ.get('POSTGRES_PASSWORD', ''),
-                database=os.environ.get('POSTGRES_DATABASE', 'mail_system'),
-                cursor_factory=RealDictCursor
-            )
+        try:
+            if db_type == 'sqlite':
+                db = g._database = sqlite3.connect(
+                    app.config['DATABASE'],
+                    timeout=30.0,  # 30秒超时
+                    check_same_thread=False
+                )
+                db.row_factory = sqlite3.Row
+                # 启用WAL模式提高并发性能
+                db.execute('PRAGMA journal_mode=WAL')
+                db.execute('PRAGMA synchronous=NORMAL')
+                db.execute('PRAGMA cache_size=10000')
+                db.execute('PRAGMA temp_store=MEMORY')
+            elif db_type == 'mysql':
+                # MySQL连接池优化（需要安装 mysql-connector-python）
+                import mysql.connector
+                from mysql.connector import pooling
+                
+                config = {
+                    'host': os.environ.get('MYSQL_HOST', 'localhost'),
+                    'user': os.environ.get('MYSQL_USER', 'root'),
+                    'password': os.environ.get('MYSQL_PASSWORD', ''),
+                    'database': os.environ.get('MYSQL_DATABASE', 'mail_system'),
+                    'charset': 'utf8mb4',
+                    'use_unicode': True,
+                    'autocommit': False,
+                    'connect_timeout': 30,
+                    'sql_mode': 'STRICT_TRANS_TABLES',
+                }
+                
+                # 创建连接池（如果不存在）
+                if not hasattr(app, '_mysql_pool'):
+                    app._mysql_pool = pooling.MySQLConnectionPool(
+                        pool_name="mail_pool",
+                        pool_size=5,
+                        pool_reset_session=True,
+                        **config
+                    )
+                
+                db = g._database = app._mysql_pool.get_connection()
+                
+            elif db_type == 'postgresql':
+                # PostgreSQL连接优化（需要安装 psycopg2-binary）
+                import psycopg2
+                from psycopg2.extras import RealDictCursor
+                from psycopg2 import pool
+                
+                # 创建连接池（如果不存在）
+                if not hasattr(app, '_postgres_pool'):
+                    app._postgres_pool = psycopg2.pool.SimpleConnectionPool(
+                        1, 10,  # 最小1个，最大10个连接
+                        host=os.environ.get('POSTGRES_HOST', 'localhost'),
+                        user=os.environ.get('POSTGRES_USER', 'postgres'),
+                        password=os.environ.get('POSTGRES_PASSWORD', ''),
+                        database=os.environ.get('POSTGRES_DATABASE', 'mail_system'),
+                        cursor_factory=RealDictCursor
+                    )
+                
+                db = g._database = app._postgres_pool.getconn()
+        
+        except Exception as e:
+            logger.error(f"Database connection failed: {e}")
+            raise Exception(f"数据库连接失败: {str(e)}")
+            
     return db
 
 def init_db():
-    """初始化数据库（支持多数据库）"""
+    """初始化数据库（支持多数据库）- 优化版本"""
     with app.app_context():
         db = get_db()
         db_type = app.config['DATABASE_TYPE']
         
-        # 读取并执行初始化SQL
-        init_sql_path = os.path.join(os.path.dirname(__file__), 'db', 'init.sql')
-        if os.path.exists(init_sql_path):
-            with open(init_sql_path, 'r', encoding='utf-8') as f:
-                sql_content = f.read()
+        try:
+            # 使用事务确保原子性
+            if db_type != 'sqlite':
+                db.autocommit = False
                 
-                # 根据数据库类型调整SQL语句
-                if db_type == 'mysql':
-                    sql_content = sql_content.replace('INTEGER PRIMARY KEY AUTOINCREMENT', 'INT AUTO_INCREMENT PRIMARY KEY')
-                    sql_content = sql_content.replace('DATETIME DEFAULT CURRENT_TIMESTAMP', 'DATETIME DEFAULT CURRENT_TIMESTAMP')
-                elif db_type == 'postgresql':
-                    sql_content = sql_content.replace('INTEGER PRIMARY KEY AUTOINCREMENT', 'SERIAL PRIMARY KEY')
-                    sql_content = sql_content.replace('DATETIME', 'TIMESTAMP')
+            # 读取并执行初始化SQL
+            init_sql_path = os.path.join(os.path.dirname(__file__), 'db', 'init.sql')
+            if os.path.exists(init_sql_path):
+                with open(init_sql_path, 'r', encoding='utf-8') as f:
+                    sql_content = f.read()
+                    
+                    # 根据数据库类型调整SQL语句
+                    if db_type == 'mysql':
+                        sql_content = sql_content.replace('INTEGER PRIMARY KEY AUTOINCREMENT', 'INT AUTO_INCREMENT PRIMARY KEY')
+                        sql_content = sql_content.replace('DATETIME DEFAULT CURRENT_TIMESTAMP', 'DATETIME DEFAULT CURRENT_TIMESTAMP')
+                        sql_content = sql_content.replace('INSERT OR IGNORE', 'INSERT IGNORE')
+                        sql_content = sql_content.replace('INSERT OR REPLACE', 'INSERT INTO ... ON DUPLICATE KEY UPDATE')
+                    elif db_type == 'postgresql':
+                        sql_content = sql_content.replace('INTEGER PRIMARY KEY AUTOINCREMENT', 'SERIAL PRIMARY KEY')
+                        sql_content = sql_content.replace('DATETIME', 'TIMESTAMP')
+                        sql_content = sql_content.replace('INSERT OR IGNORE', 'INSERT ... ON CONFLICT DO NOTHING')
+                        sql_content = sql_content.replace('INSERT OR REPLACE', 'INSERT ... ON CONFLICT ... DO UPDATE SET')
+                    
+                    # 执行SQL
+                    if db_type == 'sqlite':
+                        db.executescript(sql_content)
+                    else:
+                        cursor = db.cursor()
+                        # 分割并执行每个语句
+                        statements = [stmt.strip() for stmt in sql_content.split(';') if stmt.strip()]
+                        for statement in statements:
+                            try:
+                                cursor.execute(statement)
+                            except Exception as e:
+                                logger.warning(f"SQL statement failed (continuing): {statement[:100]}... Error: {e}")
+                        cursor.close()
+            
+            # 数据库迁移：为现有代理表添加unified_id列
+            migrate_proxy_tables(db, db_type)
+            
+            # 创建管理员用户表（兼容原有PHP版本）
+            create_admin_table(db, db_type)
+            
+            # 检查是否有默认管理员，如果没有则创建
+            create_default_admin(db, db_type)
+            
+            # 提交事务
+            if db_type != 'sqlite':
+                db.commit()
+            else:
+                db.commit()
                 
-                # 执行SQL
-                if db_type == 'sqlite':
-                    db.executescript(sql_content)
-                else:
-                    cursor = db.cursor()
-                    for statement in sql_content.split(';'):
-                        if statement.strip():
-                            cursor.execute(statement)
-                    db.commit()
-        
-        # 数据库迁移：为现有代理表添加unified_id列
-        migrate_proxy_tables(db, db_type)
-        
-        # 创建管理员用户表（兼容原有PHP版本）
+            logger.info("Database initialization completed successfully")
+            
+        except Exception as e:
+            logger.error(f"Database initialization failed: {e}")
+            # 回滚事务
+            if db_type != 'sqlite':
+                try:
+                    db.rollback()
+                except:
+                    pass
+            raise
+
+def create_admin_table(db, db_type):
+    """创建管理员用户表"""
+    try:
         if db_type == 'sqlite':
             db.execute('''
                 CREATE TABLE IF NOT EXISTS admin_users (
@@ -117,8 +197,9 @@ def init_db():
                     username VARCHAR(255) NOT NULL UNIQUE,
                     password TEXT NOT NULL,
                     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-                )
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
             ''')
+            cursor.close()
         elif db_type == 'postgresql':
             cursor = db.cursor()
             cursor.execute('''
@@ -129,8 +210,14 @@ def init_db():
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             ''')
-        
-        # 检查是否有默认管理员，如果没有则创建
+            cursor.close()
+    except Exception as e:
+        logger.error(f"Failed to create admin table: {e}")
+        raise
+
+def create_default_admin(db, db_type):
+    """创建默认管理员用户"""
+    try:
         if db_type == 'sqlite':
             admin = db.execute('SELECT * FROM admin_users WHERE username = ?', ('admin',)).fetchone()
             if not admin:
@@ -143,11 +230,10 @@ def init_db():
             if not admin:
                 cursor.execute('INSERT INTO admin_users (username, password) VALUES (%s, %s)', 
                               ('admin', 'admin'))
-        
-        if db_type != 'sqlite':
-            db.commit()
-        else:
-            db.commit()
+            cursor.close()
+    except Exception as e:
+        logger.error(f"Failed to create default admin: {e}")
+        raise
 
 def migrate_proxy_tables(db, db_type):
     """迁移代理表，添加unified_id字段"""
@@ -259,10 +345,29 @@ def assign_unified_ids_to_existing_proxies(db, db_type):
 
 @app.teardown_appcontext
 def close_db(exception):
-    """关闭数据库连接"""
+    """关闭数据库连接 - 优化版本"""
     db = getattr(g, '_database', None)
     if db is not None:
-        db.close()
+        db_type = app.config['DATABASE_TYPE']
+        try:
+            if db_type == 'sqlite':
+                db.close()
+            elif db_type == 'mysql':
+                if hasattr(app, '_mysql_pool'):
+                    # 返回连接到连接池
+                    db.close()
+                else:
+                    db.close()
+            elif db_type == 'postgresql':
+                if hasattr(app, '_postgres_pool'):
+                    # 返回连接到连接池
+                    app._postgres_pool.putconn(db)
+                else:
+                    db.close()
+        except Exception as e:
+            logger.error(f"Error closing database connection: {e}")
+        finally:
+            g._database = None
 
 def get_account_count():
     """获取邮箱账号总数"""
@@ -1539,18 +1644,22 @@ def _test_new_proxy(data, proxy_type):
         })
 
 def _perform_proxy_test(proxy, proxy_type):
-    """执行代理测试"""
+    """执行代理测试 - 优化版本"""
     try:
         host = proxy['host']
         port = proxy['port']
         username = proxy['username'] or None
         password = proxy['password'] or None
         
-        # 测试目标 - 优先测试baidu.com，163.com作为辅助测试
-        test_urls = ['http://baidu.com', 'http://163.com']
+        # 优化测试目标 - 使用更快的目标进行测试
+        test_urls = [
+            ('http://httpbin.org/ip', 8),      # 快速IP检测服务
+            ('http://baidu.com', 10),          # 国内网站
+            ('http://163.com', 10)             # 备用网站
+        ]
         results = []
         
-        for url in test_urls:
+        for url, timeout in test_urls:
             start_time = time.time()
             try:
                 if proxy_type == 'http':
@@ -1564,36 +1673,80 @@ def _perform_proxy_test(proxy, proxy_type):
                         'https': f'socks5://{username}:{password}@{host}:{port}' if username else f'socks5://{host}:{port}'
                     }
                 
-                response = requests.get(url, proxies=proxies, timeout=10)
+                # 优化请求设置
+                response = requests.get(
+                    url, 
+                    proxies=proxies, 
+                    timeout=timeout,
+                    headers={
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                        'Accept-Language': 'en-US,en;q=0.5',
+                        'Connection': 'keep-alive',
+                        'Cache-Control': 'no-cache'
+                    },
+                    allow_redirects=True,
+                    verify=False  # 跳过SSL验证以提高速度
+                )
                 response_time = int((time.time() - start_time) * 1000)
+                
+                # 检测真实IP（如果是httpbin.org）
+                real_ip = 'Unknown'
+                if 'httpbin.org' in url and response.status_code == 200:
+                    try:
+                        import json
+                        ip_data = response.json()
+                        real_ip = ip_data.get('origin', 'Unknown')
+                    except:
+                        pass
                 
                 if response.status_code == 200:
                     results.append({
                         'url': url,
                         'success': True,
                         'response_time': response_time,
-                        'ip': 'Unknown'  # 这里可以通过其他方式获取真实IP
+                        'ip': real_ip,
+                        'status_code': response.status_code
                     })
-                elif response.status_code == 403 and '163.com' in url:
-                    # 163.com的403错误视为网站限制，不算失败
+                    # 如果第一个测试成功，就不再测试其他URL以提高性能
+                    if url == test_urls[0][0]:
+                        break
+                elif response.status_code == 403 and ('163.com' in url or 'baidu.com' in url):
+                    # 这些网站的403错误视为网站限制，不算失败
                     results.append({
                         'url': url,
                         'success': True,  # 标记为成功，因为代理工作正常
                         'response_time': response_time,
-                        'error': '网站限制(403) - 代理工作正常'
+                        'error': '网站限制(403) - 代理工作正常',
+                        'status_code': response.status_code
                     })
                 else:
                     results.append({
                         'url': url,
                         'success': False,
                         'response_time': response_time,
-                        'error': f'HTTP {response.status_code}'
+                        'error': f'HTTP {response.status_code}',
+                        'status_code': response.status_code
                     })
                     
-            except Exception as e:
+            except requests.exceptions.ConnectTimeout:
+                results.append({
+                    'url': url,
+                    'success': False,
+                    'response_time': int((time.time() - start_time) * 1000),
+                    'error': '连接超时'
+                })
+            except requests.exceptions.ProxyError as e:
+                results.append({
+                    'url': url,
+                    'success': False,
+                    'response_time': int((time.time() - start_time) * 1000),
+                    'error': f'代理错误: {str(e)}'
+                })
+            except requests.exceptions.RequestException as e:
                 error_msg = str(e)
-                # 对于163.com的连接错误，给出更友好的提示
-                if '163.com' in url and ('403' in error_msg or 'Forbidden' in error_msg):
+                # 对于特定网站的限制，给出更友好的提示
+                if ('163.com' in url or 'baidu.com' in url) and ('403' in error_msg or 'Forbidden' in error_msg):
                     results.append({
                         'url': url,
                         'success': True,
@@ -1607,29 +1760,29 @@ def _perform_proxy_test(proxy, proxy_type):
                         'response_time': int((time.time() - start_time) * 1000),
                         'error': error_msg
                     })
+            except Exception as e:
+                results.append({
+                    'url': url,
+                    'success': False,
+                    'response_time': int((time.time() - start_time) * 1000),
+                    'error': str(e)
+                })
         
-        # 计算平均响应时间（优先考虑baidu.com的结果）
+        # 计算结果 - 优先考虑成功的测试
         successful_tests = [r for r in results if r['success']]
-        baidu_success = [r for r in results if r['success'] and 'baidu.com' in r['url']]
         
-        if baidu_success:
-            # 如果baidu.com成功，优先使用其结果
-            avg_response_time = sum(r['response_time'] for r in baidu_success) // len(baidu_success)
-            message = f"测试成功，平均延迟: {avg_response_time}ms"
+        if successful_tests:
+            # 使用第一个成功测试的响应时间
+            avg_response_time = successful_tests[0]['response_time']
+            message = f"测试成功，延迟: {avg_response_time}ms"
+            
+            # 如果检测到真实IP，显示在消息中
+            if 'ip' in successful_tests[0] and successful_tests[0]['ip'] != 'Unknown':
+                message += f"，IP: {successful_tests[0]['ip']}"
+                
             if len(successful_tests) > 1:
                 message += f"，成功: {len(successful_tests)}/{len(results)}"
-            return {
-                'success': True,
-                'message': message,
-                'avg_response_time': avg_response_time,
-                'results': results
-            }
-        elif successful_tests:
-            # 如果只有其他网站成功
-            avg_response_time = sum(r['response_time'] for r in successful_tests) // len(successful_tests)
-            message = f"测试成功，平均延迟: {avg_response_time}ms"
-            if len(successful_tests) > 1:
-                message += f"，成功: {len(successful_tests)}/{len(results)}"
+                
             return {
                 'success': True,
                 'message': message,
@@ -1637,9 +1790,11 @@ def _perform_proxy_test(proxy, proxy_type):
                 'results': results
             }
         else:
+            # 所有测试都失败
+            error_messages = [r.get('error', '未知错误') for r in results]
             return {
                 'success': False,
-                'message': '所有测试都失败了',
+                'message': f"所有测试都失败了: {'; '.join(error_messages[:2])}",  # 只显示前两个错误
                 'avg_response_time': 0,
                 'results': results
             }
@@ -1883,9 +2038,10 @@ def api_admin_proxy_config():
                     else:
                         db.commit()
                     
+                    proxy_name = best_proxy.get('name', '家宽')
                     return jsonify({
                         'success': True,
-                        'message': f'代理已开启（备用选择），当前代理: {proxy_type.upper()} - 地址: {best_proxy["host"]}:{best_proxy["port"]}，所有代理测试均失败，已选择ID最小的代理'
+                        'message': f'🟢 代理状态：已启用\n当前代理: {proxy_type.upper()}--{proxy_name}--地址: {best_proxy["host"]}:{best_proxy["port"]}，所有代理测试均失败，已选择ID最小的代理'
                     })
                 
                 # 找到最佳代理，更新配置
@@ -1921,9 +2077,10 @@ def api_admin_proxy_config():
                 else:
                     db.commit()
                 
+                proxy_name = best_proxy.get('name', '家宽')
                 return jsonify({
                     'success': True,
-                    'message': f'代理已开启（智能选择），当前代理: {proxy_type.upper()} - 地址: {best_proxy["host"]}:{best_proxy["port"]}，平均延迟: {best_response_time}ms'
+                    'message': f'🟢 代理状态：已启用\n当前代理: {proxy_type.upper()}--{proxy_name}--地址: {best_proxy["host"]}:{best_proxy["port"]}，平均延迟: {best_response_time}ms'
                 })
                 
             elif action == 'disable_proxy':
@@ -2018,9 +2175,10 @@ def api_admin_proxy_config():
                     columns = [row[0] for row in cursor.fetchall()]
                     proxy_dict = dict(zip(columns, proxy))
                 
+                proxy_name = proxy_dict.get('name', '家宽')
                 return jsonify({
                     'success': True,
-                    'message': f'已切换到代理: {proxy_type.upper()} - 地址: {proxy_dict["host"]}:{proxy_dict["port"]}'
+                    'message': f'🟢 代理状态：已启用\n当前代理: {proxy_type.upper()}--{proxy_name}--地址: {proxy_dict["host"]}:{proxy_dict["port"]}'
                 })
             
             else:

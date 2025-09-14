@@ -6,6 +6,11 @@ db/*.db
 *.tmp
 *.temp
 
+# Cookies 和会话文件
+cookies.txt
+*.cookie
+session_*
+
 # 系统文件
 .DS_Store
 Thumbs.db

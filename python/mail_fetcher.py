@@ -15,6 +15,7 @@ import ssl
 import imaplib
 import socks
 import http.client
+import time
 from datetime import datetime
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -102,66 +103,87 @@ class ProxyMailFetcher:
         self.proxy_enabled = False
         self.proxy_info = None
         
+        # 性能优化：连接缓存
+        self._connection_cache = {}
+        self._last_connection_time = None
+        self._connection_timeout = 300  # 5分钟连接超时
+        
         # Check and configure proxy settings
         self._check_proxy_status()
         
+    def _get_cache_key(self):
+        """生成连接缓存键"""
+        proxy_key = ""
+        if self.proxy_enabled and self.proxy_info:
+            proxy_key = f"_{self.proxy_info['type']}_{self.proxy_info['host']}_{self.proxy_info['port']}"
+        return f"{self.server}_{self.port}_{self.username}_{self.use_ssl}{proxy_key}"
+        
+    def _is_connection_expired(self):
+        """检查连接是否过期"""
+        if not self._last_connection_time:
+            return True
+        import time
+        return (time.time() - self._last_connection_time) > self._connection_timeout
+        
     def _check_proxy_status(self):
-        """Check proxy configuration from database"""
+        """Check proxy configuration from database - 优化版本"""
         try:
             db_path = os.path.join(os.path.dirname(__file__), '..', 'db', 'mail.sqlite')
             
             if not os.path.exists(db_path):
                 return
                 
-            conn = sqlite3.connect(db_path)
+            # 性能优化：缓存数据库连接
+            conn = sqlite3.connect(db_path, timeout=10.0)
+            conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
             
-            # Check if proxy_config table exists
-            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='proxy_config'")
-            if not cursor.fetchone():
-                conn.close()
-                return
-            
-            # Get proxy configuration
-            cursor.execute("""
-                SELECT config_key, config_value FROM proxy_config 
-                WHERE config_key IN ('proxy_enabled', 'active_proxy_type', 'active_proxy_id')
-            """)
-            
-            config = {row[0]: row[1] for row in cursor.fetchall()}
-            
-            # Check if proxy is enabled
-            if config.get('proxy_enabled') == '1':
-                proxy_type = config.get('active_proxy_type', '')
-                proxy_id = int(config.get('active_proxy_id', '0'))
+            try:
+                # Check if proxy_config table exists
+                cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='proxy_config'")
+                if not cursor.fetchone():
+                    return
                 
-                if proxy_type and proxy_id > 0:
-                    # Get proxy details
-                    table_name = 'socks5_proxies' if proxy_type == 'socks5' else 'http_proxies'
+                # Get proxy configuration with single query
+                cursor.execute("""
+                    SELECT config_key, config_value FROM proxy_config 
+                    WHERE config_key IN ('proxy_enabled', 'active_proxy_type', 'active_proxy_id')
+                """)
+                
+                config = {row[0]: row[1] for row in cursor.fetchall()}
+                
+                # Check if proxy is enabled
+                if config.get('proxy_enabled') == '1':
+                    proxy_type = config.get('active_proxy_type', '')
+                    proxy_id = int(config.get('active_proxy_id', '0'))
                     
-                    cursor.execute(f"SELECT name FROM sqlite_master WHERE type='table' AND name='{table_name}'")
-                    if cursor.fetchone():
-                        cursor.execute(f"SELECT * FROM {table_name} WHERE id = ? AND status = 1", (proxy_id,))
-                        proxy = cursor.fetchone()
+                    if proxy_type and proxy_id > 0:
+                        # Get proxy details
+                        table_name = 'socks5_proxies' if proxy_type == 'socks5' else 'http_proxies'
                         
-                        if proxy:
-                            # Map database columns to proxy info
-                            columns = [desc[0] for desc in cursor.description]
-                            proxy_dict = dict(zip(columns, proxy))
+                        cursor.execute(f"SELECT name FROM sqlite_master WHERE type='table' AND name='{table_name}'")
+                        if cursor.fetchone():
+                            cursor.execute(f"SELECT * FROM {table_name} WHERE id = ? AND status = 1", (proxy_id,))
+                            proxy = cursor.fetchone()
                             
-                            self.proxy_enabled = True
-                            self.proxy_info = {
-                                'type': proxy_type,
-                                'host': proxy_dict.get('host', ''),
-                                'port': proxy_dict.get('port', 0),
-                                'username': proxy_dict.get('username', ''),
-                                'password': proxy_dict.get('password', ''),
-                                'name': proxy_dict.get('name', '')
-                            }
-                            
-                            logger.info(f"Proxy configured: {proxy_type} - {self.proxy_info['name']}")
-            
-            conn.close()
+                            if proxy:
+                                # Map database columns to proxy info
+                                columns = [desc[0] for desc in cursor.description]
+                                proxy_dict = dict(zip(columns, proxy))
+                                
+                                self.proxy_enabled = True
+                                self.proxy_info = {
+                                    'type': proxy_type,
+                                    'host': proxy_dict.get('host', ''),
+                                    'port': proxy_dict.get('port', 0),
+                                    'username': proxy_dict.get('username', ''),
+                                    'password': proxy_dict.get('password', ''),
+                                    'name': proxy_dict.get('name', '')
+                                }
+                                
+                                logger.info(f"Proxy configured: {proxy_type} - {self.proxy_info['name']}")
+            finally:
+                conn.close()
             
         except Exception as e:
             logger.error(f"Error checking proxy status: {e}")
@@ -314,16 +336,16 @@ class ProxyMailFetcher:
             socket.socket = original_socket
     
     def _connect_http_proxy(self, proxy_host, proxy_port, proxy_username, proxy_password):
-        """Connect using HTTP proxy with CONNECT tunneling"""
+        """Connect using HTTP proxy with CONNECT tunneling - Enhanced for IMAP/POP3"""
         try:
             # For HTTP proxy, we need to establish a CONNECT tunnel to the IMAP server
-            logger.info(f"Establishing HTTP CONNECT tunnel via {proxy_host}:{proxy_port}")
+            logger.info(f"Establishing HTTP CONNECT tunnel via {proxy_host}:{proxy_port} for {self.protocol.upper()}")
             
             # Create a raw socket connection to the proxy
             try:
-                # Create socket and connect to proxy
+                # Create socket and connect to proxy with longer timeout for IMAP
                 proxy_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                proxy_socket.settimeout(30)
+                proxy_socket.settimeout(45)  # Increased timeout for IMAP connections
                 
                 # Test proxy connectivity first
                 logger.info(f"Testing connection to HTTP proxy {proxy_host}:{proxy_port}")
@@ -335,7 +357,7 @@ class ProxyMailFetcher:
                     raise Exception(f"HTTP代理服务器拒绝连接 {proxy_host}:{proxy_port} - 请检查代理服务器是否正常运行")
                 except socket.timeout:
                     proxy_socket.close()
-                    raise Exception(f"连接HTTP代理服务器 {proxy_host}:{proxy_port} 超时")
+                    raise Exception(f"连接HTTP代理服务器 {proxy_host}:{proxy_port} 超时 - 请检查网络连接和代理设置")
                 except socket.gaierror as e:
                     proxy_socket.close()
                     raise Exception(f"无法解析HTTP代理服务器地址 {proxy_host}: {str(e)}")
@@ -346,11 +368,12 @@ class ProxyMailFetcher:
                     else:
                         raise Exception(f"连接HTTP代理服务器失败: {str(e)}")
                 
-                # Build CONNECT request with more headers for better compatibility
+                # Build CONNECT request with enhanced headers for IMAP/POP3 compatibility
                 connect_request = f"CONNECT {self.server}:{self.port} HTTP/1.1\r\n"
                 connect_request += f"Host: {self.server}:{self.port}\r\n"
                 connect_request += "User-Agent: Python-Mail-Fetcher/1.0\r\n"
                 connect_request += "Proxy-Connection: keep-alive\r\n"
+                connect_request += "Connection: keep-alive\r\n"
                 
                 # Add proxy authentication if provided
                 if proxy_username and proxy_password:
@@ -360,46 +383,62 @@ class ProxyMailFetcher:
                 connect_request += "\r\n"
                 
                 # Send CONNECT request
-                logger.info(f"Sending CONNECT request to {self.server}:{self.port}")
+                logger.info(f"Sending CONNECT request to {self.server}:{self.port} for {self.protocol.upper()}")
                 proxy_socket.send(connect_request.encode())
                 
-                # Read response with better timeout handling
-                proxy_socket.settimeout(15)  # Set shorter timeout for response
+                # Read response with better timeout handling and full response parsing
+                proxy_socket.settimeout(30)  # Set timeout for response
                 response_data = b''
+                start_time = time.time()
+                
                 while b'\r\n\r\n' not in response_data:
-                    chunk = proxy_socket.recv(1024)
-                    if not chunk:
+                    if time.time() - start_time > 25:  # Total timeout
                         break
-                    response_data += chunk
+                    try:
+                        chunk = proxy_socket.recv(1024)
+                        if not chunk:
+                            break
+                        response_data += chunk
+                    except socket.timeout:
+                        logger.warning("Timeout waiting for proxy response, but continuing...")
+                        break
+                    except Exception as e:
+                        logger.warning(f"Error reading proxy response: {e}")
+                        break
                     
                 response = response_data.decode('utf-8', errors='ignore')
                 
                 # Check if connection was successful
                 if not response:
                     proxy_socket.close()
-                    raise Exception("HTTP代理CONNECT失败: 未收到代理服务器响应")
+                    raise Exception("HTTP代理CONNECT失败: 未收到代理服务器响应 - 可能是代理服务器不支持CONNECT方法")
                 
-                # Look for success status codes
-                success_patterns = ["200 Connection established", "200 OK", "200 Tunnel established"]
+                # Look for success status codes with more flexibility
+                success_patterns = ["200 Connection established", "200 OK", "200 Tunnel established", "200 Connected"]
                 is_success = any(pattern in response for pattern in success_patterns)
+                
+                # Also check for HTTP/1.1 200 or HTTP/1.0 200
+                if not is_success:
+                    is_success = ("HTTP/1.1 200" in response or "HTTP/1.0 200" in response)
                 
                 if not is_success:
                     proxy_socket.close()
-                    # Fix f-string syntax error: cannot include backslash in expression
                     response_lines = response.split('\r\n')
                     first_line = response_lines[0] if response_lines else response.strip()
                     
-                    # Provide more specific error messages
+                    # Provide more specific error messages for IMAP/POP3
                     if "407" in first_line:
-                        raise Exception(f"HTTP代理需要身份验证: {first_line}")
+                        raise Exception(f"HTTP代理需要身份验证: {first_line} - 请检查代理用户名和密码")
                     elif "403" in first_line:
-                        raise Exception(f"HTTP代理拒绝访问: {first_line}")
+                        raise Exception(f"HTTP代理拒绝访问邮件服务器: {first_line} - 代理可能不允许连接到邮件端口")
                     elif "502" in first_line:
-                        raise Exception(f"HTTP代理无法连接到目标服务器: {first_line}")
+                        raise Exception(f"HTTP代理无法连接到邮件服务器 {self.server}:{self.port}: {first_line} - 请检查邮件服务器设置")
+                    elif "504" in first_line:
+                        raise Exception(f"HTTP代理连接邮件服务器超时: {first_line} - 邮件服务器可能不可达")
                     else:
-                        raise Exception(f"HTTP代理CONNECT失败: {first_line}")
+                        raise Exception(f"HTTP代理CONNECT失败: {first_line} - 代理服务器不支持连接到邮件服务器端口")
                 
-                logger.info("HTTP CONNECT tunnel established successfully")
+                logger.info(f"HTTP CONNECT tunnel established successfully for {self.protocol.upper()}")
                 
             except Exception as e:
                 if 'proxy_socket' in locals():
@@ -413,16 +452,18 @@ class ProxyMailFetcher:
                 else:
                     raise Exception(f"HTTP代理连接失败: {str(e)}")
             
-            # Now create IMAP connection using the tunneled socket
+            # Now create IMAP connection using the tunneled socket with enhanced error handling
             try:
                 if self.use_ssl:
-                    # For SSL, wrap the socket
+                    # For SSL, wrap the socket with better SSL configuration
                     ssl_context = ssl.create_default_context()
                     ssl_context.check_hostname = False
                     ssl_context.verify_mode = ssl.CERT_NONE
+                    # Add more lenient SSL settings for email servers
+                    ssl_context.set_ciphers('DEFAULT:@SECLEVEL=1')
                     
                     # Wrap the proxy socket with SSL
-                    logger.info("Wrapping proxy socket with SSL")
+                    logger.info("Wrapping proxy socket with SSL for secure email connection")
                     ssl_socket = ssl_context.wrap_socket(proxy_socket, server_hostname=self.server)
                     
                     # Create IMAP connection manually with better initialization
@@ -435,15 +476,23 @@ class ProxyMailFetcher:
                     self.connection.capabilities = None
                     self.connection.PROTOCOL_VERSION = 'IMAP4REV1'
                     
-                    # Read the initial response from server
+                    # Read the initial response from server with timeout
                     try:
+                        ssl_socket.settimeout(30)  # Set timeout for SSL handshake
                         self.connection._get_response()
+                        logger.info("SSL IMAP connection established successfully through HTTP proxy")
                     except Exception as e:
-                        logger.warning(f"Could not read initial server response, continuing: {e}")
+                        logger.warning(f"Initial server response issue (continuing): {e}")
+                        # Try a simple capability check to ensure connection works
+                        try:
+                            self.connection.capability()
+                            logger.info("IMAP capability check successful")
+                        except Exception as cap_e:
+                            raise Exception(f"IMAP连接失败 - SSL握手或协议错误: {str(cap_e)}")
                     
                 else:
-                    # For non-SSL connections
-                    logger.info("Setting up non-SSL IMAP connection")
+                    # For non-SSL connections (rare for modern email servers)
+                    logger.info("Setting up non-SSL IMAP connection through HTTP proxy")
                     self.connection = imaplib.IMAP4.__new__(imaplib.IMAP4)
                     imaplib.IMAP4.__init__(self.connection, '')
                     self.connection.sock = proxy_socket
@@ -456,39 +505,50 @@ class ProxyMailFetcher:
                     # Read the initial response from server
                     try:
                         self.connection._get_response()
+                        logger.info("Non-SSL IMAP connection established successfully through HTTP proxy")
                     except Exception as e:
-                        logger.warning(f"Could not read initial server response, continuing: {e}")
+                        logger.warning(f"Initial server response issue (continuing): {e}")
                 
-                logger.info("IMAP connection object created, attempting login...")
-                
-                # Now that we have a working connection, login and select
+                # Authenticate with the mail server through the proxy tunnel
                 try:
-                    login_result = self.connection.login(self.username, self.password)
-                    logger.info(f"Login successful: {login_result}")
+                    logger.info("Attempting login through HTTP proxy tunnel")
+                    self.connection.login(self.username, self.password)
+                    logger.info("Login successful through HTTP proxy")
+                except imaplib.IMAP4.error as e:
+                    error_msg = str(e).lower()
+                    if "authentication" in error_msg or "login" in error_msg or "invalid" in error_msg:
+                        raise Exception("邮箱用户名或密码错误，请检查登录凭据")
+                    else:
+                        raise Exception(f"通过HTTP代理登录失败: {str(e)}")
                 except Exception as e:
-                    logger.error(f"Login failed: {e}")
-                    raise Exception(f"IMAP登录失败: {str(e)}")
+                    raise Exception(f"HTTP代理隧道登录失败: {str(e)}")
                 
+                # Select INBOX to verify connection works
                 try:
                     select_result = self.connection.select('INBOX')
-                    logger.info(f"INBOX selected: {select_result}")
+                    logger.info(f"INBOX selected through HTTP proxy: {select_result}")
                 except Exception as e:
-                    logger.error(f"INBOX selection failed: {e}")
-                    raise Exception(f"选择INBOX失败: {str(e)}")
+                    logger.error(f"INBOX selection failed through HTTP proxy: {e}")
+                    raise Exception(f"选择INBOX失败 (HTTP代理): {str(e)}")
                 
                 logger.info("IMAP connection through HTTP proxy established successfully")
                 return True
                 
             except Exception as e:
-                try:
-                    proxy_socket.close()
-                except:
-                    pass
-                raise Exception(f"通过HTTP代理连接IMAP服务器失败: {str(e)}")
+                if 'proxy_socket' in locals():
+                    try:
+                        proxy_socket.close()
+                    except:
+                        pass
+                error_msg = str(e)
+                if "HTTP代理" in error_msg or "代理隧道" in error_msg or "邮箱用户名或密码错误" in error_msg:
+                    raise e
+                else:
+                    raise Exception(f"通过HTTP代理连接IMAP服务器失败: {str(e)}")
             
         except Exception as e:
             error_msg = str(e)
-            if "代理连接失败" in error_msg or "IMAP服务器失败" in error_msg:
+            if "HTTP代理" in error_msg or "IMAP服务器失败" in error_msg:
                 raise e
             else:
                 raise Exception(f"HTTP proxy connection failed: {error_msg}")
