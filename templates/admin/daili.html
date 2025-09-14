@@ -749,7 +749,7 @@
                         <thead>
                             <tr>
                                 <th><input type="checkbox" id="proxySelectAll" onchange="toggleSelectAll()"></th>
-                                <th>数据库ID</th>
+                                <th>序号ID</th>
                                 <th>类型</th>
                                 <th>代理名称</th>
                                 <th>地址:端口</th>
@@ -1055,13 +1055,12 @@
                     ...socks5Data.data.map(proxy => ({ ...proxy, proxy_type: 'SOCKS5' }))
                 ];
                 
-                // 按ID排序，确保显示与实际数据库ID一致
+                // 按unified_id排序，确保显示顺序为1-2-3-4而不是1-3-2-4
                 allProxies.sort((a, b) => {
-                    // 按代理类型分组，然后按ID排序
-                    if (a.proxy_type !== b.proxy_type) {
-                        return a.proxy_type.localeCompare(b.proxy_type);
-                    }
-                    return a.id - b.id;
+                    // 首先按unified_id排序，如果unified_id为0则使用数据库ID
+                    const aId = a.unified_id && a.unified_id > 0 ? a.unified_id : a.id;
+                    const bId = b.unified_id && b.unified_id > 0 ? b.unified_id : b.id;
+                    return aId - bId;
                 });
                 
                 renderUnifiedProxyTable();
