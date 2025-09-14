@@ -296,30 +296,49 @@ class ProxyMailFetcher:
             # For HTTP proxy, we need to establish a CONNECT tunnel to the IMAP server
             logger.info(f"Establishing HTTP CONNECT tunnel via {proxy_host}:{proxy_port}")
             
-            # Create connection to proxy with better error handling
+            # Create a raw socket connection to the proxy
             try:
-                proxy_conn = http.client.HTTPConnection(proxy_host, proxy_port, timeout=30)
+                # Create socket and connect to proxy
+                proxy_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                proxy_socket.settimeout(30)
+                proxy_socket.connect((proxy_host, proxy_port))
                 
-                # Set up authentication headers if needed
-                headers = {}
+                # Build CONNECT request
+                connect_request = f"CONNECT {self.server}:{self.port} HTTP/1.1\r\n"
+                connect_request += f"Host: {self.server}:{self.port}\r\n"
+                
+                # Add proxy authentication if provided
                 if proxy_username and proxy_password:
                     proxy_auth = base64.b64encode(f"{proxy_username}:{proxy_password}".encode()).decode()
-                    headers["Proxy-Authorization"] = f"Basic {proxy_auth}"
+                    connect_request += f"Proxy-Authorization: Basic {proxy_auth}\r\n"
                 
-                # Establish CONNECT tunnel
-                proxy_conn.set_tunnel(self.server, self.port, headers)
-                proxy_conn.connect()
+                connect_request += "\r\n"
                 
-                # Get the underlying socket from the HTTP connection
-                proxy_socket = proxy_conn.sock
+                # Send CONNECT request
+                proxy_socket.send(connect_request.encode())
                 
-            except (http.client.HTTPException, socket.error, OSError) as e:
+                # Read response
+                response = proxy_socket.recv(4096).decode()
+                
+                # Check if connection was successful
+                if "200 Connection established" not in response and "200 OK" not in response:
+                    proxy_socket.close()
+                    raise Exception(f"HTTP代理CONNECT失败: {response.split('\\r\\n')[0]}")
+                
+                logger.info("HTTP CONNECT tunnel established successfully")
+                
+            except Exception as e:
+                if 'proxy_socket' in locals():
+                    try:
+                        proxy_socket.close()
+                    except:
+                        pass
                 raise Exception(f"HTTP代理连接失败: {str(e)}")
             
-            # Create IMAP connection using the proxied socket
+            # Now create IMAP connection using the tunneled socket
             try:
                 if self.use_ssl:
-                    # For SSL, we need to wrap the socket
+                    # For SSL, wrap the socket
                     ssl_context = ssl.create_default_context()
                     ssl_context.check_hostname = False
                     ssl_context.verify_mode = ssl.CERT_NONE
@@ -327,34 +346,29 @@ class ProxyMailFetcher:
                     # Wrap the proxy socket with SSL
                     ssl_socket = ssl_context.wrap_socket(proxy_socket, server_hostname=self.server)
                     
-                    # Create IMAP connection manually with the SSL socket
-                    self.connection = imaplib.IMAP4(self.server, self.port)
+                    # Create IMAP connection manually
+                    self.connection = imaplib.IMAP4_SSL.__new__(imaplib.IMAP4_SSL)
+                    imaplib.IMAP4.__init__(self.connection, '')
                     self.connection.sock = ssl_socket
                     self.connection.file = ssl_socket.makefile('rb')
                     
-                    # Send capability command to verify connection
-                    self.connection._cmd('OK', 'CAPABILITY')
                 else:
                     # For non-SSL connections
-                    self.connection = imaplib.IMAP4(self.server, self.port)
+                    self.connection = imaplib.IMAP4.__new__(imaplib.IMAP4)
+                    imaplib.IMAP4.__init__(self.connection, '')
                     self.connection.sock = proxy_socket
                     self.connection.file = proxy_socket.makefile('rb')
-                    
-                    # Send capability command to verify connection
-                    self.connection._cmd('OK', 'CAPABILITY')
                 
-                # Login to IMAP server
+                # Now that we have a working connection, login and select
                 self.connection.login(self.username, self.password)
-                
-                # Select INBOX
                 self.connection.select('INBOX')
                 
-                logger.info("HTTP proxy tunnel established successfully")
+                logger.info("IMAP connection through HTTP proxy established successfully")
                 return True
                 
-            except (imaplib.IMAP4.error, socket.error, ssl.SSLError) as e:
+            except Exception as e:
                 try:
-                    proxy_conn.close()
+                    proxy_socket.close()
                 except:
                     pass
                 raise Exception(f"通过HTTP代理连接IMAP服务器失败: {str(e)}")
@@ -364,7 +378,7 @@ class ProxyMailFetcher:
             if "代理连接失败" in error_msg or "IMAP服务器失败" in error_msg:
                 raise e
             else:
-                raise Exception(f"HTTP proxy tunnel failed: {error_msg}")
+                raise Exception(f"HTTP proxy connection failed: {error_msg}")
             
     def _connect_imap(self):
         """Connect using IMAP protocol"""
