@@ -901,8 +901,7 @@
             statusText.textContent = '已启用';
             statusText.style.color = '#155724';
             statusDetails.innerHTML = `
-                当前代理: <strong>${activeProxy.proxy_type.toUpperCase()} - 地址: ${activeProxy.host}:${activeProxy.port}</strong><br>
-                ${activeProxy.name ? `名称: ${activeProxy.name}` : ''}
+                当前代理: <strong>${activeProxy.proxy_type.toUpperCase()}--${activeProxy.name || '家宽'}--地址: ${activeProxy.host}:${activeProxy.port}</strong>
             `;
             statusDetails.style.color = '#155724';
             
@@ -1733,5 +1732,66 @@
         if (!dateString) return '-';
         return new Date(dateString).toLocaleString('zh-CN');
     }
+    
+    // 性能优化：防抖函数
+    function debounce(func, wait) {
+        let timeout;
+        return function executedFunction(...args) {
+            const later = () => {
+                clearTimeout(timeout);
+                func(...args);
+            };
+            clearTimeout(timeout);
+            timeout = setTimeout(later, wait);
+        };
+    }
+    
+    // 性能优化：节流函数  
+    function throttle(func, limit) {
+        let inThrottle;
+        return function() {
+            const args = arguments;
+            const context = this;
+            if (!inThrottle) {
+                func.apply(context, args);
+                inThrottle = true;
+                setTimeout(() => inThrottle = false, limit);
+            }
+        };
+    }
+    
+    // 性能优化：批量DOM操作
+    function batchDOMUpdate(callback) {
+        requestAnimationFrame(() => {
+            callback();
+        });
+    }
+    
+    // 性能优化：缓存DOM元素
+    const cachedElements = new Map();
+    function getCachedElement(id) {
+        if (!cachedElements.has(id)) {
+            cachedElements.set(id, document.getElementById(id));
+        }
+        return cachedElements.get(id);
+    }
+    
+    // 性能优化：优化搜索功能
+    const optimizedSearch = debounce(function(query) {
+        searchQuery = query;
+        currentPage = 1;
+        loadProxies(currentProxyType);
+    }, 300);
+    
+    // 绑定搜索优化
+    document.addEventListener('DOMContentLoaded', function() {
+        const searchInput = document.getElementById('searchInput');
+        if (searchInput) {
+            searchInput.addEventListener('input', function(e) {
+                optimizedSearch(e.target.value);
+            });
+        }
+    });
+    
 </script>
 {% endblock %}
