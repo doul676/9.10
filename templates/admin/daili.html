@@ -733,6 +733,7 @@
                     <div class="search-box">
                         <input type="text" id="proxySearchInput" placeholder="搜索代理名称、地址或备注..." onkeyup="searchProxies()">
                         <button class="btn btn-primary" onclick="searchProxies()">🔍 搜索</button>
+                        <button class="btn btn-danger" onclick="clearProxySearch()">🗑️ 清除</button>
                     </div>
                     <div class="page-controls">
                         <select id="proxyPerPageSelect" onchange="changePerPage()">
@@ -901,7 +902,7 @@
             statusText.textContent = '已启用';
             statusText.style.color = '#155724';
             statusDetails.innerHTML = `
-                当前代理: <strong>${activeProxy.proxy_type.toUpperCase()}--${activeProxy.name || '家宽'}--地址: ${activeProxy.host}:${activeProxy.port}</strong>
+                当前代理: <strong>${activeProxy.proxy_type.toUpperCase()}--${activeProxy.name || ''}--地址: ${activeProxy.host}:${activeProxy.port}</strong>
             `;
             statusDetails.style.color = '#155724';
             
@@ -1303,6 +1304,12 @@
         }
         
         container.innerHTML = html;
+    }
+    
+    // 清除代理搜索
+    function clearProxySearch() {
+        document.getElementById('proxySearchInput').value = '';
+        loadAllProxies(1, '');
     }
     
     // 搜索代理

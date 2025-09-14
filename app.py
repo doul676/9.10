@@ -405,6 +405,298 @@ def get_next_unified_proxy_id(db, proxy_type, proxy_table_id):
         logger.error(f"Error getting unified proxy ID: {e}")
         raise
 
+def reorder_unified_proxy_ids(db, db_type):
+    """重新排序统一代理ID，确保删除后ID连续"""
+    try:
+        # 首先为没有unified_id的代理分配ID
+        assign_unified_ids_to_existing_proxies(db, db_type)
+        
+        # 获取所有有效的统一ID记录，按创建时间和ID排序
+        if db_type == 'sqlite':
+            unified_records = db.execute('''
+                SELECT upi.id, upi.proxy_type, upi.proxy_table_id, upi.created_at
+                FROM unified_proxy_ids upi
+                WHERE EXISTS (
+                    SELECT 1 FROM http_proxies hp WHERE hp.id = upi.proxy_table_id AND upi.proxy_type = 'http'
+                    UNION
+                    SELECT 1 FROM socks5_proxies sp WHERE sp.id = upi.proxy_table_id AND upi.proxy_type = 'socks5'
+                )
+                ORDER BY upi.created_at, upi.id
+            ''').fetchall()
+        else:
+            cursor = db.cursor()
+            cursor.execute('''
+                SELECT upi.id, upi.proxy_type, upi.proxy_table_id, upi.created_at
+                FROM unified_proxy_ids upi
+                WHERE EXISTS (
+                    SELECT 1 FROM http_proxies hp WHERE hp.id = upi.proxy_table_id AND upi.proxy_type = 'http'
+                    UNION
+                    SELECT 1 FROM socks5_proxies sp WHERE sp.id = upi.proxy_table_id AND upi.proxy_type = 'socks5'
+                )
+                ORDER BY upi.created_at, upi.id
+            ''')
+            unified_records = cursor.fetchall()
+        
+        # 如果没有记录，直接返回
+        if not unified_records:
+            logger.info("No proxy records to reorder")
+            return
+        
+        # 创建一个临时表来重新分配ID
+        temp_table = 'unified_proxy_ids_temp'
+        
+        if db_type == 'sqlite':
+            # 创建临时表
+            db.execute(f'''
+                CREATE TABLE {temp_table} (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    proxy_type TEXT NOT NULL,
+                    proxy_table_id INTEGER NOT NULL,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+            
+            # 按顺序重新插入数据（自动分配新的连续ID）
+            for record in unified_records:
+                proxy_type = record[1]
+                proxy_table_id = record[2]
+                created_at = record[3]
+                
+                db.execute(f'''
+                    INSERT INTO {temp_table} (proxy_type, proxy_table_id, created_at)
+                    VALUES (?, ?, ?)
+                ''', (proxy_type, proxy_table_id, created_at))
+            
+            # 删除原表并重命名
+            db.execute('DROP TABLE unified_proxy_ids')
+            db.execute(f'ALTER TABLE {temp_table} RENAME TO unified_proxy_ids')
+            
+            # 更新代理表中的unified_id
+            http_records = db.execute('''
+                SELECT upi.id, upi.proxy_table_id 
+                FROM unified_proxy_ids upi 
+                WHERE upi.proxy_type = 'http'
+            ''').fetchall()
+            
+            for unified_id, proxy_table_id in http_records:
+                db.execute('UPDATE http_proxies SET unified_id = ? WHERE id = ?', (unified_id, proxy_table_id))
+            
+            socks5_records = db.execute('''
+                SELECT upi.id, upi.proxy_table_id 
+                FROM unified_proxy_ids upi 
+                WHERE upi.proxy_type = 'socks5'
+            ''').fetchall()
+            
+            for unified_id, proxy_table_id in socks5_records:
+                db.execute('UPDATE socks5_proxies SET unified_id = ? WHERE id = ?', (unified_id, proxy_table_id))
+                
+        else:
+            # MySQL/PostgreSQL处理（类似逻辑）
+            cursor = db.cursor()
+            
+            # 创建临时表
+            if db_type == 'mysql':
+                cursor.execute(f'''
+                    CREATE TABLE {temp_table} (
+                        id INT AUTO_INCREMENT PRIMARY KEY,
+                        proxy_type VARCHAR(50) NOT NULL,
+                        proxy_table_id INT NOT NULL,
+                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+                ''')
+            else:  # PostgreSQL
+                cursor.execute(f'''
+                    CREATE TABLE {temp_table} (
+                        id SERIAL PRIMARY KEY,
+                        proxy_type VARCHAR(50) NOT NULL,
+                        proxy_table_id INTEGER NOT NULL,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                ''')
+            
+            # 重新插入数据
+            for record in unified_records:
+                proxy_type = record[1]
+                proxy_table_id = record[2]
+                created_at = record[3]
+                
+                cursor.execute(f'''
+                    INSERT INTO {temp_table} (proxy_type, proxy_table_id, created_at)
+                    VALUES (%s, %s, %s)
+                ''', (proxy_type, proxy_table_id, created_at))
+            
+            # 删除原表并重命名
+            cursor.execute('DROP TABLE unified_proxy_ids')
+            cursor.execute(f'ALTER TABLE {temp_table} RENAME TO unified_proxy_ids')
+            
+            # 更新代理表
+            cursor.execute('''
+                UPDATE http_proxies hp 
+                SET unified_id = (
+                    SELECT upi.id FROM unified_proxy_ids upi 
+                    WHERE upi.proxy_type = 'http' AND upi.proxy_table_id = hp.id
+                )
+                WHERE EXISTS (
+                    SELECT 1 FROM unified_proxy_ids upi 
+                    WHERE upi.proxy_type = 'http' AND upi.proxy_table_id = hp.id
+                )
+            ''')
+            
+            cursor.execute('''
+                UPDATE socks5_proxies sp 
+                SET unified_id = (
+                    SELECT upi.id FROM unified_proxy_ids upi 
+                    WHERE upi.proxy_type = 'socks5' AND upi.proxy_table_id = sp.id
+                )
+                WHERE EXISTS (
+                    SELECT 1 FROM unified_proxy_ids upi 
+                    WHERE upi.proxy_type = 'socks5' AND upi.proxy_table_id = sp.id
+                )
+            ''')
+        
+        if db_type != 'sqlite':
+            db.commit()
+        else:
+            db.commit()
+            
+        logger.info("Proxy unified IDs reordered successfully")
+        
+    except Exception as e:
+        logger.error(f"Error reordering proxy unified IDs: {e}")
+        if db_type != 'sqlite':
+            try:
+                db.rollback()
+            except:
+                pass
+
+def reorder_mailbox_ids(db, db_type):
+    """重新排序邮箱ID，确保删除后ID连续"""
+    try:
+        # 获取所有邮箱记录，按创建时间排序
+        if db_type == 'sqlite':
+            mailboxes = db.execute('SELECT * FROM mail_accounts ORDER BY created_at ASC, id ASC').fetchall()
+        else:
+            cursor = db.cursor()
+            cursor.execute('SELECT * FROM mail_accounts ORDER BY created_at ASC, id ASC')
+            mailboxes = cursor.fetchall()
+        
+        if not mailboxes:
+            return
+        
+        # 创建临时表来重新插入数据
+        temp_table_name = f'mail_accounts_temp_{int(time.time())}'
+        
+        if db_type == 'sqlite':
+            # 创建临时表
+            db.execute(f'''
+                CREATE TABLE {temp_table_name} (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    email TEXT NOT NULL UNIQUE,
+                    username TEXT NOT NULL,
+                    password TEXT NOT NULL,
+                    server TEXT NOT NULL,
+                    port INTEGER NOT NULL,
+                    protocol TEXT NOT NULL DEFAULT 'imap',
+                    ssl INTEGER NOT NULL DEFAULT 1,
+                    remarks TEXT DEFAULT '',
+                    status INTEGER DEFAULT 1,
+                    last_test DATETIME DEFAULT NULL,
+                    test_result TEXT DEFAULT '',
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+            
+            # 重新插入数据（ID将自动重新排序）
+            for mailbox in mailboxes:
+                mailbox_dict = dict(mailbox)
+                db.execute(f'''
+                    INSERT INTO {temp_table_name} 
+                    (email, username, password, server, port, protocol, ssl, remarks, status, last_test, test_result, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (
+                    mailbox_dict['email'], mailbox_dict['username'], mailbox_dict['password'],
+                    mailbox_dict['server'], mailbox_dict['port'], mailbox_dict['protocol'],
+                    mailbox_dict['ssl'], mailbox_dict['remarks'], mailbox_dict['status'],
+                    mailbox_dict['last_test'], mailbox_dict['test_result'],
+                    mailbox_dict['created_at'], mailbox_dict['updated_at']
+                ))
+            
+            # 删除原表并重命名临时表
+            db.execute('DROP TABLE mail_accounts')
+            db.execute(f'ALTER TABLE {temp_table_name} RENAME TO mail_accounts')
+            
+        else:
+            # MySQL/PostgreSQL处理方式
+            cursor = db.cursor()
+            
+            # 创建临时表
+            if db_type == 'mysql':
+                cursor.execute(f'''
+                    CREATE TABLE {temp_table_name} (
+                        id INT AUTO_INCREMENT PRIMARY KEY,
+                        email VARCHAR(255) NOT NULL UNIQUE,
+                        username TEXT NOT NULL,
+                        password TEXT NOT NULL,
+                        server TEXT NOT NULL,
+                        port INT NOT NULL,
+                        protocol VARCHAR(50) NOT NULL DEFAULT 'imap',
+                        ssl TINYINT NOT NULL DEFAULT 1,
+                        remarks TEXT DEFAULT '',
+                        status TINYINT DEFAULT 1,
+                        last_test DATETIME DEFAULT NULL,
+                        test_result TEXT DEFAULT '',
+                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+                ''')
+            else:  # PostgreSQL
+                cursor.execute(f'''
+                    CREATE TABLE {temp_table_name} (
+                        id SERIAL PRIMARY KEY,
+                        email VARCHAR(255) NOT NULL UNIQUE,
+                        username TEXT NOT NULL,
+                        password TEXT NOT NULL,
+                        server TEXT NOT NULL,
+                        port INTEGER NOT NULL,
+                        protocol VARCHAR(50) NOT NULL DEFAULT 'imap',
+                        ssl INTEGER NOT NULL DEFAULT 1,
+                        remarks TEXT DEFAULT '',
+                        status INTEGER DEFAULT 1,
+                        last_test TIMESTAMP DEFAULT NULL,
+                        test_result TEXT DEFAULT '',
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                ''')
+            
+            # 重新插入数据
+            for mailbox in mailboxes:
+                cursor.execute(f'''
+                    INSERT INTO {temp_table_name} 
+                    (email, username, password, server, port, protocol, ssl, remarks, status, last_test, test_result, created_at, updated_at)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                ''', mailbox[1:])  # 跳过原有的ID
+            
+            # 删除原表并重命名临时表
+            cursor.execute('DROP TABLE mail_accounts')
+            cursor.execute(f'ALTER TABLE {temp_table_name} RENAME TO mail_accounts')
+            
+        if db_type != 'sqlite':
+            db.commit()
+        else:
+            db.commit()
+            
+        logger.info("Mailbox IDs reordered successfully")
+        
+    except Exception as e:
+        logger.error(f"Error reordering mailbox IDs: {e}")
+        if db_type != 'sqlite':
+            try:
+                db.rollback()
+            except:
+                pass
+
 def update_proxy_unified_id(db, table_name, proxy_id, unified_id):
     """更新代理的统一ID"""
     try:
@@ -708,6 +1000,9 @@ def api_admin_mailbox():
                 cursor = db.cursor()
                 cursor.execute('DELETE FROM mail_accounts WHERE id = %s', (account_id,))
                 db.commit()
+            
+            # 重新排序邮箱ID
+            reorder_mailbox_ids(db, app.config['DATABASE_TYPE'])
             
             return jsonify({
                 'success': True,
@@ -1155,6 +1450,9 @@ def _batch_delete_mailbox(db, data):
             cursor.execute(f'DELETE FROM mail_accounts WHERE id IN ({placeholders})', account_ids)
             db.commit()
         
+        # 重新排序邮箱ID
+        reorder_mailbox_ids(db, app.config['DATABASE_TYPE'])
+        
         return jsonify({
             'success': True,
             'message': f'成功删除 {len(account_ids)} 个邮箱'
@@ -1411,6 +1709,9 @@ def api_admin_proxies(proxy_type):
                 cursor = db.cursor()
                 cursor.execute(f'DELETE FROM {table_name} WHERE id = %s', (proxy_id,))
                 db.commit()
+            
+            # 重新排序统一代理ID
+            reorder_unified_proxy_ids(db, db_type)
             
             return jsonify({
                 'success': True,
@@ -1828,6 +2129,9 @@ def _batch_delete_proxy(db, table_name, data):
             cursor.execute(f'DELETE FROM {table_name} WHERE id IN ({placeholders})', proxy_ids)
             db.commit()
         
+        # 重新排序统一代理ID
+        reorder_unified_proxy_ids(db, app.config['DATABASE_TYPE'])
+        
         return jsonify({
             'success': True,
             'message': f'成功删除 {len(proxy_ids)} 个代理'
@@ -2038,7 +2342,7 @@ def api_admin_proxy_config():
                     else:
                         db.commit()
                     
-                    proxy_name = best_proxy.get('name', '家宽')
+                    proxy_name = best_proxy.get('name', '')
                     return jsonify({
                         'success': True,
                         'message': f'🟢 代理状态：已启用\n当前代理: {proxy_type.upper()}--{proxy_name}--地址: {best_proxy["host"]}:{best_proxy["port"]}，所有代理测试均失败，已选择ID最小的代理'
@@ -2077,7 +2381,7 @@ def api_admin_proxy_config():
                 else:
                     db.commit()
                 
-                proxy_name = best_proxy.get('name', '家宽')
+                proxy_name = best_proxy.get('name', '')
                 return jsonify({
                     'success': True,
                     'message': f'🟢 代理状态：已启用\n当前代理: {proxy_type.upper()}--{proxy_name}--地址: {best_proxy["host"]}:{best_proxy["port"]}，平均延迟: {best_response_time}ms'
@@ -2175,7 +2479,7 @@ def api_admin_proxy_config():
                     columns = [row[0] for row in cursor.fetchall()]
                     proxy_dict = dict(zip(columns, proxy))
                 
-                proxy_name = proxy_dict.get('name', '家宽')
+                proxy_name = proxy_dict.get('name', '')
                 return jsonify({
                     'success': True,
                     'message': f'🟢 代理状态：已启用\n当前代理: {proxy_type.upper()}--{proxy_name}--地址: {proxy_dict["host"]}:{proxy_dict["port"]}'

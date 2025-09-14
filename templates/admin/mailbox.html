@@ -657,6 +657,7 @@
                     <div class="search-box">
                         <input type="text" id="searchInput" placeholder="搜索邮箱地址、服务器或备注..." onkeyup="searchMailboxes()">
                         <button class="btn btn-primary" onclick="searchMailboxes()">🔍 搜索</button>
+                        <button class="btn btn-danger" onclick="clearMailboxSearch()">🗑️ 清除</button>
                     </div>
                     <div class="page-controls">
                         <select id="perPageSelect" onchange="changePerPage()">
@@ -1047,6 +1048,12 @@
         }
         
         container.innerHTML = html;
+    }
+    
+    // 清除邮箱搜索
+    function clearMailboxSearch() {
+        document.getElementById('searchInput').value = '';
+        loadMailboxes(1, '');
     }
     
     // 搜索邮箱
