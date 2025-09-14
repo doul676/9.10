@@ -323,7 +323,10 @@ class ProxyMailFetcher:
                 # Check if connection was successful
                 if "200 Connection established" not in response and "200 OK" not in response:
                     proxy_socket.close()
-                    raise Exception(f"HTTP代理CONNECT失败: {response.split('\\r\\n')[0]}")
+                    # Fix f-string syntax error: cannot include backslash in expression
+                    response_lines = response.split('\r\n')
+                    first_line = response_lines[0] if response_lines else response
+                    raise Exception(f"HTTP代理CONNECT失败: {first_line}")
                 
                 logger.info("HTTP CONNECT tunnel established successfully")
                 

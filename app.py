@@ -1171,23 +1171,9 @@ def _add_proxy(db, table_name, data, proxy_type):
             'message': '请填写代理地址和端口'
         })
     
-    # 如果没有提供名称，自动生成（修复：生成更合理的默认名称）
+    # 如果没有提供名称，设置为"空白"
     if not name:
-        db_type = app.config['DATABASE_TYPE']
-        
-        # 查询当前表中的最大ID，用于生成序号
-        if db_type == 'sqlite':
-            max_id_result = db.execute(f"SELECT COALESCE(MAX(id), 0) as max_id FROM {table_name}").fetchone()
-            max_id = max_id_result['max_id']
-        else:
-            cursor = db.cursor()
-            cursor.execute(f"SELECT COALESCE(MAX(id), 0) as max_id FROM {table_name}")
-            result = cursor.fetchone()
-            max_id = result['max_id'] if db_type == 'postgresql' else result[0]
-        
-        # 生成新的序号ID（当前最大ID + 1）
-        next_id = max_id + 1
-        name = f"未命名{next_id}"
+        name = "空白"
     
     try:
         now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
