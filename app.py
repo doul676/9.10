@@ -572,12 +572,12 @@ def reorder_unified_proxy_ids(db, db_type):
 def reorder_mailbox_ids(db, db_type):
     """重新排序邮箱ID，确保删除后ID连续"""
     try:
-        # 获取所有邮箱记录，按创建时间排序
+        # 获取所有邮箱记录，按ID排序确保稳定的顺序
         if db_type == 'sqlite':
-            mailboxes = db.execute('SELECT * FROM mail_accounts ORDER BY created_at ASC, id ASC').fetchall()
+            mailboxes = db.execute('SELECT * FROM mail_accounts ORDER BY id ASC').fetchall()
         else:
             cursor = db.cursor()
-            cursor.execute('SELECT * FROM mail_accounts ORDER BY created_at ASC, id ASC')
+            cursor.execute('SELECT * FROM mail_accounts ORDER BY id ASC')
             mailboxes = cursor.fetchall()
         
         if not mailboxes:
@@ -925,10 +925,10 @@ def api_admin_mailbox():
             count_result = db.execute(count_sql, params).fetchone()
             total = count_result['count']
             
-            # 获取分页数据
+            # 获取分页数据 - 按ID排序确保ID稳定显示
             sql = f"""
                 SELECT * FROM mail_accounts {where_clause}
-                ORDER BY created_at DESC 
+                ORDER BY id ASC 
                 LIMIT ? OFFSET ?
             """
             accounts = db.execute(sql, params + [per_page, offset]).fetchall()
@@ -946,7 +946,7 @@ def api_admin_mailbox():
             
             sql = f"""
                 SELECT * FROM mail_accounts {where_mysql}
-                ORDER BY created_at DESC 
+                ORDER BY id ASC 
                 LIMIT {per_page} OFFSET {offset}
             """
             cursor.execute(sql, params)
@@ -1991,9 +1991,9 @@ def _perform_proxy_test(proxy, proxy_type):
                         'response_time': response_time,
                         'status_code': response.status_code
                     })
-                    # 如果第一个测试成功，就不再测试其他URL以提高性能
-                    if url == test_urls[0][0]:
-                        break
+                    # 注释掉早期中断，确保测试所有URL以显示完整的测试结果
+                    # if url == test_urls[0][0]:
+                    #     break
                 elif response.status_code == 403 and ('163.com' in url or 'baidu.com' in url):
                     # 这些网站的403错误视为网站限制，不算失败
                     results.append({

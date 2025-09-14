@@ -1093,9 +1093,20 @@ def main():
         account = cursor.fetchone()
         
         if not account:
+            # Even when mailbox doesn't exist, we need to check proxy status for proper error message display
+            fetcher = ProxyMailFetcher('dummy', 0, 'dummy', 'dummy')  # Create minimal instance just for proxy check
+            proxy_info = fetcher.get_proxy_info()
+            
+            # Construct error message based on connection type
+            if proxy_info['enabled']:
+                error_message = '邮箱账号不存在，请联系管理员添加 (代理)'
+            else:
+                error_message = '邮箱账号不存在，请联系管理员添加 (直连)'
+            
             result = {
                 'success': False,
-                'message': '邮箱账号不存在，请联系管理员添加'
+                'message': error_message,
+                'proxy': proxy_info
             }
         else:
             # Map database columns
@@ -1138,10 +1149,21 @@ def main():
         print(json.dumps(result, ensure_ascii=False))
         
     except Exception as e:
-        result = {
-            'success': False,
-            'message': f'服务器错误: {str(e)}'
-        }
+        try:
+            # Try to get proxy info even for general errors
+            fetcher = ProxyMailFetcher('dummy', 0, 'dummy', 'dummy')
+            proxy_info = fetcher.get_proxy_info()
+            result = {
+                'success': False,
+                'message': f'服务器错误: {str(e)}',
+                'proxy': proxy_info
+            }
+        except:
+            # Fallback if proxy info can't be obtained
+            result = {
+                'success': False,
+                'message': f'服务器错误: {str(e)}'
+            }
         print(json.dumps(result, ensure_ascii=False))
 
 
