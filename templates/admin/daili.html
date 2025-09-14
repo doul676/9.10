@@ -901,8 +901,8 @@
             statusText.textContent = '已启用';
             statusText.style.color = '#155724';
             statusDetails.innerHTML = `
-                当前代理: <strong>${activeProxy.proxy_type.toUpperCase()} - ${activeProxy.name}</strong><br>
-                地址: ${activeProxy.host}:${activeProxy.port} (ID: ${activeProxy.id})
+                当前代理: <strong>${activeProxy.proxy_type.toUpperCase()} - 地址: ${activeProxy.host}:${activeProxy.port}</strong><br>
+                ${activeProxy.name ? `名称: ${activeProxy.name}` : ''}
             `;
             statusDetails.style.color = '#155724';
             
