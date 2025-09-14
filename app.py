@@ -408,76 +408,149 @@ def get_next_unified_proxy_id(db, proxy_type, proxy_table_id):
 def reorder_unified_proxy_ids(db, db_type):
     """重新排序统一代理ID，确保删除后ID连续"""
     try:
-        # 获取所有有效的统一ID记录，按ID排序
+        # 首先为没有unified_id的代理分配ID
+        assign_unified_ids_to_existing_proxies(db, db_type)
+        
+        # 获取所有有效的统一ID记录，按创建时间和ID排序
         if db_type == 'sqlite':
             unified_records = db.execute('''
-                SELECT upi.id, upi.proxy_type, upi.proxy_table_id
+                SELECT upi.id, upi.proxy_type, upi.proxy_table_id, upi.created_at
                 FROM unified_proxy_ids upi
                 WHERE EXISTS (
                     SELECT 1 FROM http_proxies hp WHERE hp.id = upi.proxy_table_id AND upi.proxy_type = 'http'
                     UNION
                     SELECT 1 FROM socks5_proxies sp WHERE sp.id = upi.proxy_table_id AND upi.proxy_type = 'socks5'
                 )
-                ORDER BY upi.id
+                ORDER BY upi.created_at, upi.id
             ''').fetchall()
         else:
             cursor = db.cursor()
             cursor.execute('''
-                SELECT upi.id, upi.proxy_type, upi.proxy_table_id
+                SELECT upi.id, upi.proxy_type, upi.proxy_table_id, upi.created_at
                 FROM unified_proxy_ids upi
                 WHERE EXISTS (
                     SELECT 1 FROM http_proxies hp WHERE hp.id = upi.proxy_table_id AND upi.proxy_type = 'http'
                     UNION
                     SELECT 1 FROM socks5_proxies sp WHERE sp.id = upi.proxy_table_id AND upi.proxy_type = 'socks5'
                 )
-                ORDER BY upi.id
+                ORDER BY upi.created_at, upi.id
             ''')
             unified_records = cursor.fetchall()
         
-        # 重新分配连续的unified_id
-        for index, record in enumerate(unified_records, 1):
-            old_unified_id = record[0] if db_type == 'sqlite' else record[0]
-            proxy_type = record[1] if db_type == 'sqlite' else record[1]
-            proxy_table_id = record[2] if db_type == 'sqlite' else record[2]
-            
-            if old_unified_id != index:
-                # 更新unified_proxy_ids表
-                if db_type == 'sqlite':
-                    db.execute('UPDATE unified_proxy_ids SET id = ? WHERE id = ?', (index, old_unified_id))
-                else:
-                    cursor = db.cursor()
-                    cursor.execute('UPDATE unified_proxy_ids SET id = %s WHERE id = %s', (index, old_unified_id))
-                
-                # 更新对应代理表的unified_id
-                table_name = f'{proxy_type}_proxies'
-                if db_type == 'sqlite':
-                    db.execute(f'UPDATE {table_name} SET unified_id = ? WHERE id = ?', (index, proxy_table_id))
-                else:
-                    cursor = db.cursor()
-                    cursor.execute(f'UPDATE {table_name} SET unified_id = %s WHERE id = %s', (index, proxy_table_id))
+        # 如果没有记录，直接返回
+        if not unified_records:
+            logger.info("No proxy records to reorder")
+            return
         
-        # 清理无效的unified_proxy_ids记录
+        # 创建一个临时表来重新分配ID
+        temp_table = 'unified_proxy_ids_temp'
+        
         if db_type == 'sqlite':
-            db.execute('''
-                DELETE FROM unified_proxy_ids WHERE id NOT IN (
-                    SELECT upi.id FROM unified_proxy_ids upi
-                    WHERE EXISTS (
-                        SELECT 1 FROM http_proxies hp WHERE hp.id = upi.proxy_table_id AND upi.proxy_type = 'http'
-                        UNION
-                        SELECT 1 FROM socks5_proxies sp WHERE sp.id = upi.proxy_table_id AND upi.proxy_type = 'socks5'
-                    )
+            # 创建临时表
+            db.execute(f'''
+                CREATE TABLE {temp_table} (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    proxy_type TEXT NOT NULL,
+                    proxy_table_id INTEGER NOT NULL,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
                 )
             ''')
+            
+            # 按顺序重新插入数据（自动分配新的连续ID）
+            for record in unified_records:
+                proxy_type = record[1]
+                proxy_table_id = record[2]
+                created_at = record[3]
+                
+                db.execute(f'''
+                    INSERT INTO {temp_table} (proxy_type, proxy_table_id, created_at)
+                    VALUES (?, ?, ?)
+                ''', (proxy_type, proxy_table_id, created_at))
+            
+            # 删除原表并重命名
+            db.execute('DROP TABLE unified_proxy_ids')
+            db.execute(f'ALTER TABLE {temp_table} RENAME TO unified_proxy_ids')
+            
+            # 更新代理表中的unified_id
+            http_records = db.execute('''
+                SELECT upi.id, upi.proxy_table_id 
+                FROM unified_proxy_ids upi 
+                WHERE upi.proxy_type = 'http'
+            ''').fetchall()
+            
+            for unified_id, proxy_table_id in http_records:
+                db.execute('UPDATE http_proxies SET unified_id = ? WHERE id = ?', (unified_id, proxy_table_id))
+            
+            socks5_records = db.execute('''
+                SELECT upi.id, upi.proxy_table_id 
+                FROM unified_proxy_ids upi 
+                WHERE upi.proxy_type = 'socks5'
+            ''').fetchall()
+            
+            for unified_id, proxy_table_id in socks5_records:
+                db.execute('UPDATE socks5_proxies SET unified_id = ? WHERE id = ?', (unified_id, proxy_table_id))
+                
         else:
+            # MySQL/PostgreSQL处理（类似逻辑）
             cursor = db.cursor()
-            cursor.execute('''
-                DELETE FROM unified_proxy_ids WHERE id NOT IN (
-                    SELECT upi.id FROM unified_proxy_ids upi
-                    WHERE EXISTS (
-                        SELECT 1 FROM http_proxies hp WHERE hp.id = upi.proxy_table_id AND upi.proxy_type = 'http'
-                        UNION
-                        SELECT 1 FROM socks5_proxies sp WHERE sp.id = upi.proxy_table_id AND upi.proxy_type = 'socks5'
+            
+            # 创建临时表
+            if db_type == 'mysql':
+                cursor.execute(f'''
+                    CREATE TABLE {temp_table} (
+                        id INT AUTO_INCREMENT PRIMARY KEY,
+                        proxy_type VARCHAR(50) NOT NULL,
+                        proxy_table_id INT NOT NULL,
+                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+                ''')
+            else:  # PostgreSQL
+                cursor.execute(f'''
+                    CREATE TABLE {temp_table} (
+                        id SERIAL PRIMARY KEY,
+                        proxy_type VARCHAR(50) NOT NULL,
+                        proxy_table_id INTEGER NOT NULL,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                     )
+                ''')
+            
+            # 重新插入数据
+            for record in unified_records:
+                proxy_type = record[1]
+                proxy_table_id = record[2]
+                created_at = record[3]
+                
+                cursor.execute(f'''
+                    INSERT INTO {temp_table} (proxy_type, proxy_table_id, created_at)
+                    VALUES (%s, %s, %s)
+                ''', (proxy_type, proxy_table_id, created_at))
+            
+            # 删除原表并重命名
+            cursor.execute('DROP TABLE unified_proxy_ids')
+            cursor.execute(f'ALTER TABLE {temp_table} RENAME TO unified_proxy_ids')
+            
+            # 更新代理表
+            cursor.execute('''
+                UPDATE http_proxies hp 
+                SET unified_id = (
+                    SELECT upi.id FROM unified_proxy_ids upi 
+                    WHERE upi.proxy_type = 'http' AND upi.proxy_table_id = hp.id
+                )
+                WHERE EXISTS (
+                    SELECT 1 FROM unified_proxy_ids upi 
+                    WHERE upi.proxy_type = 'http' AND upi.proxy_table_id = hp.id
+                )
+            ''')
+            
+            cursor.execute('''
+                UPDATE socks5_proxies sp 
+                SET unified_id = (
+                    SELECT upi.id FROM unified_proxy_ids upi 
+                    WHERE upi.proxy_type = 'socks5' AND upi.proxy_table_id = sp.id
+                )
+                WHERE EXISTS (
+                    SELECT 1 FROM unified_proxy_ids upi 
+                    WHERE upi.proxy_type = 'socks5' AND upi.proxy_table_id = sp.id
                 )
             ''')
         
