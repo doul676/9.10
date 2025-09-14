@@ -1,0 +1,901 @@
+{% extends "base.html" %}
+
+{% block title %}回收站 - 邮件查看系统{% endblock %}
+
+{% block head %}
+<style>
+    * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+    }
+    
+    :root {
+        --primary-color: #667eea;
+        --secondary-color: #764ba2;
+        --sidebar-width: 280px;
+        --header-height: 70px;
+        --transition: all 0.3s ease;
+    }
+    
+    body {
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        background: #f8fafc;
+        line-height: 1.6;
+        color: #334155;
+        transition: var(--transition);
+    }
+    
+    /* Sidebar Styles */
+    .sidebar {
+        position: fixed;
+        left: 0;
+        top: 0;
+        width: var(--sidebar-width);
+        height: 100vh;
+        background: linear-gradient(135deg, var(--primary-color) 0%, var(--secondary-color) 100%);
+        z-index: 1000;
+        transition: var(--transition);
+        box-shadow: 4px 0 15px rgba(0,0,0,0.1);
+    }
+    
+    .sidebar-header {
+        padding: 20px;
+        border-bottom: 1px solid rgba(255,255,255,0.1);
+    }
+    
+    .sidebar-logo {
+        color: white;
+        font-size: 20px;
+        font-weight: 700;
+        text-align: center;
+        text-shadow: 0 2px 4px rgba(0,0,0,0.3);
+    }
+    
+    .sidebar-nav {
+        padding: 20px 0;
+    }
+    
+    .nav-item {
+        display: block;
+        color: rgba(255,255,255,0.8);
+        text-decoration: none;
+        padding: 15px 25px;
+        transition: var(--transition);
+        border-left: 3px solid transparent;
+        position: relative;
+        overflow: hidden;
+    }
+    
+    .nav-item::before {
+        content: '';
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(255,255,255,0.1);
+        transform: translateX(-100%);
+        transition: var(--transition);
+    }
+    
+    .nav-item:hover::before {
+        transform: translateX(0);
+    }
+    
+    .nav-item:hover,
+    .nav-item.active {
+        color: white;
+        background: rgba(255,255,255,0.15);
+        border-left-color: white;
+        transform: translateX(5px);
+    }
+    
+    .nav-item i {
+        margin-right: 10px;
+        width: 20px;
+        text-align: center;
+    }
+    
+    /* Main Content */
+    .main-content {
+        margin-left: var(--sidebar-width);
+        min-height: 100vh;
+        transition: var(--transition);
+    }
+    
+    .header {
+        background: white;
+        padding: 20px 30px;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+    
+    .header h1 {
+        color: #1e293b;
+        font-size: 24px;
+        font-weight: 600;
+    }
+    
+    .user-info {
+        display: flex;
+        align-items: center;
+        gap: 15px;
+    }
+    
+    .user-avatar {
+        width: 40px;
+        height: 40px;
+        background: var(--primary-color);
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: white;
+        font-weight: 600;
+    }
+    
+    .logout-btn {
+        padding: 8px 16px;
+        background: #ef4444;
+        color: white;
+        text-decoration: none;
+        border-radius: 6px;
+        transition: var(--transition);
+        font-size: 14px;
+    }
+    
+    .logout-btn:hover {
+        background: #dc2626;
+        transform: translateY(-1px);
+    }
+    
+    .content {
+        padding: 30px;
+    }
+    
+    /* Cards */
+    .card {
+        background: white;
+        border-radius: 12px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        transition: var(--transition);
+        overflow: hidden;
+    }
+    
+    .card:hover {
+        box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+    }
+    
+    .card-header {
+        padding: 20px 30px;
+        border-bottom: 1px solid #f1f5f9;
+        background: #f8fafc;
+    }
+    
+    .card-title {
+        font-size: 18px;
+        font-weight: 600;
+        color: #1e293b;
+        margin: 0;
+    }
+    
+    .card-body {
+        padding: 30px;
+    }
+    
+    /* Forms */
+    .form-group {
+        margin-bottom: 20px;
+    }
+    
+    .form-label {
+        display: block;
+        margin-bottom: 8px;
+        font-weight: 500;
+        color: #374151;
+    }
+    
+    .form-control {
+        width: 100%;
+        padding: 12px 16px;
+        border: 2px solid #e5e7eb;
+        border-radius: 8px;
+        font-size: 14px;
+        transition: var(--transition);
+        background: white;
+    }
+    
+    .form-control:focus {
+        outline: none;
+        border-color: var(--primary-color);
+        box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+    }
+    
+    .form-control:invalid {
+        border-color: #ef4444;
+    }
+    
+    /* Buttons */
+    .btn {
+        display: inline-block;
+        padding: 12px 24px;
+        font-size: 14px;
+        font-weight: 500;
+        border: none;
+        border-radius: 8px;
+        text-decoration: none;
+        cursor: pointer;
+        transition: var(--transition);
+        text-align: center;
+    }
+    
+    .btn-primary {
+        background: linear-gradient(135deg, var(--primary-color) 0%, var(--secondary-color) 100%);
+        color: white;
+    }
+    
+    .btn-primary:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 5px 15px rgba(102, 126, 234, 0.3);
+    }
+    
+    .btn-success {
+        background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+        color: white;
+    }
+    
+    .btn-success:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 5px 15px rgba(16, 185, 129, 0.3);
+    }
+    
+    .btn-danger {
+        background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+        color: white;
+    }
+    
+    .btn-danger:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 5px 15px rgba(239, 68, 68, 0.3);
+    }
+    
+    .btn-secondary {
+        background: #6b7280;
+        color: white;
+    }
+    
+    .btn-secondary:hover {
+        background: #4b5563;
+        transform: translateY(-2px);
+    }
+    
+    .btn-sm {
+        padding: 6px 12px;
+        font-size: 12px;
+    }
+    
+    .btn-group {
+        display: flex;
+        gap: 10px;
+        margin-bottom: 20px;
+    }
+    
+    /* Table */
+    .table-container {
+        overflow-x: auto;
+        border-radius: 8px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+    
+    .table {
+        width: 100%;
+        border-collapse: collapse;
+        background: white;
+    }
+    
+    .table th {
+        background: #f8fafc;
+        padding: 12px;
+        text-align: left;
+        font-weight: 600;
+        color: #374151;
+        border-bottom: 2px solid #e5e7eb;
+    }
+    
+    .table td {
+        padding: 12px;
+        border-bottom: 1px solid #f3f4f6;
+        vertical-align: middle;
+    }
+    
+    .table tbody tr:hover {
+        background: #f9fafb;
+    }
+    
+    .status-badge {
+        display: inline-block;
+        padding: 4px 8px;
+        border-radius: 12px;
+        font-size: 12px;
+        font-weight: 500;
+    }
+    
+    .status-recycled {
+        background: #fef3c7;
+        color: #92400e;
+    }
+    
+    /* Pagination */
+    .pagination-container {
+        margin-top: 20px;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        gap: 10px;
+    }
+    
+    .pagination-info {
+        color: #6b7280;
+        font-size: 14px;
+        margin-right: 20px;
+    }
+    
+    .page-btn {
+        padding: 8px 12px;
+        border: 1px solid #e5e7eb;
+        background: white;
+        color: #374151;
+        text-decoration: none;
+        border-radius: 6px;
+        transition: var(--transition);
+        cursor: pointer;
+    }
+    
+    .page-btn:hover {
+        background: #f3f4f6;
+        border-color: #d1d5db;
+    }
+    
+    .page-btn.active {
+        background: var(--primary-color);
+        color: white;
+        border-color: var(--primary-color);
+    }
+    
+    .page-btn:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+    }
+    
+    .pagination-buttons {
+        display: flex;
+        gap: 5px;
+        align-items: center;
+    }
+</style>
+{% endblock %}
+
+{% block body %}
+<div class="sidebar">
+    <div class="sidebar-header">
+        <div class="sidebar-logo">📧 邮件管理</div>
+    </div>
+    <nav class="sidebar-nav">
+        <a href="/admin/home" class="nav-item">
+            <i>🏠</i> 首页
+        </a>
+        <a href="/admin/mailbox" class="nav-item">
+            <i>📬</i> 邮箱管理
+        </a>
+        <a href="/admin/daili" class="nav-item">
+            <i>🌐</i> 代理池
+        </a>
+        <a href="/admin/kami" class="nav-item">
+            <i>🎫</i> 卡密管理
+        </a>
+        <a href="/admin/recycle-bin" class="nav-item active">
+            <i>🗂️</i> 回收站
+        </a>
+        <a href="/admin/kamirizhi" class="nav-item">
+            <i>📋</i> 卡密日志
+        </a>
+        <a href="/admin/shoujian" class="nav-item">
+            <i>📨</i> 收件日志
+        </a>
+        <a href="/admin/system" class="nav-item">
+            <i>⚙️</i> 系统设置
+        </a>
+    </nav>
+</div>
+
+<div class="main-content">
+    <div class="header">
+        <h1>🗂️ 回收站</h1>
+        <div class="user-info">
+            <div class="user-avatar">{{ admin_username[0].upper() if admin_username else 'A' }}</div>
+            <span>{{ admin_username or '管理员' }}</span>
+            <a href="/admin/logout" class="logout-btn">退出</a>
+        </div>
+    </div>
+
+    <div class="content">
+        <div class="card">
+            <div class="card-header">
+                <h2 class="card-title">回收站管理</h2>
+            </div>
+            <div class="card-body">
+                <div class="btn-group">
+                    <button class="btn btn-success" onclick="restoreSelectedCards()" style="display: none;" id="restoreBtn">
+                        <i>♻️</i> 恢复选中
+                    </button>
+                    <button class="btn btn-danger" onclick="permanentDeleteSelected()" style="display: none;" id="permanentDeleteBtn">
+                        <i>❌</i> 永久删除
+                    </button>
+                    <button class="btn btn-secondary" onclick="clearRecycleBin()">
+                        <i>🧹</i> 清空回收站
+                    </button>
+                    <button class="btn btn-secondary" onclick="refreshRecycleBin()">
+                        <i>🔄</i> 刷新
+                    </button>
+                </div>
+
+                <!-- 搜索框 -->
+                <div class="form-group" style="max-width: 500px;">
+                    <div style="display: flex; gap: 10px; align-items: center;">
+                        <input type="text" class="form-control" id="searchInput" placeholder="搜索卡密..." onkeyup="searchRecycleBin()" style="flex: 1;">
+                        <button class="btn btn-primary btn-sm" onclick="searchRecycleBin()" title="搜索">
+                            <i>🔍</i> 搜索
+                        </button>
+                    </div>
+                </div>
+
+                <!-- 表格 -->
+                <div class="table-container">
+                    <table class="table">
+                        <thead>
+                            <tr>
+                                <th>
+                                    <input type="checkbox" id="selectAll" onchange="toggleSelectAll()">
+                                </th>
+                                <th>ID</th>
+                                <th>卡密</th>
+                                <th>使用次数</th>
+                                <th>删除原因</th>
+                                <th>删除时间</th>
+                                <th>删除者</th>
+                                <th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody id="recycleBinTableBody">
+                            <!-- 数据将通过JavaScript加载 -->
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- 分页 -->
+                <div class="pagination-container">
+                    <div class="pagination-info" id="paginationInfo"></div>
+                    <div class="pagination-buttons" id="paginationButtons"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    let currentPage = 1;
+    let totalPages = 1;
+    let selectedItems = new Set();
+    
+    // 页面加载时初始化
+    document.addEventListener('DOMContentLoaded', function() {
+        loadRecycleBin(1);
+    });
+    
+    // 加载回收站数据
+    async function loadRecycleBin(page = 1) {
+        try {
+            const search = document.getElementById('searchInput').value.trim();
+            const params = new URLSearchParams({
+                page: page,
+                per_page: 10
+            });
+            
+            if (search) {
+                params.append('search', search);
+            }
+            
+            const response = await fetch(`/admin/api/recycle-bin?${params}`);
+            const data = await response.json();
+            
+            if (data.success) {
+                renderRecycleBinTable(data.data);
+                renderPagination(data.pagination);
+                currentPage = page;
+                totalPages = data.pagination.pages;
+            } else {
+                showToast('加载回收站数据失败: ' + data.message, 'error');
+            }
+        } catch (error) {
+            console.error('加载回收站数据失败:', error);
+            showToast('加载回收站数据失败', 'error');
+        }
+    }
+    
+    // 渲染回收站表格
+    function renderRecycleBinTable(items) {
+        const tbody = document.getElementById('recycleBinTableBody');
+        tbody.innerHTML = '';
+        
+        if (items.length === 0) {
+            tbody.innerHTML = `
+                <tr>
+                    <td colspan="8" style="text-align: center; padding: 40px; color: #6b7280;">
+                        <div style="font-size: 48px; margin-bottom: 16px;">🗂️</div>
+                        <div>回收站为空</div>
+                    </td>
+                </tr>
+            `;
+            return;
+        }
+        
+        items.forEach(item => {
+            const row = document.createElement('tr');
+            
+            // 格式化删除原因
+            let deleteReasonText = '';
+            switch(item.delete_reason) {
+                case 'expired':
+                    deleteReasonText = '已过期';
+                    break;
+                case 'used_up':
+                    deleteReasonText = '次数用完';
+                    break;
+                case 'manual_delete':
+                    deleteReasonText = '手动删除';
+                    break;
+                default:
+                    deleteReasonText = item.delete_reason || '未知';
+            }
+            
+            row.innerHTML = `
+                <td><input type="checkbox" onchange="toggleItemSelection(${item.id})" ${selectedItems.has(item.id) ? 'checked' : ''}></td>
+                <td>${item.id}</td>
+                <td><code>${item.card_key}</code></td>
+                <td>${item.used_count}/${item.usage_limit}</td>
+                <td><span class="status-badge status-recycled">${deleteReasonText}</span></td>
+                <td>${formatDateTime(item.deleted_at)}</td>
+                <td>${item.deleted_by}</td>
+                <td>
+                    <button class="btn btn-success btn-sm" onclick="restoreItem(${item.id})" title="恢复">
+                        ♻️
+                    </button>
+                    <button class="btn btn-danger btn-sm" onclick="permanentDeleteItem(${item.id})" title="永久删除">
+                        ❌
+                    </button>
+                </td>
+            `;
+            tbody.appendChild(row);
+        });
+        
+        updateSelectAllCheckbox();
+        updateBatchButtons();
+    }
+    
+    // 渲染分页
+    function renderPagination(pagination) {
+        const info = document.getElementById('paginationInfo');
+        const buttons = document.getElementById('paginationButtons');
+        
+        info.textContent = `显示 ${pagination.page * pagination.per_page - pagination.per_page + 1} - ${Math.min(pagination.page * pagination.per_page, pagination.total)} 共 ${pagination.total} 条`;
+        
+        buttons.innerHTML = '';
+        
+        // 上一页
+        const prevBtn = document.createElement('button');
+        prevBtn.className = 'page-btn';
+        prevBtn.textContent = '‹ 上一页';
+        prevBtn.disabled = pagination.page <= 1;
+        prevBtn.onclick = () => pagination.page > 1 && loadRecycleBin(pagination.page - 1);
+        buttons.appendChild(prevBtn);
+        
+        // 页码
+        for (let i = Math.max(1, pagination.page - 2); i <= Math.min(pagination.pages, pagination.page + 2); i++) {
+            const pageBtn = document.createElement('button');
+            pageBtn.className = `page-btn ${i === pagination.page ? 'active' : ''}`;
+            pageBtn.textContent = i;
+            pageBtn.onclick = () => loadRecycleBin(i);
+            buttons.appendChild(pageBtn);
+        }
+        
+        // 下一页
+        const nextBtn = document.createElement('button');
+        nextBtn.className = 'page-btn';
+        nextBtn.textContent = '下一页 ›';
+        nextBtn.disabled = pagination.page >= pagination.pages;
+        nextBtn.onclick = () => pagination.page < pagination.pages && loadRecycleBin(pagination.page + 1);
+        buttons.appendChild(nextBtn);
+    }
+    
+    // 切换选择所有项目
+    function toggleSelectAll() {
+        const selectAll = document.getElementById('selectAll');
+        const checkboxes = document.querySelectorAll('#recycleBinTableBody input[type="checkbox"]');
+        
+        checkboxes.forEach(checkbox => {
+            checkbox.checked = selectAll.checked;
+            const itemId = parseInt(checkbox.onchange.toString().match(/\d+/)[0]);
+            if (selectAll.checked) {
+                selectedItems.add(itemId);
+            } else {
+                selectedItems.delete(itemId);
+            }
+        });
+        
+        updateBatchButtons();
+    }
+    
+    // 切换单个项目选择
+    function toggleItemSelection(itemId) {
+        if (selectedItems.has(itemId)) {
+            selectedItems.delete(itemId);
+        } else {
+            selectedItems.add(itemId);
+        }
+        updateSelectAllCheckbox();
+        updateBatchButtons();
+    }
+    
+    // 更新全选复选框状态
+    function updateSelectAllCheckbox() {
+        const selectAll = document.getElementById('selectAll');
+        const checkboxes = document.querySelectorAll('#recycleBinTableBody input[type="checkbox"]');
+        const checkedBoxes = document.querySelectorAll('#recycleBinTableBody input[type="checkbox"]:checked');
+        
+        if (checkboxes.length === 0) {
+            selectAll.indeterminate = false;
+            selectAll.checked = false;
+        } else if (checkedBoxes.length === checkboxes.length) {
+            selectAll.indeterminate = false;
+            selectAll.checked = true;
+        } else if (checkedBoxes.length > 0) {
+            selectAll.indeterminate = true;
+            selectAll.checked = false;
+        } else {
+            selectAll.indeterminate = false;
+            selectAll.checked = false;
+        }
+    }
+    
+    // 更新批量操作按钮
+    function updateBatchButtons() {
+        const restoreBtn = document.getElementById('restoreBtn');
+        const permanentDeleteBtn = document.getElementById('permanentDeleteBtn');
+        
+        if (selectedItems.size > 0) {
+            restoreBtn.style.display = 'inline-block';
+            permanentDeleteBtn.style.display = 'inline-block';
+        } else {
+            restoreBtn.style.display = 'none';
+            permanentDeleteBtn.style.display = 'none';
+        }
+    }
+    
+    // 搜索回收站
+    function searchRecycleBin() {
+        loadRecycleBin(1);
+    }
+    
+    // 刷新回收站
+    function refreshRecycleBin() {
+        selectedItems.clear();
+        loadRecycleBin(currentPage);
+    }
+    
+    // 恢复单个项目
+    async function restoreItem(itemId) {
+        if (!confirm('确定要恢复这个卡密吗？')) return;
+        
+        try {
+            const response = await fetch('/admin/api/recycle-bin/restore', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ids: [itemId]})
+            });
+            
+            const data = await response.json();
+            if (data.success) {
+                showToast('恢复成功', 'success');
+                loadRecycleBin(currentPage);
+            } else {
+                showToast('恢复失败: ' + data.message, 'error');
+            }
+        } catch (error) {
+            showToast('恢复失败', 'error');
+        }
+    }
+    
+    // 永久删除单个项目
+    async function permanentDeleteItem(itemId) {
+        if (!confirm('确定要永久删除这个卡密吗？此操作不可恢复！')) return;
+        
+        try {
+            const response = await fetch('/admin/api/recycle-bin/permanent-delete', {
+                method: 'DELETE',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ids: [itemId]})
+            });
+            
+            const data = await response.json();
+            if (data.success) {
+                showToast('永久删除成功', 'success');
+                loadRecycleBin(currentPage);
+            } else {
+                showToast('删除失败: ' + data.message, 'error');
+            }
+        } catch (error) {
+            showToast('删除失败', 'error');
+        }
+    }
+    
+    // 恢复选中项目
+    async function restoreSelectedCards() {
+        if (selectedItems.size === 0) {
+            showToast('请选择要恢复的项目', 'warning');
+            return;
+        }
+        
+        if (!confirm(`确定要恢复选中的 ${selectedItems.size} 个卡密吗？`)) return;
+        
+        try {
+            const response = await fetch('/admin/api/recycle-bin/restore', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ids: Array.from(selectedItems)})
+            });
+            
+            const data = await response.json();
+            if (data.success) {
+                showToast(`成功恢复 ${selectedItems.size} 个卡密`, 'success');
+                selectedItems.clear();
+                loadRecycleBin(currentPage);
+            } else {
+                showToast('批量恢复失败: ' + data.message, 'error');
+            }
+        } catch (error) {
+            showToast('批量恢复失败', 'error');
+        }
+    }
+    
+    // 永久删除选中项目
+    async function permanentDeleteSelected() {
+        if (selectedItems.size === 0) {
+            showToast('请选择要删除的项目', 'warning');
+            return;
+        }
+        
+        if (!confirm(`确定要永久删除选中的 ${selectedItems.size} 个卡密吗？此操作不可恢复！`)) return;
+        
+        try {
+            const response = await fetch('/admin/api/recycle-bin/permanent-delete', {
+                method: 'DELETE',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ids: Array.from(selectedItems)})
+            });
+            
+            const data = await response.json();
+            if (data.success) {
+                showToast(`成功永久删除 ${selectedItems.size} 个卡密`, 'success');
+                selectedItems.clear();
+                loadRecycleBin(currentPage);
+            } else {
+                showToast('批量删除失败: ' + data.message, 'error');
+            }
+        } catch (error) {
+            showToast('批量删除失败', 'error');
+        }
+    }
+    
+    // 清空回收站
+    async function clearRecycleBin() {
+        if (!confirm('确定要清空整个回收站吗？此操作将永久删除所有项目，不可恢复！')) return;
+        
+        try {
+            const response = await fetch('/admin/api/recycle-bin/clear', {
+                method: 'DELETE'
+            });
+            
+            const data = await response.json();
+            if (data.success) {
+                showToast('回收站已清空', 'success');
+                loadRecycleBin(1);
+            } else {
+                showToast('清空失败: ' + data.message, 'error');
+            }
+        } catch (error) {
+            showToast('清空失败', 'error');
+        }
+    }
+    
+    // 格式化日期时间
+    function formatDateTime(dateStr) {
+        if (!dateStr) return '未知';
+        
+        try {
+            const date = new Date(dateStr);
+            return date.toLocaleString('zh-CN', {
+                year: 'numeric',
+                month: '2-digit',
+                day: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit'
+            });
+        } catch (e) {
+            return dateStr;
+        }
+    }
+    
+    // Toast notification system
+    function showToast(message, type = 'info', duration = 3000) {
+        // Create toast container if it doesn't exist
+        let container = document.getElementById('toast-container');
+        if (!container) {
+            container = document.createElement('div');
+            container.id = 'toast-container';
+            container.style.cssText = `
+                position: fixed;
+                top: 20px;
+                right: 20px;
+                z-index: 3000;
+                display: flex;
+                flex-direction: column;
+                gap: 10px;
+                max-width: 400px;
+            `;
+            document.body.appendChild(container);
+        }
+        
+        const toast = document.createElement('div');
+        toast.className = `toast ${type}`;
+        toast.style.cssText = `
+            padding: 15px 20px;
+            border-radius: 10px;
+            color: white;
+            font-weight: 500;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+            transform: translateX(450px);
+            opacity: 0;
+            transition: all 0.3s ease;
+            word-wrap: break-word;
+            background: ${type === 'success' ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)' : 
+                        type === 'error' ? 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)' : 
+                        type === 'warning' ? 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)' :
+                        'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)'};
+        `;
+        toast.textContent = message;
+        
+        container.appendChild(toast);
+        
+        setTimeout(() => {
+            toast.style.transform = 'translateX(0)';
+            toast.style.opacity = '1';
+        }, 10);
+        
+        setTimeout(() => {
+            toast.style.transform = 'translateX(450px)';
+            toast.style.opacity = '0';
+            setTimeout(() => {
+                if (container.contains(toast)) {
+                    container.removeChild(toast);
+                }
+            }, 300);
+        }, duration);
+    }
+</script>
+{% endblock %}

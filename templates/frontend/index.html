@@ -613,9 +613,11 @@
             if (data.success) {
                 if (data.mail) {
                     displayMail(data.mail);
-                    // 组合成功消息包含连接状态
+                    // 根据访问类型显示不同的成功消息
                     let successMessage = '';
-                    if (data.proxy && data.proxy.enabled) {
+                    if (data.admin_access) {
+                        successMessage = '邮件获取成功（管理员）';
+                    } else if (data.proxy && data.proxy.enabled) {
                         successMessage = '邮件获取成功（代理）';
                     } else {
                         successMessage = '邮件获取成功（直连）';
@@ -624,7 +626,9 @@
                 } else {
                     // 组合无邮件消息包含连接状态
                     let noMailMessage = '邮箱中暂无邮件';
-                    if (data.proxy && data.proxy.enabled) {
+                    if (data.admin_access) {
+                        noMailMessage += ' (管理员访问)';
+                    } else if (data.proxy && data.proxy.enabled) {
                         noMailMessage += ' (通过代理)';
                     } else {
                         noMailMessage += ' (直连)';
@@ -632,6 +636,18 @@
                     showMessage(noMailMessage, 'info');
                 }
             } else {
+                // 检查是否需要登录
+                if (data.requires_login) {
+                    showToast('请先登录管理系统后再获取邮件\n\n• 点击此处跳转到管理员登录页面', 'info', 5000);
+                    // 延迟显示跳转提示
+                    setTimeout(() => {
+                        if (confirm('是否跳转到管理员登录页面？')) {
+                            window.open('/admin/login', '_blank');
+                        }
+                    }, 2000);
+                    return;
+                }
+                
                 // 组合失败消息包含连接状态 - 避免重复添加连接指示符
                 let errorMessage = data.message || '获取邮件失败';
                 
