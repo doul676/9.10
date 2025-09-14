@@ -780,7 +780,13 @@ def update_proxy_unified_id(db, table_name, proxy_id, unified_id):
 @app.route('/')
 def index():
     """前端首页 - 邮件查看"""
-    return render_template('frontend/index.html')
+    # 检查管理员登录状态，传递给前端
+    is_admin_logged_in = session.get('admin_logged_in', False)
+    admin_username = session.get('admin_username', '')
+    
+    return render_template('frontend/index.html', 
+                         is_admin_logged_in=is_admin_logged_in,
+                         admin_username=admin_username)
 
 # ===============================
 # 管理员认证相关路由
@@ -902,7 +908,7 @@ def admin_system():
 
 @app.route('/api/get_mail', methods=['POST'])
 def api_get_mail():
-    """获取邮件 API（增强版本 - 支持卡密验证和邮件过滤）"""
+    """获取邮件 API（增强版本 - 支持卡密验证和邮件过滤，管理员登录后免卡密）"""
     try:
         data = request.get_json()
         if not data:
@@ -920,104 +926,127 @@ def api_get_mail():
                 'success': False,
                 'message': '请提供邮箱地址'
             })
-            
-        if not card_key:
+        
+        # 检查管理员登录状态，管理员登录后可免卡密访问
+        is_admin_logged_in = session.get('admin_logged_in', False)
+        admin_username = session.get('admin_username', '')
+        
+        if not is_admin_logged_in and not card_key:
             return jsonify({
                 'success': False,
-                'message': '请提供卡密'
+                'message': '请提供卡密',
+                'login_required': True  # 标识需要登录
             })
         
-        # 验证卡密并获取卡密信息
+        # 验证卡密并获取卡密信息（如果不是管理员登录）
         db = get_db()
         db_type = app.config['DATABASE_TYPE']
         
-        try:
-            # 查询卡密信息
-            if db_type == 'sqlite':
-                card_result = db.execute('''
-                    SELECT c.*, e.email as bound_email, e.server, e.username, e.password, 
-                           e.port, e.protocol, e.ssl
-                    FROM cards c 
-                    LEFT JOIN mail_accounts e ON c.bound_email_id = e.id 
-                    WHERE c.card_key = ?
-                ''', (card_key,)).fetchone()
-            else:
-                cursor = db.cursor()
-                cursor.execute('''
-                    SELECT c.*, e.email as bound_email, e.server, e.username, e.password, 
-                           e.port, e.protocol, e.ssl
-                    FROM cards c 
-                    LEFT JOIN mail_accounts e ON c.bound_email_id = e.id 
-                    WHERE c.card_key = %s
-                ''', (card_key,))
-                card_result = cursor.fetchone()
-            
-            if not card_result:
-                return jsonify({
-                    'success': False,
-                    'message': '卡密不存在或已失效'
-                })
-            
-            # 转换为字典
-            if db_type == 'sqlite':
-                card_info = dict(card_result)
-            else:
-                columns = [desc[0] for desc in cursor.description]
-                card_info = dict(zip(columns, card_result))
-            
-            # 验证卡密状态
-            now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            
-            # 检查卡密是否启用
-            if card_info['status'] != 1:
-                return jsonify({
-                    'success': False,
-                    'message': '卡密已被禁用'
-                })
-            
-            # 检查是否已过期
-            if card_info['expired_at'] and card_info['expired_at'] <= now:
-                return jsonify({
-                    'success': False,
-                    'message': '卡密已过期'
-                })
-            
-            # 检查使用次数是否已用完
-            if card_info['used_count'] >= card_info['usage_limit']:
-                return jsonify({
-                    'success': False,
-                    'message': '卡密使用次数已用完'
-                })
-            
-            # 如果卡密绑定了邮箱，检查邮箱是否匹配
-            if card_info['bound_email_id'] and card_info['bound_email']:
-                if email != card_info['bound_email']:
+        if is_admin_logged_in:
+            # 管理员登录模式：直接获取邮件，无需卡密验证
+            logger.info(f"Admin user {admin_username} accessing mail without card key")
+            card_info = None  # 无卡密信息
+        else:
+            # 普通用户模式：需要验证卡密
+            try:
+                # 查询卡密信息
+                if db_type == 'sqlite':
+                    card_result = db.execute('''
+                        SELECT c.*, e.email as bound_email, e.server, e.username, e.password, 
+                               e.port, e.protocol, e.ssl
+                        FROM cards c 
+                        LEFT JOIN mail_accounts e ON c.bound_email_id = e.id 
+                        WHERE c.card_key = ?
+                    ''', (card_key,)).fetchone()
+                else:
+                    cursor = db.cursor()
+                    cursor.execute('''
+                        SELECT c.*, e.email as bound_email, e.server, e.username, e.password, 
+                               e.port, e.protocol, e.ssl
+                        FROM cards c 
+                        LEFT JOIN mail_accounts e ON c.bound_email_id = e.id 
+                        WHERE c.card_key = %s
+                    ''', (card_key,))
+                    card_result = cursor.fetchone()
+                
+                if not card_result:
                     return jsonify({
                         'success': False,
-                        'message': f'此卡密只能用于邮箱: {card_info["bound_email"]}'
+                        'message': '卡密不存在或已失效'
                     })
-                # 使用绑定邮箱信息直接获取邮件
-                use_bound_email = True
-            else:
-                # 如果没有绑定邮箱，需要在数据库中查找邮箱配置
-                use_bound_email = False
-            
-            # 调用Python邮件获取器脚本，传递卡密过滤参数
+                
+                # 转换为字典
+                if db_type == 'sqlite':
+                    card_info = dict(card_result)
+                else:
+                    columns = [desc[0] for desc in cursor.description]
+                    card_info = dict(zip(columns, card_result))
+                
+                # 验证卡密状态
+                now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                
+                # 检查卡密是否启用
+                if card_info['status'] != 1:
+                    return jsonify({
+                        'success': False,
+                        'message': '卡密已被禁用'
+                    })
+                
+                # 检查是否已过期
+                if card_info['expired_at'] and card_info['expired_at'] <= now:
+                    return jsonify({
+                        'success': False,
+                        'message': '卡密已过期'
+                    })
+                
+                # 检查使用次数是否已用完
+                if card_info['used_count'] >= card_info['usage_limit']:
+                    return jsonify({
+                        'success': False,
+                        'message': '卡密使用次数已用完'
+                    })
+                
+                # 如果卡密绑定了邮箱，检查邮箱是否匹配
+                if card_info['bound_email_id'] and card_info['bound_email']:
+                    if email != card_info['bound_email']:
+                        return jsonify({
+                            'success': False,
+                            'message': f'此卡密只能用于邮箱: {card_info["bound_email"]}'
+                        })
+                    # 使用绑定邮箱信息直接获取邮件
+                    use_bound_email = True
+                else:
+                    # 如果没有绑定邮箱，需要在数据库中查找邮箱配置
+                    use_bound_email = False
+                    
+            except Exception as e:
+                logger.error(f"Database or processing error in card validation: {e}")
+                return jsonify({
+                    'success': False,
+                    'message': f'卡密验证错误: {str(e)}'
+                })
+        
+        try:
+            # 调用Python邮件获取器脚本，传递卡密过滤参数（如果有）
             script_args = [
                 sys.executable, 
                 os.path.join(os.path.dirname(__file__), 'python', 'mail_fetcher.py'),
                 email
             ]
             
-            # 添加卡密过滤参数
-            if card_info.get('email_days_filter'):
-                script_args.extend(['--days-filter', str(card_info['email_days_filter'])])
-            
-            if card_info.get('sender_filter'):
-                script_args.extend(['--sender-filter', card_info['sender_filter']])
-            
-            # 添加卡密标识用于后续处理
-            script_args.extend(['--card-key', card_key])
+            # 如果有卡密信息，添加过滤参数
+            if card_info:
+                if card_info.get('email_days_filter'):
+                    script_args.extend(['--days-filter', str(card_info['email_days_filter'])])
+                
+                if card_info.get('sender_filter'):
+                    script_args.extend(['--sender-filter', card_info['sender_filter']])
+                
+                # 添加卡密标识用于后续处理
+                script_args.extend(['--card-key', card_key])
+            else:
+                # 管理员模式，添加管理员标识
+                script_args.extend(['--admin-mode', 'true'])
             
             result = subprocess.run(script_args, capture_output=True, text=True, timeout=30)
             
@@ -1025,8 +1054,8 @@ def api_get_mail():
                 # 解析JSON输出
                 response_data = json.loads(result.stdout)
                 
-                # 如果邮件获取成功，更新卡密使用次数
-                if response_data.get('success') and response_data.get('mail'):
+                # 如果邮件获取成功，并且有卡密信息，更新卡密使用次数
+                if response_data.get('success') and response_data.get('mail') and card_info:
                     # 增加使用次数
                     new_used_count = card_info['used_count'] + 1
                     
@@ -1072,9 +1101,42 @@ def api_get_mail():
                         'total_uses': card_info['usage_limit'],
                         'used_count': new_used_count
                     }
+                elif response_data.get('success') and response_data.get('mail') and is_admin_logged_in:
+                    # 管理员模式成功获取邮件，添加管理员信息
+                    response_data['admin_info'] = {
+                        'admin_username': admin_username,
+                        'access_type': 'admin_login'
+                    }
                 
                 return jsonify(response_data)
             else:
+                return jsonify({
+                    'success': False,
+                    'message': f'邮件获取失败: {result.stderr or "未知错误"}'
+                
+        except subprocess.TimeoutExpired:
+            return jsonify({
+                'success': False,
+                'message': '邮件获取超时，请稍后重试'
+            })
+        except json.JSONDecodeError:
+            return jsonify({
+                'success': False,
+                'message': '邮件服务响应格式错误'
+            })
+        except Exception as e:
+            logger.error(f"Error in mail fetching: {e}")
+            return jsonify({
+                'success': False,
+                'message': f'邮件服务错误: {str(e)}'
+            })
+            
+    except Exception as e:
+        logger.error(f"General error in get_mail: {e}")
+        return jsonify({
+            'success': False,
+            'message': f'服务器错误: {str(e)}'
+        })
                 return jsonify({
                     'success': False,
                     'message': f'邮件获取失败: {result.stderr or "未知错误"}'
