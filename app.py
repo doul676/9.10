@@ -1376,7 +1376,7 @@ def _add_proxy(db, table_name, data, proxy_type):
         
         return jsonify({
             'success': True,
-            'message': f'{proxy_type.upper()}代理添加成功，统一ID: {unified_id}'
+            'message': f'{proxy_type.upper()}代理添加成功'
         })
         
     except Exception as e:
@@ -1885,7 +1885,7 @@ def api_admin_proxy_config():
                     
                     return jsonify({
                         'success': True,
-                        'message': f'代理已开启（备用选择），当前使用: {proxy_type.upper()} - {best_proxy["name"]} (ID: {proxy_id})，所有代理测试均失败，已选择ID最小的代理'
+                        'message': f'代理已开启（备用选择），当前代理: {proxy_type.upper()} - 地址: {best_proxy["host"]}:{best_proxy["port"]}，所有代理测试均失败，已选择ID最小的代理'
                     })
                 
                 # 找到最佳代理，更新配置
@@ -1923,7 +1923,7 @@ def api_admin_proxy_config():
                 
                 return jsonify({
                     'success': True,
-                    'message': f'代理已开启（智能选择），当前使用: {proxy_type.upper()} - {best_proxy["name"]} (ID: {proxy_id})，平均延迟: {best_response_time}ms'
+                    'message': f'代理已开启（智能选择），当前代理: {proxy_type.upper()} - 地址: {best_proxy["host"]}:{best_proxy["port"]}，平均延迟: {best_response_time}ms'
                 })
                 
             elif action == 'disable_proxy':
@@ -2009,19 +2009,18 @@ def api_admin_proxy_config():
                 else:
                     db.commit()
                 
-                # 获取代理名称
+                # 获取代理信息
                 if db_type == 'sqlite':
-                    proxy_name = dict(proxy).get('name', '未知代理')
+                    proxy_dict = dict(proxy)
                 else:
                     cursor.execute(f'DESCRIBE {table_name}' if db_type == 'mysql' else 
                                  f'SELECT column_name FROM information_schema.columns WHERE table_name = \'{table_name}\'')
                     columns = [row[0] for row in cursor.fetchall()]
                     proxy_dict = dict(zip(columns, proxy))
-                    proxy_name = proxy_dict.get('name', '未知代理')
                 
                 return jsonify({
                     'success': True,
-                    'message': f'已切换到代理: {proxy_type.upper()} - {proxy_name} (ID: {proxy_id})'
+                    'message': f'已切换到代理: {proxy_type.upper()} - 地址: {proxy_dict["host"]}:{proxy_dict["port"]}'
                 })
             
             else:

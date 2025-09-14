@@ -346,9 +346,11 @@ class ProxyMailFetcher:
                     else:
                         raise Exception(f"连接HTTP代理服务器失败: {str(e)}")
                 
-                # Build CONNECT request
+                # Build CONNECT request with more headers for better compatibility
                 connect_request = f"CONNECT {self.server}:{self.port} HTTP/1.1\r\n"
                 connect_request += f"Host: {self.server}:{self.port}\r\n"
+                connect_request += "User-Agent: Python-Mail-Fetcher/1.0\r\n"
+                connect_request += "Proxy-Connection: keep-alive\r\n"
                 
                 # Add proxy authentication if provided
                 if proxy_username and proxy_password:
@@ -363,15 +365,39 @@ class ProxyMailFetcher:
                 
                 # Read response with better timeout handling
                 proxy_socket.settimeout(15)  # Set shorter timeout for response
-                response = proxy_socket.recv(4096).decode()
+                response_data = b''
+                while b'\r\n\r\n' not in response_data:
+                    chunk = proxy_socket.recv(1024)
+                    if not chunk:
+                        break
+                    response_data += chunk
+                    
+                response = response_data.decode('utf-8', errors='ignore')
                 
                 # Check if connection was successful
-                if "200 Connection established" not in response and "200 OK" not in response:
+                if not response:
+                    proxy_socket.close()
+                    raise Exception("HTTP代理CONNECT失败: 未收到代理服务器响应")
+                
+                # Look for success status codes
+                success_patterns = ["200 Connection established", "200 OK", "200 Tunnel established"]
+                is_success = any(pattern in response for pattern in success_patterns)
+                
+                if not is_success:
                     proxy_socket.close()
                     # Fix f-string syntax error: cannot include backslash in expression
                     response_lines = response.split('\r\n')
-                    first_line = response_lines[0] if response_lines else response
-                    raise Exception(f"HTTP代理CONNECT失败: {first_line}")
+                    first_line = response_lines[0] if response_lines else response.strip()
+                    
+                    # Provide more specific error messages
+                    if "407" in first_line:
+                        raise Exception(f"HTTP代理需要身份验证: {first_line}")
+                    elif "403" in first_line:
+                        raise Exception(f"HTTP代理拒绝访问: {first_line}")
+                    elif "502" in first_line:
+                        raise Exception(f"HTTP代理无法连接到目标服务器: {first_line}")
+                    else:
+                        raise Exception(f"HTTP代理CONNECT失败: {first_line}")
                 
                 logger.info("HTTP CONNECT tunnel established successfully")
                 
@@ -396,24 +422,59 @@ class ProxyMailFetcher:
                     ssl_context.verify_mode = ssl.CERT_NONE
                     
                     # Wrap the proxy socket with SSL
+                    logger.info("Wrapping proxy socket with SSL")
                     ssl_socket = ssl_context.wrap_socket(proxy_socket, server_hostname=self.server)
                     
-                    # Create IMAP connection manually
+                    # Create IMAP connection manually with better initialization
                     self.connection = imaplib.IMAP4_SSL.__new__(imaplib.IMAP4_SSL)
                     imaplib.IMAP4.__init__(self.connection, '')
                     self.connection.sock = ssl_socket
                     self.connection.file = ssl_socket.makefile('rb')
                     
+                    # Set up initial protocol state
+                    self.connection.capabilities = None
+                    self.connection.PROTOCOL_VERSION = 'IMAP4REV1'
+                    
+                    # Read the initial response from server
+                    try:
+                        self.connection._get_response()
+                    except Exception as e:
+                        logger.warning(f"Could not read initial server response, continuing: {e}")
+                    
                 else:
                     # For non-SSL connections
+                    logger.info("Setting up non-SSL IMAP connection")
                     self.connection = imaplib.IMAP4.__new__(imaplib.IMAP4)
                     imaplib.IMAP4.__init__(self.connection, '')
                     self.connection.sock = proxy_socket
                     self.connection.file = proxy_socket.makefile('rb')
+                    
+                    # Set up initial protocol state
+                    self.connection.capabilities = None
+                    self.connection.PROTOCOL_VERSION = 'IMAP4REV1'
+                    
+                    # Read the initial response from server
+                    try:
+                        self.connection._get_response()
+                    except Exception as e:
+                        logger.warning(f"Could not read initial server response, continuing: {e}")
+                
+                logger.info("IMAP connection object created, attempting login...")
                 
                 # Now that we have a working connection, login and select
-                self.connection.login(self.username, self.password)
-                self.connection.select('INBOX')
+                try:
+                    login_result = self.connection.login(self.username, self.password)
+                    logger.info(f"Login successful: {login_result}")
+                except Exception as e:
+                    logger.error(f"Login failed: {e}")
+                    raise Exception(f"IMAP登录失败: {str(e)}")
+                
+                try:
+                    select_result = self.connection.select('INBOX')
+                    logger.info(f"INBOX selected: {select_result}")
+                except Exception as e:
+                    logger.error(f"INBOX selection failed: {e}")
+                    raise Exception(f"选择INBOX失败: {str(e)}")
                 
                 logger.info("IMAP connection through HTTP proxy established successfully")
                 return True
@@ -535,6 +596,21 @@ class ProxyMailFetcher:
                 raise Exception("连接被重置，可能是服务器或网络问题")
             else:
                 raise Exception(f"IMAP连接失败: {str(e)}")
+    
+    def disconnect(self):
+        """Disconnect from the mail server"""
+        if self.connection:
+            try:
+                self.connection.logout()
+                logger.info("Mail server connection closed")
+            except Exception as e:
+                logger.warning(f"Error during disconnect: {e}")
+            finally:
+                self.connection = None
+    
+    def close(self):
+        """Close the connection (alias for disconnect)"""
+        self.disconnect()
                 
     def get_latest_mail(self):
         """Get the latest email from the mailbox"""
