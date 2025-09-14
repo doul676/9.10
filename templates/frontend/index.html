@@ -509,6 +509,10 @@
     <div class="header">
         <h1>📧 邮件查看系统</h1>
         <p>输入已添加的邮箱账号查看最新邮件</p>
+        <p style="color: #ffd700; font-size: 14px; margin-top: 10px;">
+            <i class="fas fa-info-circle"></i> 
+            使用此功能需要先在 <a href="/admin/login" target="_blank" style="color: #ffd700; text-decoration: underline;">管理员后台</a> 登录
+        </p>
     </div>
     
     <div class="mail-input-card">
@@ -600,7 +604,8 @@
         mailDisplay.style.display = 'none';
         
         try {
-            const response = await fetch('/api/get_mail', {
+            // 使用管理员API端点（需要先登录管理员后台）
+            const response = await fetch('/api/get_mail_admin', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -632,6 +637,16 @@
                     showMessage(noMailMessage, 'info');
                 }
             } else {
+                // 检查是否是登录重定向
+                if (response.status === 302 || response.url.includes('/admin/login')) {
+                    showMessage('请先登录管理员后台才能使用邮件查看功能。', 'error');
+                    // 可选：自动跳转到登录页面
+                    setTimeout(() => {
+                        window.open('/admin/login', '_blank');
+                    }, 2000);
+                    return;
+                }
+                
                 // 组合失败消息包含连接状态 - 避免重复添加连接指示符
                 let errorMessage = data.message || '获取邮件失败';
                 
