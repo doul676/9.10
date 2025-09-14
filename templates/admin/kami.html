@@ -704,6 +704,9 @@
                     <button class="btn btn-success" onclick="showBatchGenerateModal()">
                         <i>📦</i> 批量生成卡密
                     </button>
+                    <button class="btn btn-secondary" onclick="showRecycleBin()">
+                        <i>🗑️</i> 回收站
+                    </button>
                     <button class="btn btn-danger" onclick="batchDeleteCards()" style="display: none;" id="batchDeleteBtn">
                         <i>🗑️</i> 批量删除
                     </button>
@@ -919,6 +922,105 @@
             </div>
         </div>
     </div>
+
+    <!-- 回收站弹窗 -->
+    <div id="recycleBinModal" class="modal">
+        <div class="modal-content" style="max-width: 900px; max-height: 90vh;">
+            <div class="modal-header">
+                <h3 class="modal-title">
+                    <i>🗑️</i> 卡密回收站
+                </h3>
+                <button class="modal-close" onclick="closeModal('recycleBinModal')">&times;</button>
+            </div>
+            <div class="modal-body" style="max-height: 70vh; overflow-y: auto;">
+                <!-- 回收站统计 -->
+                <div class="stats-grid" style="margin-bottom: 20px;">
+                    <div class="stat-card" style="border-left-color: #ef4444;">
+                        <div class="stat-number" id="recycleBinTotal">0</div>
+                        <div class="stat-label">回收站总数</div>
+                    </div>
+                    <div class="stat-card" style="border-left-color: #f59e0b;">
+                        <div class="stat-number" id="recycleBinDeleted">0</div>
+                        <div class="stat-label">手动删除</div>
+                    </div>
+                    <div class="stat-card" style="border-left-color: #6b7280;">
+                        <div class="stat-number" id="recycleBinExpired">0</div>
+                        <div class="stat-label">已过期</div>
+                    </div>
+                    <div class="stat-card" style="border-left-color: #10b981;">
+                        <div class="stat-number" id="recycleBinUsedUp">0</div>
+                        <div class="stat-label">已用完</div>
+                    </div>
+                </div>
+
+                <!-- 回收站操作按钮 -->
+                <div class="btn-group" style="margin-bottom: 20px;">
+                    <button class="btn btn-sm btn-secondary" onclick="filterRecycleBin('all')" id="filterAll">
+                        全部
+                    </button>
+                    <button class="btn btn-sm btn-secondary" onclick="filterRecycleBin('deleted')" id="filterDeleted">
+                        手动删除
+                    </button>
+                    <button class="btn btn-sm btn-secondary" onclick="filterRecycleBin('expired')" id="filterExpired">
+                        已过期
+                    </button>
+                    <button class="btn btn-sm btn-secondary" onclick="filterRecycleBin('used_up')" id="filterUsedUp">
+                        已用完
+                    </button>
+                    <button class="btn btn-sm btn-success" onclick="restoreSelectedCards()" style="display: none;" id="restoreBtn">
+                        <i>↩️</i> 恢复选中
+                    </button>
+                    <button class="btn btn-sm btn-danger" onclick="permanentDeleteSelected()" style="display: none;" id="permanentDeleteBtn">
+                        <i>💀</i> 永久删除
+                    </button>
+                    <button class="btn btn-sm btn-danger" onclick="emptyRecycleBin()" style="margin-left: auto;">
+                        <i>🗑️</i> 清空回收站
+                    </button>
+                </div>
+
+                <!-- 回收站搜索 -->
+                <div class="form-group" style="max-width: 400px; margin-bottom: 20px;">
+                    <input type="text" class="form-control" id="recycleBinSearch" placeholder="搜索回收站中的卡密..." onkeyup="searchRecycleBin()">
+                </div>
+
+                <!-- 回收站列表 -->
+                <div class="table-container">
+                    <table class="table">
+                        <thead>
+                            <tr>
+                                <th>
+                                    <input type="checkbox" id="selectAllRecycled" onchange="toggleSelectAllRecycled()">
+                                </th>
+                                <th>卡密</th>
+                                <th>回收原因</th>
+                                <th>使用次数</th>
+                                <th>过期时间</th>
+                                <th>备注</th>
+                                <th>回收时间</th>
+                                <th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody id="recycleBinListBody">
+                            <tr>
+                                <td colspan="8" class="loading">
+                                    <div class="spinner"></div>
+                                    <div>加载中...</div>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- 回收站分页 -->
+                <div class="pagination-container" id="recycleBinPaginationContainer">
+                    <!-- 分页按钮将通过JavaScript生成 -->
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="closeModal('recycleBinModal')">关闭</button>
+            </div>
+        </div>
+    </div>
 </div>
 {% endblock %}
 
@@ -931,6 +1033,13 @@
     let selectedCards = new Set();
     let allCards = [];
     let filteredCards = [];
+    
+    // 回收站相关全局变量
+    let recycleBinCurrentPage = 1;
+    let recycleBinPerPage = 10;
+    let recycleBinCurrentFilter = 'all';
+    let selectedRecycledCards = new Set();
+    let recycleBinStats = {};
 
     // ========== 工具函数 ==========
     
@@ -1663,6 +1772,387 @@
         copyToClipboard(apiUrl);
         
         showToast('API链接已复制到剪贴板', 'success');
+    }
+
+    // ========== 回收站功能 ==========
+    
+    // 显示回收站弹窗
+    function showRecycleBin() {
+        document.getElementById('recycleBinModal').classList.add('show');
+        loadRecycleBinStats();
+        loadRecycleBinList();
+    }
+    
+    // 加载回收站统计
+    function loadRecycleBinStats() {
+        fetch('/admin/api/cards/recycle-bin?page=1&per_page=1')
+            .then(response => response.json())
+            .then(data => {
+                if (data.success && data.stats) {
+                    recycleBinStats = data.stats;
+                    document.getElementById('recycleBinTotal').textContent = data.stats.total || 0;
+                    document.getElementById('recycleBinDeleted').textContent = data.stats.deleted || 0;
+                    document.getElementById('recycleBinExpired').textContent = data.stats.expired || 0;
+                    document.getElementById('recycleBinUsedUp').textContent = data.stats.used_up || 0;
+                }
+            })
+            .catch(error => {
+                console.error('加载回收站统计失败:', error);
+            });
+    }
+    
+    // 加载回收站列表
+    function loadRecycleBinList(page = 1) {
+        recycleBinCurrentPage = page;
+        const searchTerm = document.getElementById('recycleBinSearch').value;
+        
+        const params = new URLSearchParams({
+            page: page,
+            per_page: recycleBinPerPage,
+            category: recycleBinCurrentFilter,
+            search: searchTerm
+        });
+
+        fetch(`/admin/api/cards/recycle-bin?${params}`)
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    renderRecycleBinList(data.data);
+                    renderRecycleBinPagination(data.pagination);
+                    updateRecycleBinButtons();
+                } else {
+                    showToast(data.message || '加载回收站列表失败', 'error');
+                }
+            })
+            .catch(error => {
+                console.error('加载回收站列表失败:', error);
+                showToast('网络错误，请稍后重试', 'error');
+            });
+    }
+    
+    // 渲染回收站列表
+    function renderRecycleBinList(cards) {
+        const tbody = document.getElementById('recycleBinListBody');
+        
+        if (cards.length === 0) {
+            tbody.innerHTML = `
+                <tr>
+                    <td colspan="8" style="text-align: center; padding: 40px; color: #6b7280;">
+                        回收站中暂无数据
+                    </td>
+                </tr>
+            `;
+            return;
+        }
+
+        tbody.innerHTML = cards.map((card, index) => `
+            <tr>
+                <td>
+                    <input type="checkbox" class="recycled-card-checkbox" value="${card.id}" 
+                           onchange="toggleRecycledCardSelection(${card.id})" 
+                           ${selectedRecycledCards.has(card.id) ? 'checked' : ''}>
+                </td>
+                <td>
+                    <code style="background: #f3f4f6; padding: 2px 6px; border-radius: 4px; font-family: monospace;">
+                        ${card.card_key}
+                    </code>
+                </td>
+                <td>
+                    <span class="status-badge ${getRecycleReasonBadgeClass(card.recycle_reason)}">
+                        ${getRecycleReasonText(card.recycle_reason)}
+                    </span>
+                </td>
+                <td>${card.used_count}/${card.usage_limit}</td>
+                <td>${card.expired_at || '永不过期'}</td>
+                <td>${card.remarks || '-'}</td>
+                <td>${formatDateTime(card.recycled_at)}</td>
+                <td>
+                    <div style="display: flex; gap: 5px; flex-wrap: wrap;">
+                        <button class="btn btn-sm btn-success" onclick="restoreCard(${card.id})" 
+                                title="恢复">↩️</button>
+                        <button class="btn btn-sm btn-danger" onclick="permanentDeleteCard(${card.id})" 
+                                title="永久删除">💀</button>
+                    </div>
+                </td>
+            </tr>
+        `).join('');
+    }
+    
+    // 获取回收原因的CSS类
+    function getRecycleReasonBadgeClass(reason) {
+        switch (reason) {
+            case 'deleted': return 'status-expired';
+            case 'expired': return 'status-disabled';
+            case 'used_up': return 'status-used';
+            default: return 'status-disabled';
+        }
+    }
+    
+    // 获取回收原因的显示文本
+    function getRecycleReasonText(reason) {
+        switch (reason) {
+            case 'deleted': return '手动删除';
+            case 'expired': return '已过期';
+            case 'used_up': return '已用完';
+            default: return '未知';
+        }
+    }
+    
+    // 渲染回收站分页
+    function renderRecycleBinPagination(pagination) {
+        const container = document.getElementById('recycleBinPaginationContainer');
+        
+        let html = `<div class="pagination-info">共 ${pagination.total} 条记录，第 ${pagination.page} 页，共 ${pagination.pages} 页</div>`;
+        
+        if (pagination.pages > 1) {
+            html += '<div class="pagination-buttons">';
+            
+            // 上一页
+            if (pagination.page > 1) {
+                html += `<button class="page-btn" onclick="loadRecycleBinList(${pagination.page - 1})">« 上一页</button>`;
+            }
+            
+            // 页码按钮
+            let startPage = Math.max(1, pagination.page - 2);
+            let endPage = Math.min(pagination.pages, pagination.page + 2);
+            
+            for (let i = startPage; i <= endPage; i++) {
+                const activeClass = i === pagination.page ? 'active' : '';
+                html += `<button class="page-btn ${activeClass}" onclick="loadRecycleBinList(${i})">${i}</button>`;
+            }
+            
+            // 下一页
+            if (pagination.page < pagination.pages) {
+                html += `<button class="page-btn" onclick="loadRecycleBinList(${pagination.page + 1})">下一页 »</button>`;
+            }
+            
+            html += '</div>';
+        }
+        
+        container.innerHTML = html;
+    }
+    
+    // 过滤回收站
+    function filterRecycleBin(category) {
+        recycleBinCurrentFilter = category;
+        
+        // 更新按钮状态
+        document.querySelectorAll('#recycleBinModal .btn-group .btn').forEach(btn => {
+            btn.classList.remove('btn-primary');
+            btn.classList.add('btn-secondary');
+        });
+        
+        const filterBtn = document.getElementById(`filter${category.charAt(0).toUpperCase() + category.slice(1)}`);
+        if (filterBtn) {
+            filterBtn.classList.remove('btn-secondary');
+            filterBtn.classList.add('btn-primary');
+        }
+        
+        // 重新加载列表
+        loadRecycleBinList(1);
+    }
+    
+    // 搜索回收站
+    function searchRecycleBin() {
+        loadRecycleBinList(1);
+    }
+    
+    // 切换单个回收站卡密选择
+    function toggleRecycledCardSelection(cardId) {
+        if (selectedRecycledCards.has(cardId)) {
+            selectedRecycledCards.delete(cardId);
+        } else {
+            selectedRecycledCards.add(cardId);
+        }
+        updateSelectAllRecycledCheckbox();
+        updateRecycleBinButtons();
+    }
+    
+    // 切换回收站全选
+    function toggleSelectAllRecycled() {
+        const selectAll = document.getElementById('selectAllRecycled');
+        const checkboxes = document.querySelectorAll('.recycled-card-checkbox');
+        
+        selectedRecycledCards.clear();
+        
+        if (selectAll.checked) {
+            checkboxes.forEach(checkbox => {
+                checkbox.checked = true;
+                selectedRecycledCards.add(parseInt(checkbox.value));
+            });
+        } else {
+            checkboxes.forEach(checkbox => {
+                checkbox.checked = false;
+            });
+        }
+        
+        updateRecycleBinButtons();
+    }
+    
+    // 更新回收站全选复选框状态
+    function updateSelectAllRecycledCheckbox() {
+        const selectAll = document.getElementById('selectAllRecycled');
+        const checkboxes = document.querySelectorAll('.recycled-card-checkbox');
+        const checkedCount = document.querySelectorAll('.recycled-card-checkbox:checked').length;
+        
+        selectAll.indeterminate = checkedCount > 0 && checkedCount < checkboxes.length;
+        selectAll.checked = checkboxes.length > 0 && checkedCount === checkboxes.length;
+    }
+    
+    // 更新回收站操作按钮显示
+    function updateRecycleBinButtons() {
+        const restoreBtn = document.getElementById('restoreBtn');
+        const permanentDeleteBtn = document.getElementById('permanentDeleteBtn');
+        
+        if (selectedRecycledCards.size > 0) {
+            restoreBtn.style.display = 'inline-block';
+            permanentDeleteBtn.style.display = 'inline-block';
+            restoreBtn.innerHTML = `<i>↩️</i> 恢复选中 (${selectedRecycledCards.size})`;
+            permanentDeleteBtn.innerHTML = `<i>💀</i> 永久删除 (${selectedRecycledCards.size})`;
+        } else {
+            restoreBtn.style.display = 'none';
+            permanentDeleteBtn.style.display = 'none';
+        }
+    }
+    
+    // 恢复单个卡密
+    function restoreCard(cardId) {
+        if (!confirm('确定要恢复这个卡密吗？')) {
+            return;
+        }
+        
+        restoreCards([cardId]);
+    }
+    
+    // 恢复选中的卡密
+    function restoreSelectedCards() {
+        if (selectedRecycledCards.size === 0) {
+            showToast('请选择要恢复的卡密', 'error');
+            return;
+        }
+        
+        if (!confirm(`确定要恢复选中的 ${selectedRecycledCards.size} 个卡密吗？`)) {
+            return;
+        }
+        
+        restoreCards(Array.from(selectedRecycledCards));
+    }
+    
+    // 恢复卡密
+    function restoreCards(cardIds) {
+        fetch('/admin/api/cards/recycle-bin', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ 
+                action: 'restore',
+                ids: cardIds
+            })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                showToast(data.message, 'success');
+                selectedRecycledCards.clear();
+                loadRecycleBinStats();
+                loadRecycleBinList(recycleBinCurrentPage);
+                refreshCardList(); // 刷新主列表
+            } else {
+                showToast(data.message, 'error');
+            }
+        })
+        .catch(error => {
+            console.error('恢复卡密失败:', error);
+            showToast('网络错误，请稍后重试', 'error');
+        });
+    }
+    
+    // 永久删除单个卡密
+    function permanentDeleteCard(cardId) {
+        if (!confirm('确定要永久删除这个卡密吗？此操作不可恢复！')) {
+            return;
+        }
+        
+        permanentDeleteCards([cardId]);
+    }
+    
+    // 永久删除选中的卡密
+    function permanentDeleteSelected() {
+        if (selectedRecycledCards.size === 0) {
+            showToast('请选择要永久删除的卡密', 'error');
+            return;
+        }
+        
+        if (!confirm(`确定要永久删除选中的 ${selectedRecycledCards.size} 个卡密吗？此操作不可恢复！`)) {
+            return;
+        }
+        
+        permanentDeleteCards(Array.from(selectedRecycledCards));
+    }
+    
+    // 永久删除卡密
+    function permanentDeleteCards(cardIds) {
+        fetch('/admin/api/cards/recycle-bin', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ 
+                action: 'permanent_delete',
+                ids: cardIds
+            })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                showToast(data.message, 'success');
+                selectedRecycledCards.clear();
+                loadRecycleBinStats();
+                loadRecycleBinList(recycleBinCurrentPage);
+            } else {
+                showToast(data.message, 'error');
+            }
+        })
+        .catch(error => {
+            console.error('永久删除卡密失败:', error);
+            showToast('网络错误，请稍后重试', 'error');
+        });
+    }
+    
+    // 清空回收站
+    function emptyRecycleBin() {
+        const categoryText = recycleBinCurrentFilter === 'all' ? '整个回收站' : getRecycleReasonText(recycleBinCurrentFilter);
+        
+        if (!confirm(`确定要清空${categoryText}吗？此操作不可恢复！`)) {
+            return;
+        }
+        
+        fetch('/admin/api/cards/recycle-bin', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ 
+                action: 'empty_bin',
+                category: recycleBinCurrentFilter
+            })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                showToast(data.message, 'success');
+                selectedRecycledCards.clear();
+                loadRecycleBinStats();
+                loadRecycleBinList(1);
+            } else {
+                showToast(data.message, 'error');
+            }
+        })
+        .catch(error => {
+            console.error('清空回收站失败:', error);
+            showToast('网络错误，请稍后重试', 'error');
+        });
     }
 
     // 点击弹窗外部关闭弹窗

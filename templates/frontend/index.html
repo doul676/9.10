@@ -566,12 +566,94 @@
 
 {% block scripts %}
 <script>
+    // 全局变量存储登录状态
+    let isAdminLoggedIn = false;
+    let adminUsername = '';
+    
     // 回车键触发获取邮件
     document.getElementById('emailInput').addEventListener('keypress', function(e) {
         if (e.key === 'Enter') {
             getMail();
         }
     });
+    
+    // 页面加载时检查登录状态
+    document.addEventListener('DOMContentLoaded', function() {
+        checkAdminLoginStatus();
+    });
+    
+    // 检查管理员登录状态
+    async function checkAdminLoginStatus() {
+        try {
+            const response = await fetch('/api/check_admin_login');
+            const data = await response.json();
+            
+            if (data.success && data.logged_in) {
+                isAdminLoggedIn = true;
+                adminUsername = data.admin_username;
+                updateUIForLoggedInAdmin();
+            } else {
+                isAdminLoggedIn = false;
+                updateUIForGuestUser();
+            }
+        } catch (error) {
+            console.error('检查登录状态失败:', error);
+            isAdminLoggedIn = false;
+            updateUIForGuestUser();
+        }
+    }
+    
+    // 更新UI为已登录管理员状态
+    function updateUIForLoggedInAdmin() {
+        // 更新页面标题描述
+        const headerP = document.querySelector('.header p');
+        if (headerP) {
+            headerP.textContent = `欢迎，${adminUsername}！您可以直接查看邮件，无需卡密`;
+        }
+        
+        // 在输入区域添加登录状态提示
+        const mailInputCard = document.querySelector('.mail-input-card');
+        if (mailInputCard && !document.getElementById('adminLoginInfo')) {
+            const loginInfo = document.createElement('div');
+            loginInfo.id = 'adminLoginInfo';
+            loginInfo.style.cssText = `
+                background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+                color: white;
+                padding: 12px 20px;
+                border-radius: 10px;
+                margin-bottom: 20px;
+                text-align: center;
+                font-weight: 500;
+                box-shadow: 0 4px 15px rgba(16, 185, 129, 0.2);
+            `;
+            loginInfo.innerHTML = `
+                <i style="margin-right: 8px;">👑</i>
+                管理员模式 - 您已登录，可直接查看邮件无需卡密
+                <a href="/admin" style="color: #fef7cd; text-decoration: underline; margin-left: 15px;">
+                    <i>⚙️</i> 进入管理后台
+                </a>
+            `;
+            
+            // 插入到输入组之前
+            const inputGroup = document.querySelector('.input-group');
+            mailInputCard.insertBefore(loginInfo, inputGroup);
+        }
+    }
+    
+    // 更新UI为访客用户状态
+    function updateUIForGuestUser() {
+        // 保持原有的页面描述
+        const headerP = document.querySelector('.header p');
+        if (headerP) {
+            headerP.textContent = '输入已添加的邮箱账号查看最新邮件';
+        }
+        
+        // 移除管理员登录信息（如果存在）
+        const adminLoginInfo = document.getElementById('adminLoginInfo');
+        if (adminLoginInfo) {
+            adminLoginInfo.remove();
+        }
+    }
     
     async function getMail() {
         const emailInput = document.getElementById('emailInput');
@@ -599,13 +681,23 @@
         getMailBtn.textContent = '获取中...';
         mailDisplay.style.display = 'none';
         
+        // 准备请求数据，根据登录状态决定是否需要卡密
+        let requestBody = { email: email };
+        
+        // 如果未登录，提示需要登录或卡密
+        if (!isAdminLoggedIn) {
+            showToast('您未登录管理员账号，如需使用请先登录管理后台，或提供有效卡密', 'warning', 5000);
+            // 这里可以选择直接返回，或者允许用户输入卡密
+            // 目前根据需求，仅提示但不跳转，继续尝试获取邮件
+        }
+        
         try {
             const response = await fetch('/api/get_mail', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                 },
-                body: JSON.stringify({ email: email })
+                body: JSON.stringify(requestBody)
             });
             
             const data = await response.json();
@@ -613,9 +705,11 @@
             if (data.success) {
                 if (data.mail) {
                     displayMail(data.mail);
-                    // 组合成功消息包含连接状态
+                    // 组合成功消息包含连接状态和模式
                     let successMessage = '';
-                    if (data.proxy && data.proxy.enabled) {
+                    if (data.admin_mode) {
+                        successMessage = '邮件获取成功（管理员模式）';
+                    } else if (data.proxy && data.proxy.enabled) {
                         successMessage = '邮件获取成功（代理）';
                     } else {
                         successMessage = '邮件获取成功（直连）';
@@ -624,7 +718,9 @@
                 } else {
                     // 组合无邮件消息包含连接状态
                     let noMailMessage = '邮箱中暂无邮件';
-                    if (data.proxy && data.proxy.enabled) {
+                    if (data.admin_mode) {
+                        noMailMessage += ' (管理员模式)';
+                    } else if (data.proxy && data.proxy.enabled) {
                         noMailMessage += ' (通过代理)';
                     } else {
                         noMailMessage += ' (直连)';
@@ -632,11 +728,16 @@
                     showMessage(noMailMessage, 'info');
                 }
             } else {
-                // 组合失败消息包含连接状态 - 避免重复添加连接指示符
+                // 处理错误消息
                 let errorMessage = data.message || '获取邮件失败';
                 
+                // 对于未登录用户的特殊处理
+                if (!isAdminLoggedIn && (errorMessage.includes('请提供卡密') || errorMessage.includes('卡密'))) {
+                    showToast('提示：您可以登录管理员账号免卡密查看邮件', 'info', 4000);
+                }
+                
                 // 检查消息是否已经包含连接指示符，避免重复添加
-                const hasConnectionInfo = /\(直连\)|\(代理\)|\(通过.*\)|\(代理连接.*\)/.test(errorMessage);
+                const hasConnectionInfo = /\(直连\)|\(代理\)|\(通过.*\)|\(代理连接.*\)|\(管理员模式\)/.test(errorMessage);
                 
                 if (!hasConnectionInfo) {
                     if (data.proxy && data.proxy.enabled) {

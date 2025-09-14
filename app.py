@@ -900,9 +900,24 @@ def admin_system():
 # API 接口路由
 # ===============================
 
+@app.route('/api/check_admin_login', methods=['GET'])
+def api_check_admin_login():
+    """检查管理员登录状态 API"""
+    if session.get('admin_logged_in'):
+        return jsonify({
+            'success': True,
+            'logged_in': True,
+            'admin_username': session.get('admin_username')
+        })
+    else:
+        return jsonify({
+            'success': True,
+            'logged_in': False
+        })
+
 @app.route('/api/get_mail', methods=['POST'])
 def api_get_mail():
-    """获取邮件 API（增强版本 - 支持卡密验证和邮件过滤）"""
+    """获取邮件 API（增强版本 - 支持登录用户免卡密和卡密验证）"""
     try:
         data = request.get_json()
         if not data:
@@ -920,11 +935,60 @@ def api_get_mail():
                 'success': False,
                 'message': '请提供邮箱地址'
             })
-            
+        
+        # 检查是否为已登录的管理员用户（免卡密模式）
+        is_admin_logged_in = session.get('admin_logged_in', False)
+        
+        if is_admin_logged_in:
+            # 管理员用户免卡密模式
+            try:
+                # 直接调用邮件获取脚本，无需卡密验证
+                script_args = [
+                    sys.executable, 
+                    os.path.join(os.path.dirname(__file__), 'python', 'mail_fetcher.py'),
+                    email
+                ]
+                
+                result = subprocess.run(script_args, capture_output=True, text=True, timeout=30)
+                
+                if result.returncode == 0:
+                    # 解析JSON输出
+                    response_data = json.loads(result.stdout)
+                    
+                    # 添加管理员模式标识
+                    if response_data.get('success'):
+                        response_data['admin_mode'] = True
+                        response_data['message'] = response_data.get('message', '邮件获取成功') + '（管理员模式）'
+                    
+                    return jsonify(response_data)
+                else:
+                    return jsonify({
+                        'success': False,
+                        'message': f'邮件获取失败: {result.stderr or "未知错误"}'
+                    })
+                    
+            except subprocess.TimeoutExpired:
+                return jsonify({
+                    'success': False,
+                    'message': '邮件获取超时，请稍后重试'
+                })
+            except json.JSONDecodeError:
+                return jsonify({
+                    'success': False,
+                    'message': '邮件服务响应格式错误'
+                })
+            except Exception as e:
+                logger.error(f"Admin mode mail fetch error: {e}")
+                return jsonify({
+                    'success': False,
+                    'message': f'邮件服务错误: {str(e)}'
+                })
+        
+        # 非管理员用户，需要卡密验证
         if not card_key:
             return jsonify({
                 'success': False,
-                'message': '请提供卡密'
+                'message': '请提供卡密或登录管理员账号'
             })
         
         # 验证卡密并获取卡密信息
@@ -1048,6 +1112,10 @@ def api_get_mail():
                         ''', (card_info['id'], card_key, user_ip, user_agent, 'use', 
                               f'成功获取邮件: {response_data["mail"]["subject"]}'))
                         
+                        # 检查卡密是否已用完，如果用完则移动到回收站
+                        if new_used_count >= card_info['usage_limit']:
+                            _move_card_to_recycle_bin(db, card_info['id'], 'used_up', db_type)
+                        
                         db.commit()
                     else:
                         cursor = db.cursor()
@@ -1064,11 +1132,15 @@ def api_get_mail():
                         ''', (card_info['id'], card_key, user_ip, user_agent, 'use', 
                               f'成功获取邮件: {response_data["mail"]["subject"]}'))
                         
+                        # 检查卡密是否已用完，如果用完则移动到回收站
+                        if new_used_count >= card_info['usage_limit']:
+                            _move_card_to_recycle_bin(db, card_info['id'], 'used_up', db_type)
+                        
                         db.commit()
                     
                     # 更新响应数据，包含剩余使用次数
                     response_data['card_info'] = {
-                        'remaining_uses': card_info['usage_limit'] - new_used_count,
+                        'remaining_uses': max(0, card_info['usage_limit'] - new_used_count),
                         'total_uses': card_info['usage_limit'],
                         'used_count': new_used_count
                     }
@@ -2687,6 +2759,304 @@ def api_admin_proxy_config():
                 'message': f'操作失败: {str(e)}'
             })
 
+@app.route('/admin/api/cards/recycle-bin', methods=['GET', 'POST'])
+@admin_required
+def api_admin_cards_recycle_bin():
+    """卡密回收站 API"""
+    db = get_db()
+    db_type = app.config['DATABASE_TYPE']
+    
+    if request.method == 'GET':
+        # 获取回收站中的卡密列表（支持分页和分类）
+        page = int(request.args.get('page', 1))
+        per_page = int(request.args.get('per_page', 10))
+        category = request.args.get('category', 'all')  # all, deleted, expired, used_up
+        search = request.args.get('search', '').strip()
+        
+        offset = (page - 1) * per_page
+        
+        # 构建查询条件
+        where_conditions = []
+        params = []
+        
+        if category != 'all':
+            where_conditions.append("recycle_reason = ?")
+            params.append(category)
+        
+        if search:
+            where_conditions.append("(card_key LIKE ? OR remarks LIKE ?)")
+            search_param = f"%{search}%"
+            params.extend([search_param, search_param])
+        
+        where_clause = " AND ".join(where_conditions) if where_conditions else "1=1"
+        
+        # 获取总数
+        if db_type == 'sqlite':
+            count_sql = f"SELECT COUNT(*) as count FROM cards_recycle_bin WHERE {where_clause}"
+            count_result = db.execute(count_sql, params).fetchone()
+            total = count_result['count']
+            
+            # 获取分页数据
+            sql = f"""
+                SELECT * FROM cards_recycle_bin 
+                WHERE {where_clause}
+                ORDER BY recycled_at DESC 
+                LIMIT ? OFFSET ?
+            """
+            recycled_cards = db.execute(sql, params + [per_page, offset]).fetchall()
+        else:
+            cursor = db.cursor()
+            placeholder = '%s'
+            where_mysql = where_clause.replace('?', placeholder) if where_conditions else "1=1"
+            
+            count_sql = f"SELECT COUNT(*) as count FROM cards_recycle_bin WHERE {where_mysql}"
+            cursor.execute(count_sql, params)
+            total = cursor.fetchone()[0]
+            
+            sql = f"""
+                SELECT * FROM cards_recycle_bin 
+                WHERE {where_mysql}
+                ORDER BY recycled_at DESC 
+                LIMIT {per_page} OFFSET {offset}
+            """
+            cursor.execute(sql, params)
+            recycled_cards = cursor.fetchall()
+        
+        # 获取分类统计
+        stats = get_recycle_bin_stats(db, db_type)
+        
+        return jsonify({
+            'success': True,
+            'data': [dict(card) for card in recycled_cards],
+            'pagination': {
+                'page': page,
+                'per_page': per_page,
+                'total': total,
+                'pages': (total + per_page - 1) // per_page
+            },
+            'stats': stats
+        })
+    
+    elif request.method == 'POST':
+        # 回收站操作：恢复或永久删除
+        data = request.get_json()
+        action = data.get('action')
+        
+        if action == 'restore':
+            return _restore_cards_from_recycle_bin(db, data)
+        elif action == 'permanent_delete':
+            return _permanent_delete_cards(db, data)
+        elif action == 'empty_bin':
+            return _empty_recycle_bin(db, data)
+        else:
+            return jsonify({
+                'success': False,
+                'message': '无效的操作类型'
+            })
+
+def get_recycle_bin_stats(db, db_type):
+    """获取回收站统计信息"""
+    try:
+        if db_type == 'sqlite':
+            stats_result = db.execute('''
+                SELECT 
+                    COUNT(*) as total,
+                    SUM(CASE WHEN recycle_reason = 'deleted' THEN 1 ELSE 0 END) as deleted,
+                    SUM(CASE WHEN recycle_reason = 'expired' THEN 1 ELSE 0 END) as expired,
+                    SUM(CASE WHEN recycle_reason = 'used_up' THEN 1 ELSE 0 END) as used_up
+                FROM cards_recycle_bin
+            ''').fetchone()
+        else:
+            cursor = db.cursor()
+            cursor.execute('''
+                SELECT 
+                    COUNT(*) as total,
+                    SUM(CASE WHEN recycle_reason = 'deleted' THEN 1 ELSE 0 END) as deleted,
+                    SUM(CASE WHEN recycle_reason = 'expired' THEN 1 ELSE 0 END) as expired,
+                    SUM(CASE WHEN recycle_reason = 'used_up' THEN 1 ELSE 0 END) as used_up
+                FROM cards_recycle_bin
+            ''')
+            stats_result = cursor.fetchone()
+        
+        if db_type == 'sqlite':
+            return dict(stats_result)
+        else:
+            return {
+                'total': stats_result[0] or 0,
+                'deleted': stats_result[1] or 0,
+                'expired': stats_result[2] or 0,
+                'used_up': stats_result[3] or 0
+            }
+    except Exception as e:
+        logger.error(f"Error getting recycle bin stats: {e}")
+        return {'total': 0, 'deleted': 0, 'expired': 0, 'used_up': 0}
+
+def _restore_cards_from_recycle_bin(db, data):
+    """从回收站恢复卡密"""
+    card_ids = data.get('ids', [])
+    
+    if not card_ids:
+        return jsonify({
+            'success': False,
+            'message': '请选择要恢复的卡密'
+        })
+    
+    try:
+        db_type = app.config['DATABASE_TYPE']
+        restored_count = 0
+        
+        for card_id in card_ids:
+            # 获取回收站中的卡密信息
+            if db_type == 'sqlite':
+                recycled_card = db.execute('SELECT * FROM cards_recycle_bin WHERE id = ?', (card_id,)).fetchone()
+            else:
+                cursor = db.cursor()
+                cursor.execute('SELECT * FROM cards_recycle_bin WHERE id = %s', (card_id,))
+                recycled_card = cursor.fetchone()
+            
+            if not recycled_card:
+                continue
+            
+            # 检查原卡密是否还存在
+            if db_type == 'sqlite':
+                card_dict = dict(recycled_card)
+                existing_card = db.execute('SELECT id FROM cards WHERE card_key = ?', (card_dict['card_key'],)).fetchone()
+            else:
+                existing_card = None
+                cursor.execute('SELECT id FROM cards WHERE card_key = %s', (recycled_card[2],))  # card_key
+                existing_card = cursor.fetchone()
+            
+            if existing_card:
+                # 卡密已存在，跳过恢复
+                continue
+            
+            # 恢复卡密到主表
+            now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            
+            if db_type == 'sqlite':
+                # 使用字典访问
+                db.execute('''
+                    INSERT INTO cards (card_key, card_type, usage_limit, used_count, status, 
+                                     expired_at, bound_email_id, email_days_filter, sender_filter, 
+                                     remarks, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (
+                    card_dict['card_key'], card_dict['card_type'], card_dict['usage_limit'],
+                    card_dict['used_count'], 1,  # 恢复为可用状态
+                    card_dict['expired_at'], card_dict['bound_email_id'], 
+                    card_dict['email_days_filter'], card_dict['sender_filter'],
+                    f"{card_dict['remarks']} (已恢复)".strip(), 
+                    card_dict['original_created_at'], now
+                ))
+            else:
+                cursor = db.cursor()
+                cursor.execute('''
+                    INSERT INTO cards (card_key, card_type, usage_limit, used_count, status, 
+                                     expired_at, bound_email_id, email_days_filter, sender_filter, 
+                                     remarks, created_at, updated_at)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                ''', (
+                    recycled_card[2], recycled_card[3], recycled_card[4],  # card_key, card_type, usage_limit
+                    recycled_card[5], 1,  # used_count, status (恢复为可用)
+                    recycled_card[7], recycled_card[8], recycled_card[9], recycled_card[10],  # expired_at, bound_email_id, email_days_filter, sender_filter
+                    f"{recycled_card[11]} (已恢复)".strip(),  # remarks
+                    recycled_card[13], now  # original_created_at, updated_at
+                ))
+            
+            # 从回收站删除
+            if db_type == 'sqlite':
+                db.execute('DELETE FROM cards_recycle_bin WHERE id = ?', (card_id,))
+            else:
+                cursor.execute('DELETE FROM cards_recycle_bin WHERE id = %s', (card_id,))
+            
+            restored_count += 1
+        
+        # 提交事务
+        if db_type != 'sqlite':
+            db.commit()
+        else:
+            db.commit()
+        
+        return jsonify({
+            'success': True,
+            'message': f'成功恢复 {restored_count} 个卡密'
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': f'恢复失败: {str(e)}'
+        })
+
+def _permanent_delete_cards(db, data):
+    """永久删除回收站中的卡密"""
+    card_ids = data.get('ids', [])
+    
+    if not card_ids:
+        return jsonify({
+            'success': False,
+            'message': '请选择要永久删除的卡密'
+        })
+    
+    try:
+        if app.config['DATABASE_TYPE'] == 'sqlite':
+            placeholders = ','.join(['?' for _ in card_ids])
+            db.execute(f'DELETE FROM cards_recycle_bin WHERE id IN ({placeholders})', card_ids)
+            db.commit()
+        else:
+            cursor = db.cursor()
+            placeholders = ','.join(['%s' for _ in card_ids])
+            cursor.execute(f'DELETE FROM cards_recycle_bin WHERE id IN ({placeholders})', card_ids)
+            db.commit()
+        
+        return jsonify({
+            'success': True,
+            'message': f'成功永久删除 {len(card_ids)} 个卡密'
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': f'永久删除失败: {str(e)}'
+        })
+
+def _empty_recycle_bin(db, data):
+    """清空回收站"""
+    category = data.get('category', 'all')
+    
+    try:
+        if category == 'all':
+            # 清空整个回收站
+            if app.config['DATABASE_TYPE'] == 'sqlite':
+                db.execute('DELETE FROM cards_recycle_bin')
+                db.commit()
+            else:
+                cursor = db.cursor()
+                cursor.execute('DELETE FROM cards_recycle_bin')
+                db.commit()
+            message = '回收站已清空'
+        else:
+            # 清空指定分类
+            if app.config['DATABASE_TYPE'] == 'sqlite':
+                db.execute('DELETE FROM cards_recycle_bin WHERE recycle_reason = ?', (category,))
+                db.commit()
+            else:
+                cursor = db.cursor()
+                cursor.execute('DELETE FROM cards_recycle_bin WHERE recycle_reason = %s', (category,))
+                db.commit()
+            message = f'已清空 {category} 分类的卡密'
+        
+        return jsonify({
+            'success': True,
+            'message': message
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': f'清空失败: {str(e)}'
+        })
+
 @app.route('/admin/api/cards', methods=['GET', 'POST', 'DELETE'])
 @admin_required
 def api_admin_cards():
@@ -2775,11 +3145,11 @@ def api_admin_cards():
             })
     
     elif request.method == 'DELETE':
-        # 删除卡密
+        # 删除卡密（移动到回收站）
         data = request.get_json()
         
         if 'action' in data and data['action'] == 'batch_delete':
-            return _batch_delete_cards(db, data)
+            return _batch_delete_cards_to_recycle_bin(db, data)
         else:
             card_id = data.get('id')
             if not card_id:
@@ -2788,25 +3158,161 @@ def api_admin_cards():
                     'message': '缺少卡密ID'
                 })
             
-            try:
-                if db_type == 'sqlite':
-                    db.execute('DELETE FROM cards WHERE id = ?', (card_id,))
-                    db.commit()
-                else:
-                    cursor = db.cursor()
-                    cursor.execute('DELETE FROM cards WHERE id = %s', (card_id,))
-                    db.commit()
-                
-                return jsonify({
-                    'success': True,
-                    'message': '卡密删除成功'
-                })
-                
-            except Exception as e:
-                return jsonify({
-                    'success': False,
-                    'message': f'删除失败: {str(e)}'
-                })
+            return _delete_card_to_recycle_bin(db, card_id)
+
+def _delete_card_to_recycle_bin(db, card_id):
+    """删除单个卡密到回收站"""
+    try:
+        db_type = app.config['DATABASE_TYPE']
+        
+        # 获取卡密信息
+        if db_type == 'sqlite':
+            card = db.execute('SELECT * FROM cards WHERE id = ?', (card_id,)).fetchone()
+        else:
+            cursor = db.cursor()
+            cursor.execute('SELECT * FROM cards WHERE id = %s', (card_id,))
+            card = cursor.fetchone()
+        
+        if not card:
+            return jsonify({
+                'success': False,
+                'message': '卡密不存在'
+            })
+        
+        # 移动到回收站
+        now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        
+        if db_type == 'sqlite':
+            card_dict = dict(card)
+            db.execute('''
+                INSERT INTO cards_recycle_bin 
+                (original_card_id, card_key, card_type, usage_limit, used_count, status,
+                 expired_at, bound_email_id, email_days_filter, sender_filter, remarks,
+                 recycle_reason, original_created_at, original_updated_at, recycled_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (
+                card_dict['id'], card_dict['card_key'], card_dict['card_type'],
+                card_dict['usage_limit'], card_dict['used_count'], card_dict['status'],
+                card_dict['expired_at'], card_dict['bound_email_id'], 
+                card_dict['email_days_filter'], card_dict['sender_filter'],
+                card_dict['remarks'], 'deleted', 
+                card_dict['created_at'], card_dict['updated_at'], now
+            ))
+            
+            # 从主表删除
+            db.execute('DELETE FROM cards WHERE id = ?', (card_id,))
+            db.commit()
+        else:
+            cursor = db.cursor()
+            cursor.execute('''
+                INSERT INTO cards_recycle_bin 
+                (original_card_id, card_key, card_type, usage_limit, used_count, status,
+                 expired_at, bound_email_id, email_days_filter, sender_filter, remarks,
+                 recycle_reason, original_created_at, original_updated_at, recycled_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ''', (
+                card[0], card[1], card[2], card[3], card[4], card[5],  # id, card_key, card_type, usage_limit, used_count, status
+                card[6], card[7], card[8], card[9], card[10],  # expired_at, bound_email_id, email_days_filter, sender_filter, remarks
+                'deleted', card[11], card[12], now  # recycle_reason, created_at, updated_at, recycled_at
+            ))
+            
+            # 从主表删除
+            cursor.execute('DELETE FROM cards WHERE id = %s', (card_id,))
+            db.commit()
+        
+        return jsonify({
+            'success': True,
+            'message': '卡密已移动到回收站'
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': f'删除失败: {str(e)}'
+        })
+
+def _batch_delete_cards_to_recycle_bin(db, data):
+    """批量删除卡密到回收站"""
+    card_ids = data.get('ids', [])
+    
+    if not card_ids:
+        return jsonify({
+            'success': False,
+            'message': '请选择要删除的卡密'
+        })
+    
+    try:
+        db_type = app.config['DATABASE_TYPE']
+        now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        moved_count = 0
+        
+        for card_id in card_ids:
+            # 获取卡密信息
+            if db_type == 'sqlite':
+                card = db.execute('SELECT * FROM cards WHERE id = ?', (card_id,)).fetchone()
+            else:
+                cursor = db.cursor()
+                cursor.execute('SELECT * FROM cards WHERE id = %s', (card_id,))
+                card = cursor.fetchone()
+            
+            if not card:
+                continue
+            
+            # 移动到回收站
+            if db_type == 'sqlite':
+                card_dict = dict(card)
+                db.execute('''
+                    INSERT INTO cards_recycle_bin 
+                    (original_card_id, card_key, card_type, usage_limit, used_count, status,
+                     expired_at, bound_email_id, email_days_filter, sender_filter, remarks,
+                     recycle_reason, original_created_at, original_updated_at, recycled_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (
+                    card_dict['id'], card_dict['card_key'], card_dict['card_type'],
+                    card_dict['usage_limit'], card_dict['used_count'], card_dict['status'],
+                    card_dict['expired_at'], card_dict['bound_email_id'], 
+                    card_dict['email_days_filter'], card_dict['sender_filter'],
+                    card_dict['remarks'], 'deleted', 
+                    card_dict['created_at'], card_dict['updated_at'], now
+                ))
+            else:
+                cursor = db.cursor()
+                cursor.execute('''
+                    INSERT INTO cards_recycle_bin 
+                    (original_card_id, card_key, card_type, usage_limit, used_count, status,
+                     expired_at, bound_email_id, email_days_filter, sender_filter, remarks,
+                     recycle_reason, original_created_at, original_updated_at, recycled_at)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                ''', (
+                    card[0], card[1], card[2], card[3], card[4], card[5],
+                    card[6], card[7], card[8], card[9], card[10],
+                    'deleted', card[11], card[12], now
+                ))
+            
+            moved_count += 1
+        
+        # 批量从主表删除
+        if moved_count > 0:
+            if db_type == 'sqlite':
+                placeholders = ','.join(['?' for _ in card_ids])
+                db.execute(f'DELETE FROM cards WHERE id IN ({placeholders})', card_ids)
+                db.commit()
+            else:
+                cursor = db.cursor()
+                placeholders = ','.join(['%s' for _ in card_ids])
+                cursor.execute(f'DELETE FROM cards WHERE id IN ({placeholders})', card_ids)
+                db.commit()
+        
+        return jsonify({
+            'success': True,
+            'message': f'成功将 {moved_count} 个卡密移动到回收站'
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': f'批量删除失败: {str(e)}'
+        })
 
 @app.route('/admin/api/cards/stats')
 @admin_required
@@ -2891,6 +3397,66 @@ def api_admin_card_stats():
             'success': False,
             'message': f'获取统计数据失败: {str(e)}'
         })
+
+def _move_card_to_recycle_bin(db, card_id, reason, db_type):
+    """将卡密移动到回收站"""
+    try:
+        # 获取卡密信息
+        if db_type == 'sqlite':
+            card = db.execute('SELECT * FROM cards WHERE id = ?', (card_id,)).fetchone()
+        else:
+            cursor = db.cursor()
+            cursor.execute('SELECT * FROM cards WHERE id = %s', (card_id,))
+            card = cursor.fetchone()
+        
+        if not card:
+            return False
+        
+        # 移动到回收站
+        now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        
+        if db_type == 'sqlite':
+            card_dict = dict(card)
+            db.execute('''
+                INSERT INTO cards_recycle_bin 
+                (original_card_id, card_key, card_type, usage_limit, used_count, status,
+                 expired_at, bound_email_id, email_days_filter, sender_filter, remarks,
+                 recycle_reason, original_created_at, original_updated_at, recycled_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (
+                card_dict['id'], card_dict['card_key'], card_dict['card_type'],
+                card_dict['usage_limit'], card_dict['used_count'], card_dict['status'],
+                card_dict['expired_at'], card_dict['bound_email_id'], 
+                card_dict['email_days_filter'], card_dict['sender_filter'],
+                card_dict['remarks'], reason, 
+                card_dict['created_at'], card_dict['updated_at'], now
+            ))
+            
+            # 从主表删除
+            db.execute('DELETE FROM cards WHERE id = ?', (card_id,))
+        else:
+            cursor = db.cursor()
+            cursor.execute('''
+                INSERT INTO cards_recycle_bin 
+                (original_card_id, card_key, card_type, usage_limit, used_count, status,
+                 expired_at, bound_email_id, email_days_filter, sender_filter, remarks,
+                 recycle_reason, original_created_at, original_updated_at, recycled_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ''', (
+                card[0], card[1], card[2], card[3], card[4], card[5],  # id, card_key, card_type, usage_limit, used_count, status
+                card[6], card[7], card[8], card[9], card[10],  # expired_at, bound_email_id, email_days_filter, sender_filter, remarks
+                reason, card[11], card[12], now  # recycle_reason, created_at, updated_at, recycled_at
+            ))
+            
+            # 从主表删除
+            cursor.execute('DELETE FROM cards WHERE id = %s', (card_id,))
+        
+        logger.info(f"Card {card_id} moved to recycle bin with reason: {reason}")
+        return True
+        
+    except Exception as e:
+        logger.error(f"Error moving card to recycle bin: {e}")
+        return False
 
 def _generate_card_key():
     """生成12位随机小写字母和数字的卡密"""
@@ -3932,10 +4498,68 @@ def api_admin_system_config():
             'message': '设置保存成功（开发中）'
         })
 
+def cleanup_expired_cards():
+    """定期清理过期卡密到回收站"""
+    try:
+        with app.app_context():
+            db = get_db()
+            db_type = app.config['DATABASE_TYPE']
+            now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            
+            # 查找过期的卡密
+            if db_type == 'sqlite':
+                expired_cards = db.execute('''
+                    SELECT id FROM cards 
+                    WHERE expired_at IS NOT NULL AND expired_at <= ?
+                ''', (now,)).fetchall()
+                
+                for card in expired_cards:
+                    _move_card_to_recycle_bin(db, card['id'], 'expired', db_type)
+                
+                db.commit()
+            else:
+                cursor = db.cursor()
+                cursor.execute('''
+                    SELECT id FROM cards 
+                    WHERE expired_at IS NOT NULL AND expired_at <= %s
+                ''', (now,))
+                expired_cards = cursor.fetchall()
+                
+                for card in expired_cards:
+                    _move_card_to_recycle_bin(db, card[0], 'expired', db_type)
+                
+                db.commit()
+            
+            if expired_cards:
+                logger.info(f"Moved {len(expired_cards)} expired cards to recycle bin")
+                
+    except Exception as e:
+        logger.error(f"Error during expired cards cleanup: {e}")
+
+# 启动后台清理任务
+def start_cleanup_thread():
+    """启动后台清理线程"""
+    def cleanup_worker():
+        import time
+        while True:
+            try:
+                cleanup_expired_cards()
+                time.sleep(3600)  # 每小时检查一次
+            except Exception as e:
+                logger.error(f"Cleanup thread error: {e}")
+                time.sleep(300)  # 出错后5分钟重试
+    
+    cleanup_thread = threading.Thread(target=cleanup_worker, daemon=True)
+    cleanup_thread.start()
+    logger.info("Started cleanup thread for expired cards")
+
 if __name__ == '__main__':
     # 初始化数据库
     with app.app_context():
         init_db()
+    
+    # 启动清理线程
+    start_cleanup_thread()
     
     # 启动应用（端口8005）
     port = int(os.environ.get('PORT', 8005))
