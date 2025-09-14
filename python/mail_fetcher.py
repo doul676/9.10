@@ -240,14 +240,37 @@ class ProxyMailFetcher:
             try:
                 test_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                 test_socket.settimeout(10)
-                test_result = test_socket.connect_ex((proxy_host, proxy_port))
-                test_socket.close()
                 
-                if test_result != 0:
-                    raise Exception(f"无法连接到SOCKS5代理服务器 {proxy_host}:{proxy_port}")
+                logger.info(f"Testing connection to SOCKS5 proxy {proxy_host}:{proxy_port}")
+                try:
+                    test_result = test_socket.connect_ex((proxy_host, proxy_port))
+                    test_socket.close()
                     
-            except socket.error as e:
-                raise Exception(f"SOCKS5代理服务器连接失败: {str(e)}")
+                    if test_result != 0:
+                        if test_result == 111:  # Connection refused
+                            raise Exception(f"SOCKS5代理服务器 {proxy_host}:{proxy_port} 连接被拒绝 - 请检查代理服务器状态")
+                        else:
+                            raise Exception(f"无法连接到SOCKS5代理服务器 {proxy_host}:{proxy_port} (错误码: {test_result})")
+                            
+                except socket.timeout:
+                    test_socket.close()
+                    raise Exception(f"连接SOCKS5代理服务器 {proxy_host}:{proxy_port} 超时")
+                except socket.gaierror as e:
+                    test_socket.close()
+                    raise Exception(f"无法解析SOCKS5代理服务器地址 {proxy_host}: {str(e)}")
+                except Exception as e:
+                    test_socket.close()
+                    if "[Errno 111] Connection refused" in str(e):
+                        raise Exception(f"SOCKS5代理服务器 {proxy_host}:{proxy_port} 连接被拒绝 - 请检查代理服务器状态")
+                    else:
+                        raise Exception(f"SOCKS5代理服务器连接测试失败: {str(e)}")
+                    
+            except Exception as e:
+                # Check if it's already a translated error message
+                if "SOCKS5代理" in str(e) or "连接被拒绝" in str(e) or "超时" in str(e) or "无法解析" in str(e):
+                    raise e
+                else:
+                    raise Exception(f"SOCKS5代理服务器连接失败: {str(e)}")
             
             # Set up SOCKS5 proxy
             try:
@@ -301,7 +324,27 @@ class ProxyMailFetcher:
                 # Create socket and connect to proxy
                 proxy_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                 proxy_socket.settimeout(30)
-                proxy_socket.connect((proxy_host, proxy_port))
+                
+                # Test proxy connectivity first
+                logger.info(f"Testing connection to HTTP proxy {proxy_host}:{proxy_port}")
+                try:
+                    proxy_socket.connect((proxy_host, proxy_port))
+                    logger.info("Successfully connected to HTTP proxy")
+                except ConnectionRefusedError as e:
+                    proxy_socket.close()
+                    raise Exception(f"HTTP代理服务器拒绝连接 {proxy_host}:{proxy_port} - 请检查代理服务器是否正常运行")
+                except socket.timeout:
+                    proxy_socket.close()
+                    raise Exception(f"连接HTTP代理服务器 {proxy_host}:{proxy_port} 超时")
+                except socket.gaierror as e:
+                    proxy_socket.close()
+                    raise Exception(f"无法解析HTTP代理服务器地址 {proxy_host}: {str(e)}")
+                except Exception as e:
+                    proxy_socket.close()
+                    if "[Errno 111] Connection refused" in str(e):
+                        raise Exception(f"HTTP代理服务器 {proxy_host}:{proxy_port} 连接被拒绝 - 请检查代理服务器状态")
+                    else:
+                        raise Exception(f"连接HTTP代理服务器失败: {str(e)}")
                 
                 # Build CONNECT request
                 connect_request = f"CONNECT {self.server}:{self.port} HTTP/1.1\r\n"
@@ -315,9 +358,11 @@ class ProxyMailFetcher:
                 connect_request += "\r\n"
                 
                 # Send CONNECT request
+                logger.info(f"Sending CONNECT request to {self.server}:{self.port}")
                 proxy_socket.send(connect_request.encode())
                 
-                # Read response
+                # Read response with better timeout handling
+                proxy_socket.settimeout(15)  # Set shorter timeout for response
                 response = proxy_socket.recv(4096).decode()
                 
                 # Check if connection was successful
@@ -336,7 +381,11 @@ class ProxyMailFetcher:
                         proxy_socket.close()
                     except:
                         pass
-                raise Exception(f"HTTP代理连接失败: {str(e)}")
+                # Check if it's already a translated error message
+                if "HTTP代理" in str(e) or "连接被拒绝" in str(e) or "超时" in str(e) or "无法解析" in str(e):
+                    raise e
+                else:
+                    raise Exception(f"HTTP代理连接失败: {str(e)}")
             
             # Now create IMAP connection using the tunneled socket
             try:
