@@ -674,33 +674,92 @@ def _test_mailbox(db, data):
                 'message': '邮箱不存在'
             })
         
-        # 这里应该调用实际的邮箱连接测试
-        # 暂时返回模拟结果
-        test_result = "连接成功"
-        test_success = True
-        
-        # 更新测试结果
-        now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        if app.config['DATABASE_TYPE'] == 'sqlite':
-            db.execute('''
-                UPDATE mail_accounts 
-                SET last_test=?, test_result=?
-                WHERE id=?
-            ''', (now, test_result, account_id))
-            db.commit()
-        else:
-            cursor = db.cursor()
-            cursor.execute('''
-                UPDATE mail_accounts 
-                SET last_test=%s, test_result=%s
-                WHERE id=%s
-            ''', (now, test_result, account_id))
-            db.commit()
-        
-        return jsonify({
-            'success': test_success,
-            'message': test_result
-        })
+        # 调用Python邮件获取器进行测试
+        try:
+            if app.config['DATABASE_TYPE'] == 'sqlite':
+                account_dict = dict(account)
+            else:
+                columns = [desc[0] for desc in cursor.description]
+                account_dict = dict(zip(columns, account))
+            
+            result = subprocess.run([
+                sys.executable, 
+                os.path.join(os.path.dirname(__file__), 'python', 'mail_fetcher.py'),
+                account_dict['email'],
+                '--test-connection'
+            ], capture_output=True, text=True, timeout=30)
+            
+            if result.returncode == 0:
+                # 解析JSON输出
+                test_result = json.loads(result.stdout)
+                test_success = test_result.get('success', False)
+                test_message = test_result.get('message', '测试完成')
+                
+                # 更新测试结果
+                now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                if app.config['DATABASE_TYPE'] == 'sqlite':
+                    db.execute('''
+                        UPDATE mail_accounts 
+                        SET last_test=?, test_result=?
+                        WHERE id=?
+                    ''', (now, test_message, account_id))
+                    db.commit()
+                else:
+                    cursor = db.cursor()
+                    cursor.execute('''
+                        UPDATE mail_accounts 
+                        SET last_test=%s, test_result=%s
+                        WHERE id=%s
+                    ''', (now, test_message, account_id))
+                    db.commit()
+                
+                return jsonify({
+                    'success': test_success,
+                    'message': test_message,
+                    'proxy_info': test_result.get('proxy', {}),
+                    'diagnostics': test_result.get('diagnostics', {})
+                })
+            else:
+                error_message = result.stderr or "邮箱测试失败"
+                
+                # 更新测试结果
+                now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                if app.config['DATABASE_TYPE'] == 'sqlite':
+                    db.execute('''
+                        UPDATE mail_accounts 
+                        SET last_test=?, test_result=?
+                        WHERE id=?
+                    ''', (now, error_message, account_id))
+                    db.commit()
+                else:
+                    cursor = db.cursor()
+                    cursor.execute('''
+                        UPDATE mail_accounts 
+                        SET last_test=%s, test_result=%s
+                        WHERE id=%s
+                    ''', (now, error_message, account_id))
+                    db.commit()
+                
+                return jsonify({
+                    'success': False,
+                    'message': error_message
+                })
+                
+        except subprocess.TimeoutExpired:
+            return jsonify({
+                'success': False,
+                'message': '邮箱连接测试超时，请检查网络连接或服务器配置'
+            })
+        except json.JSONDecodeError:
+            return jsonify({
+                'success': False,
+                'message': '邮箱测试服务响应格式错误'
+            })
+        except Exception as e:
+            return jsonify({
+                'success': False,
+                'message': f'邮箱测试服务错误: {str(e)}'
+            })
         
     except Exception as e:
         return jsonify({
@@ -724,16 +783,83 @@ def _test_new_mailbox(data):
         })
     
     try:
-        # 这里应该调用实际的邮箱连接测试
-        # 可以使用类似的逻辑调用 mail_fetcher.py 进行实际测试
-        # 暂时返回模拟结果
-        test_result = "连接测试成功"
-        test_success = True
-        
-        return jsonify({
-            'success': test_success,
-            'message': test_result
-        })
+        # 临时保存邮箱信息到数据库进行测试
+        with app.app_context():
+            db = get_db()
+            temp_email = f"temp_test_{email}_{int(time.time())}"
+            
+            # 插入临时邮箱记录
+            now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            if app.config['DATABASE_TYPE'] == 'sqlite':
+                db.execute('''
+                    INSERT INTO mail_accounts (email, username, password, server, port, protocol, ssl, remarks, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (temp_email, email, password, server, port, protocol, 1 if ssl else 0, '临时测试邮箱', now, now))
+                db.commit()
+            else:
+                cursor = db.cursor()
+                cursor.execute('''
+                    INSERT INTO mail_accounts (email, username, password, server, port, protocol, ssl, remarks, created_at, updated_at)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                ''', (temp_email, email, password, server, port, protocol, 1 if ssl else 0, '临时测试邮箱', now, now))
+                db.commit()
+            
+            try:
+                # 调用Python邮件获取器进行测试
+                result = subprocess.run([
+                    sys.executable, 
+                    os.path.join(os.path.dirname(__file__), 'python', 'mail_fetcher.py'),
+                    temp_email,
+                    '--test-connection'
+                ], capture_output=True, text=True, timeout=30)
+                
+                if result.returncode == 0:
+                    # 解析JSON输出
+                    test_result = json.loads(result.stdout)
+                    test_success = test_result.get('success', False)
+                    test_message = test_result.get('message', '测试完成')
+                    
+                    return jsonify({
+                        'success': test_success,
+                        'message': test_message,
+                        'proxy_info': test_result.get('proxy', {}),
+                        'diagnostics': test_result.get('diagnostics', {})
+                    })
+                else:
+                    error_message = result.stderr or "邮箱测试失败"
+                    return jsonify({
+                        'success': False,
+                        'message': error_message
+                    })
+                    
+            except subprocess.TimeoutExpired:
+                return jsonify({
+                    'success': False,
+                    'message': '邮箱连接测试超时'
+                })
+            except json.JSONDecodeError:
+                return jsonify({
+                    'success': False,
+                    'message': '邮箱测试服务响应格式错误'
+                })
+            except Exception as e:
+                return jsonify({
+                    'success': False,
+                    'message': f'邮箱测试服务错误: {str(e)}'
+                })
+                
+            finally:
+                # 删除临时邮箱记录
+                try:
+                    if app.config['DATABASE_TYPE'] == 'sqlite':
+                        db.execute('DELETE FROM mail_accounts WHERE email = ?', (temp_email,))
+                        db.commit()
+                    else:
+                        cursor = db.cursor()
+                        cursor.execute('DELETE FROM mail_accounts WHERE email = %s', (temp_email,))
+                        db.commit()
+                except:
+                    pass  # 忽略删除错误
         
     except Exception as e:
         return jsonify({
@@ -1045,18 +1171,23 @@ def _add_proxy(db, table_name, data, proxy_type):
             'message': '请填写代理地址和端口'
         })
     
-    # 如果没有提供名称，自动生成
+    # 如果没有提供名称，自动生成（修复：生成更合理的默认名称）
     if not name:
         db_type = app.config['DATABASE_TYPE']
+        
+        # 查询当前表中的最大ID，用于生成序号
         if db_type == 'sqlite':
-            count_result = db.execute(f"SELECT COUNT(*) as count FROM {table_name} WHERE name LIKE '未命名%'").fetchone()
-            count = count_result['count']
+            max_id_result = db.execute(f"SELECT COALESCE(MAX(id), 0) as max_id FROM {table_name}").fetchone()
+            max_id = max_id_result['max_id']
         else:
             cursor = db.cursor()
-            cursor.execute(f"SELECT COUNT(*) FROM {table_name} WHERE name LIKE '未命名%'")
-            count = cursor.fetchone()['count'] if db_type == 'postgresql' else cursor.fetchone()[0]
+            cursor.execute(f"SELECT COALESCE(MAX(id), 0) as max_id FROM {table_name}")
+            result = cursor.fetchone()
+            max_id = result['max_id'] if db_type == 'postgresql' else result[0]
         
-        name = f"未命名{count + 1}"
+        # 生成新的序号ID（当前最大ID + 1）
+        next_id = max_id + 1
+        name = f"未命名{next_id}"
     
     try:
         now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
@@ -1368,6 +1499,275 @@ def _batch_delete_proxy(db, table_name, data):
             'success': False,
             'message': f'批量删除失败: {str(e)}'
         })
+
+@app.route('/admin/api/proxy-config', methods=['GET', 'POST'])
+@admin_required
+def api_admin_proxy_config():
+    """代理配置管理 API"""
+    db = get_db()
+    db_type = app.config['DATABASE_TYPE']
+    
+    if request.method == 'GET':
+        # 获取代理配置
+        try:
+            if db_type == 'sqlite':
+                config_rows = db.execute('SELECT * FROM proxy_config').fetchall()
+            else:
+                cursor = db.cursor()
+                cursor.execute('SELECT * FROM proxy_config')
+                config_rows = cursor.fetchall()
+            
+            # 转换为字典
+            config = {}
+            for row in config_rows:
+                if db_type == 'sqlite':
+                    config[row['config_key']] = row['config_value']
+                else:
+                    config[row[1]] = row[2]  # config_key, config_value
+            
+            # 获取当前激活的代理信息
+            active_proxy = None
+            if config.get('proxy_enabled') == '1':
+                proxy_type = config.get('active_proxy_type', '')
+                proxy_id = int(config.get('active_proxy_id', '0'))
+                
+                if proxy_type and proxy_id > 0:
+                    table_name = 'socks5_proxies' if proxy_type == 'socks5' else 'http_proxies'
+                    
+                    if db_type == 'sqlite':
+                        proxy = db.execute(f'SELECT * FROM {table_name} WHERE id = ?', (proxy_id,)).fetchone()
+                    else:
+                        cursor = db.cursor()
+                        cursor.execute(f'SELECT * FROM {table_name} WHERE id = %s', (proxy_id,))
+                        proxy = cursor.fetchone()
+                    
+                    if proxy:
+                        if db_type == 'sqlite':
+                            active_proxy = dict(proxy)
+                        else:
+                            columns = [desc[0] for desc in cursor.description]
+                            active_proxy = dict(zip(columns, proxy))
+                        active_proxy['proxy_type'] = proxy_type
+            
+            return jsonify({
+                'success': True,
+                'config': config,
+                'active_proxy': active_proxy
+            })
+            
+        except Exception as e:
+            return jsonify({
+                'success': False,
+                'message': f'获取代理配置失败: {str(e)}'
+            })
+    
+    elif request.method == 'POST':
+        # 更新代理配置
+        data = request.get_json()
+        action = data.get('action')
+        
+        try:
+            if action == 'enable_proxy':
+                # 开启代理功能 - 自动选择序号ID为1的代理
+                
+                # 首先查找所有代理，按创建时间排序，选择最早创建的代理
+                proxy_found = None
+                proxy_type = None
+                
+                # 先查找HTTP代理
+                if db_type == 'sqlite':
+                    http_proxy = db.execute('SELECT * FROM http_proxies WHERE status = 1 ORDER BY id ASC LIMIT 1').fetchone()
+                else:
+                    cursor = db.cursor()
+                    cursor.execute('SELECT * FROM http_proxies WHERE status = 1 ORDER BY id ASC LIMIT 1')
+                    http_proxy = cursor.fetchone()
+                
+                # 再查找SOCKS5代理
+                if db_type == 'sqlite':
+                    socks5_proxy = db.execute('SELECT * FROM socks5_proxies WHERE status = 1 ORDER BY id ASC LIMIT 1').fetchone()
+                else:
+                    cursor = db.cursor()
+                    cursor.execute('SELECT * FROM socks5_proxies WHERE status = 1 ORDER BY id ASC LIMIT 1')
+                    socks5_proxy = cursor.fetchone()
+                
+                # 选择ID最小的代理（优先HTTP，如果ID相同或HTTP不存在则选SOCKS5）
+                if http_proxy and socks5_proxy:
+                    if http_proxy[0] <= socks5_proxy[0]:  # ID comparison
+                        proxy_found = http_proxy
+                        proxy_type = 'http'
+                    else:
+                        proxy_found = socks5_proxy
+                        proxy_type = 'socks5'
+                elif http_proxy:
+                    proxy_found = http_proxy
+                    proxy_type = 'http'
+                elif socks5_proxy:
+                    proxy_found = socks5_proxy
+                    proxy_type = 'socks5'
+                
+                if not proxy_found:
+                    return jsonify({
+                        'success': False,
+                        'message': '没有找到可用的代理配置'
+                    })
+                
+                # 更新代理配置
+                proxy_id = proxy_found[0]  # ID is first column
+                
+                config_updates = [
+                    ('proxy_enabled', '1'),
+                    ('active_proxy_type', proxy_type),
+                    ('active_proxy_id', str(proxy_id))
+                ]
+                
+                for key, value in config_updates:
+                    if db_type == 'sqlite':
+                        db.execute('''
+                            INSERT OR REPLACE INTO proxy_config (config_key, config_value, updated_at)
+                            VALUES (?, ?, CURRENT_TIMESTAMP)
+                        ''', (key, value))
+                    else:
+                        cursor = db.cursor()
+                        cursor.execute('''
+                            INSERT INTO proxy_config (config_key, config_value, updated_at)
+                            VALUES (%s, %s, CURRENT_TIMESTAMP)
+                            ON DUPLICATE KEY UPDATE config_value = VALUES(config_value), updated_at = CURRENT_TIMESTAMP
+                        ''' if db_type == 'mysql' else '''
+                            INSERT INTO proxy_config (config_key, config_value, updated_at)
+                            VALUES (%s, %s, CURRENT_TIMESTAMP)
+                            ON CONFLICT (config_key) DO UPDATE SET config_value = EXCLUDED.config_value, updated_at = CURRENT_TIMESTAMP
+                        ''', (key, value))
+                
+                if db_type != 'sqlite':
+                    db.commit()
+                else:
+                    db.commit()
+                
+                # 获取代理名称用于返回消息
+                if db_type == 'sqlite':
+                    proxy_name = dict(proxy_found).get('name', '未知代理')
+                else:
+                    # Get column names for non-sqlite
+                    cursor.execute(f'DESCRIBE {proxy_type}_proxies' if db_type == 'mysql' else 
+                                 f'SELECT column_name FROM information_schema.columns WHERE table_name = \'{proxy_type}_proxies\'')
+                    columns = [row[0] for row in cursor.fetchall()]
+                    proxy_dict = dict(zip(columns, proxy_found))
+                    proxy_name = proxy_dict.get('name', '未知代理')
+                
+                return jsonify({
+                    'success': True,
+                    'message': f'代理已开启，当前使用: {proxy_type.upper()} - {proxy_name} (ID: {proxy_id})'
+                })
+                
+            elif action == 'disable_proxy':
+                # 关闭代理功能
+                if db_type == 'sqlite':
+                    db.execute('''
+                        INSERT OR REPLACE INTO proxy_config (config_key, config_value, updated_at)
+                        VALUES ('proxy_enabled', '0', CURRENT_TIMESTAMP)
+                    ''')
+                    db.commit()
+                else:
+                    cursor = db.cursor()
+                    cursor.execute('''
+                        INSERT INTO proxy_config (config_key, config_value, updated_at)
+                        VALUES (%s, %s, CURRENT_TIMESTAMP)
+                        ON DUPLICATE KEY UPDATE config_value = VALUES(config_value), updated_at = CURRENT_TIMESTAMP
+                    ''' if db_type == 'mysql' else '''
+                        INSERT INTO proxy_config (config_key, config_value, updated_at)
+                        VALUES (%s, %s, CURRENT_TIMESTAMP)
+                        ON CONFLICT (config_key) DO UPDATE SET config_value = EXCLUDED.config_value, updated_at = CURRENT_TIMESTAMP
+                    ''', ('proxy_enabled', '0'))
+                    db.commit()
+                
+                return jsonify({
+                    'success': True,
+                    'message': '代理已关闭'
+                })
+                
+            elif action == 'switch_proxy':
+                # 切换代理
+                proxy_type = data.get('proxy_type')
+                proxy_id = int(data.get('proxy_id', 0))
+                
+                if not proxy_type or not proxy_id:
+                    return jsonify({
+                        'success': False,
+                        'message': '请提供代理类型和ID'
+                    })
+                
+                # 验证代理是否存在
+                table_name = 'socks5_proxies' if proxy_type == 'socks5' else 'http_proxies'
+                
+                if db_type == 'sqlite':
+                    proxy = db.execute(f'SELECT * FROM {table_name} WHERE id = ? AND status = 1', (proxy_id,)).fetchone()
+                else:
+                    cursor = db.cursor()
+                    cursor.execute(f'SELECT * FROM {table_name} WHERE id = %s AND status = 1', (proxy_id,))
+                    proxy = cursor.fetchone()
+                
+                if not proxy:
+                    return jsonify({
+                        'success': False,
+                        'message': '代理不存在或已禁用'
+                    })
+                
+                # 更新配置
+                config_updates = [
+                    ('proxy_enabled', '1'),
+                    ('active_proxy_type', proxy_type),
+                    ('active_proxy_id', str(proxy_id))
+                ]
+                
+                for key, value in config_updates:
+                    if db_type == 'sqlite':
+                        db.execute('''
+                            INSERT OR REPLACE INTO proxy_config (config_key, config_value, updated_at)
+                            VALUES (?, ?, CURRENT_TIMESTAMP)
+                        ''', (key, value))
+                    else:
+                        cursor = db.cursor()
+                        cursor.execute('''
+                            INSERT INTO proxy_config (config_key, config_value, updated_at)
+                            VALUES (%s, %s, CURRENT_TIMESTAMP)
+                            ON DUPLICATE KEY UPDATE config_value = VALUES(config_value), updated_at = CURRENT_TIMESTAMP
+                        ''' if db_type == 'mysql' else '''
+                            INSERT INTO proxy_config (config_key, config_value, updated_at)
+                            VALUES (%s, %s, CURRENT_TIMESTAMP)
+                            ON CONFLICT (config_key) DO UPDATE SET config_value = EXCLUDED.config_value, updated_at = CURRENT_TIMESTAMP
+                        ''', (key, value))
+                
+                if db_type != 'sqlite':
+                    db.commit()
+                else:
+                    db.commit()
+                
+                # 获取代理名称
+                if db_type == 'sqlite':
+                    proxy_name = dict(proxy).get('name', '未知代理')
+                else:
+                    cursor.execute(f'DESCRIBE {table_name}' if db_type == 'mysql' else 
+                                 f'SELECT column_name FROM information_schema.columns WHERE table_name = \'{table_name}\'')
+                    columns = [row[0] for row in cursor.fetchall()]
+                    proxy_dict = dict(zip(columns, proxy))
+                    proxy_name = proxy_dict.get('name', '未知代理')
+                
+                return jsonify({
+                    'success': True,
+                    'message': f'已切换到代理: {proxy_type.upper()} - {proxy_name} (ID: {proxy_id})'
+                })
+            
+            else:
+                return jsonify({
+                    'success': False,
+                    'message': '无效的操作'
+                })
+                
+        except Exception as e:
+            return jsonify({
+                'success': False,
+                'message': f'操作失败: {str(e)}'
+            })
 
 @app.route('/admin/api/cards', methods=['GET', 'POST', 'DELETE'])
 @admin_required
