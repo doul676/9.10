@@ -535,7 +535,54 @@
         100% { transform: rotate(360deg); }
     }
     
-    /* Alert */
+    /* Toast Notifications */
+    .toast-container {
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        z-index: 3000;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        max-width: 400px;
+    }
+    
+    .toast {
+        padding: 15px 20px;
+        border-radius: 10px;
+        color: white;
+        font-weight: 500;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+        transform: translateX(450px);
+        opacity: 0;
+        transition: all 0.3s ease;
+        position: relative;
+        background: #6b7280;
+        margin-bottom: 10px;
+    }
+    
+    .toast.show {
+        transform: translateX(0);
+        opacity: 1;
+    }
+    
+    .toast.success {
+        background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+    }
+    
+    .toast.error {
+        background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+    }
+    
+    .toast.info {
+        background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+    }
+    
+    .toast.warning {
+        background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+    }
+
+    /* Alert (deprecated - replaced by toast) */
     .alert {
         padding: 12px 16px;
         border-radius: 8px;
@@ -564,6 +611,9 @@
 {% endblock %}
 
 {% block body %}
+<!-- Toast notification container -->
+<div id="toast-container" class="toast-container"></div>
+
 <!-- Sidebar -->
 <div class="sidebar">
     <div class="sidebar-header">
@@ -675,6 +725,7 @@
                                 <th>使用时间</th>
                                 <th>过期时间</th>
                                 <th>绑定邮箱</th>
+                                <th>邮件过滤</th>
                                 <th>备注</th>
                                 <th>创建时间</th>
                                 <th>操作</th>
@@ -797,7 +848,7 @@
 
     <!-- 编辑卡密弹窗 -->
     <div id="editModal" class="modal">
-        <div class="modal-content">
+        <div class="modal-content" style="max-width: 600px;">
             <div class="modal-header">
                 <h3 class="modal-title">编辑卡密</h3>
                 <button class="modal-close" onclick="closeModal('editModal')">&times;</button>
@@ -805,19 +856,42 @@
             <div class="modal-body">
                 <form id="editForm">
                     <input type="hidden" name="card_id" id="editCardId">
+                    
                     <div class="form-group">
                         <label class="form-label">卡密</label>
                         <input type="text" class="form-control" id="editCardKey" readonly>
                     </div>
-                    <div class="form-group">
-                        <label class="form-label">使用次数限制</label>
-                        <input type="number" class="form-control" name="usage_limit" id="editUsageLimit" min="1" required>
+                    
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label class="form-label">绑定邮箱</label>
+                            <select class="form-control" name="bound_email_id" id="editBoundEmailId">
+                                <option value="">请选择邮箱账号</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">收取X天内的邮件</label>
+                            <input type="number" class="form-control" name="email_days_filter" id="editEmailDaysFilter" value="7" min="1" max="365">
+                        </div>
                     </div>
+                    
                     <div class="form-group">
-                        <label class="form-label">过期时间</label>
-                        <input type="datetime-local" class="form-control" name="expired_at" id="editExpiredAt">
-                        <small style="color: #6b7280;">留空则永不过期</small>
+                        <label class="form-label">只能收取指定发件人邮箱地址的邮件</label>
+                        <input type="text" class="form-control" name="sender_filter" id="editSenderFilter" placeholder="多个邮箱地址用逗号分隔，如：sender1@example.com,sender2@example.com">
+                        <small style="color: #6b7280;">留空则不限制发件人</small>
                     </div>
+                    
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label class="form-label">使用次数限制</label>
+                            <input type="number" class="form-control" name="usage_limit" id="editUsageLimit" min="1" required>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">过期时间</label>
+                            <input type="datetime-local" class="form-control" name="expired_at" id="editExpiredAt">
+                        </div>
+                    </div>
+                    
                     <div class="form-group">
                         <label class="form-label">备注</label>
                         <input type="text" class="form-control" name="remarks" id="editRemarks" placeholder="卡密用途说明">
@@ -826,6 +900,7 @@
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" onclick="closeModal('editModal')">取消</button>
+                <button type="button" class="btn btn-success" onclick="generateCardAPI()">生成API</button>
                 <button type="button" class="btn btn-primary" onclick="saveEdit()">保存</button>
             </div>
         </div>
@@ -842,6 +917,32 @@
     let selectedCards = new Set();
     let allCards = [];
     let filteredCards = [];
+
+    // ========== 工具函数 ==========
+    
+    // Toast通知系统
+    function showToast(message, type = 'info', duration = 3000) {
+        const container = document.getElementById('toast-container');
+        
+        const toast = document.createElement('div');
+        toast.className = `toast ${type}`;
+        toast.textContent = message;
+        
+        container.appendChild(toast);
+        
+        setTimeout(() => {
+            toast.classList.add('show');
+        }, 10);
+        
+        setTimeout(() => {
+            toast.classList.remove('show');
+            setTimeout(() => {
+                if (container.contains(toast)) {
+                    container.removeChild(toast);
+                }
+            }, 300);
+        }, duration);
+    }
 
     // 页面加载完成后初始化
     document.addEventListener('DOMContentLoaded', function() {
@@ -888,12 +989,12 @@
                     renderPagination(data.pagination);
                     updateBatchDeleteButton();
                 } else {
-                    showAlert('error', data.message || '加载卡密列表失败');
+                    showToast(data.message || '加载卡密列表失败', 'error');
                 }
             })
             .catch(error => {
                 console.error('加载卡密列表失败:', error);
-                showAlert('error', '网络错误，请稍后重试');
+                showToast('网络错误，请稍后重试', 'error');
             });
     }
 
@@ -904,7 +1005,7 @@
         if (cards.length === 0) {
             tbody.innerHTML = `
                 <tr>
-                    <td colspan="10" style="text-align: center; padding: 40px; color: #6b7280;">
+                    <td colspan="11" style="text-align: center; padding: 40px; color: #6b7280;">
                         暂无卡密数据
                     </td>
                 </tr>
@@ -934,12 +1035,18 @@
                 <td>${card.used_count}/${card.usage_limit}</td>
                 <td>${card.last_used_at || '-'}</td>
                 <td>${card.expired_at || '永不过期'}</td>
-                <td>${getBoundEmail(card.remarks) || '-'}</td>
+                <td>${getBoundEmailInfo(card) || '-'}</td>
+                <td>
+                    <div style="font-size: 12px;">
+                        <div>收取: ${card.email_days_filter || 7}天内</div>
+                        ${card.sender_filter ? `<div>发件人: ${card.sender_filter.substring(0, 20)}${card.sender_filter.length > 20 ? '...' : ''}</div>` : '<div>发件人: 不限制</div>'}
+                    </div>
+                </td>
                 <td>${getCardRemarks(card.remarks) || '-'}</td>
                 <td>${formatDateTime(card.created_at)}</td>
                 <td>
-                    <div style="display: flex; gap: 5px;">
-                        <button class="btn btn-sm btn-primary" onclick="showEditModal(${card.id}, '${card.card_key}', '${card.remarks || ''}', '${card.expired_at || ''}', ${card.usage_limit})" 
+                    <div style="display: flex; gap: 5px; flex-wrap: wrap;">
+                        <button class="btn btn-sm btn-primary" onclick="showEditModal(${card.id})" 
                                 title="编辑">✏️</button>
                         <button class="btn btn-sm btn-success" onclick="apiPickup('${card.card_key}')" 
                                 title="API取件">📥</button>
@@ -955,7 +1062,7 @@
     function copyToClipboard(text) {
         if (navigator.clipboard && window.isSecureContext) {
             navigator.clipboard.writeText(text).then(() => {
-                showAlert('success', '卡密已复制到剪贴板');
+                showToast('卡密已复制到剪贴板', 'success');
             }).catch(() => {
                 fallbackCopyToClipboard(text);
             });
@@ -976,11 +1083,28 @@
         textArea.select();
         try {
             document.execCommand('copy');
-            showAlert('success', '卡密已复制到剪贴板');
+            showToast('卡密已复制到剪贴板', 'success');
         } catch (err) {
-            showAlert('error', '复制失败，请手动复制');
+            showToast('复制失败，请手动复制', 'error');
         }
         document.body.removeChild(textArea);
+    }
+
+    // 从卡密数据中获取绑定邮箱信息
+    function getBoundEmailInfo(card) {
+        if (card.bound_email_id) {
+            // 如果有绑定邮箱ID，需要从邮箱列表中找到对应的邮箱
+            const emailSelect = document.getElementById('emailSelect');
+            if (emailSelect) {
+                for (let option of emailSelect.options) {
+                    if (option.value == card.bound_email_id) {
+                        return option.textContent.split(' ')[0]; // 只返回邮箱地址部分
+                    }
+                }
+            }
+            return `邮箱ID: ${card.bound_email_id}`;
+        }
+        return getBoundEmail(card.remarks); // 兼容旧版本的备注绑定方式
     }
 
     // 从备注中提取绑定邮箱
@@ -1174,16 +1298,16 @@
         .then(response => response.json())
         .then(data => {
             if (data.success) {
-                showAlert('success', data.message);
+                showToast(data.message, 'success');
                 closeModal('generateModal');
                 refreshCardList();
             } else {
-                showAlert('error', data.message);
+                showToast(data.message, 'error');
             }
         })
         .catch(error => {
             console.error('生成卡密失败:', error);
-            showAlert('error', '网络错误，请稍后重试');
+            showToast('网络错误，请稍后重试', 'error');
         });
     }
 
@@ -1201,7 +1325,7 @@
         };
 
         if (data.count > 100) {
-            showAlert('error', '一次最多生成100个卡密');
+            showToast('一次最多生成100个卡密', 'error');
             return;
         }
 
@@ -1215,16 +1339,16 @@
         .then(response => response.json())
         .then(data => {
             if (data.success) {
-                showAlert('success', data.message);
+                showToast(data.message, 'success');
                 closeModal('batchGenerateModal');
                 refreshCardList();
             } else {
-                showAlert('error', data.message);
+                showToast(data.message, 'error');
             }
         })
         .catch(error => {
             console.error('批量生成卡密失败:', error);
-            showAlert('error', '网络错误，请稍后重试');
+            showToast('网络错误，请稍后重试', 'error');
         });
     }
 
@@ -1244,22 +1368,22 @@
         .then(response => response.json())
         .then(data => {
             if (data.success) {
-                showAlert('success', '卡密删除成功');
+                showToast('卡密删除成功', 'success');
                 refreshCardList();
             } else {
-                showAlert('error', data.message);
+                showToast(data.message, 'error');
             }
         })
         .catch(error => {
             console.error('删除卡密失败:', error);
-            showAlert('error', '网络错误，请稍后重试');
+            showToast('网络错误，请稍后重试', 'error');
         });
     }
 
     // 批量删除卡密
     function batchDeleteCards() {
         if (selectedCards.size === 0) {
-            showAlert('error', '请选择要删除的卡密');
+            showToast('请选择要删除的卡密', 'error');
             return;
         }
 
@@ -1280,49 +1404,125 @@
         .then(response => response.json())
         .then(data => {
             if (data.success) {
-                showAlert('success', data.message);
+                showToast(data.message, 'success');
                 selectedCards.clear();
                 refreshCardList();
             } else {
-                showAlert('error', data.message);
+                showToast(data.message, 'error');
             }
         })
         .catch(error => {
             console.error('批量删除卡密失败:', error);
-            showAlert('error', '网络错误，请稍后重试');
+            showToast('网络错误，请稍后重试', 'error');
+        });
+    }
+
+    // 生成卡密API
+    function generateCardAPI() {
+        const cardId = document.getElementById('editCardId').value;
+        if (!cardId) {
+            showToast('请先选择卡密', 'error');
+            return;
+        }
+
+        fetch(`/admin/api/cards/${cardId}/generate-api`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                showToast('API密钥生成成功', 'success');
+                
+                // 显示API信息
+                const apiInfo = `
+API密钥: ${data.api_key}
+
+使用说明:
+接口地址: ${data.usage_instructions.endpoint}
+请求方法: ${data.usage_instructions.method}
+请求头: 
+  Content-Type: ${data.usage_instructions.headers['Content-Type']}
+  Authorization: ${data.usage_instructions.headers['Authorization']}
+请求体: ${JSON.stringify(data.usage_instructions.body, null, 2)}
+                `;
+                
+                // 创建一个新的弹窗显示API信息
+                alert(apiInfo); // 临时使用alert，后续可以改为更好的弹窗
+                
+            } else {
+                showToast(data.message, 'error');
+            }
+        })
+        .catch(error => {
+            console.error('生成API失败:', error);
+            showToast('网络错误，请稍后重试', 'error');
         });
     }
 
     // 加载邮箱列表（用于绑定）
-    function loadEmailList() {
+    function loadEmailList(callback) {
         fetch('/admin/api/mailbox?per_page=100')
             .then(response => response.json())
             .then(data => {
                 if (data.success) {
-                    const select = document.getElementById('emailSelect');
-                    select.innerHTML = '<option value="">请选择邮箱账号</option>';
+                    // 更新绑定邮箱弹窗中的选择器
+                    const bindEmailSelect = document.getElementById('emailSelect');
+                    if (bindEmailSelect) {
+                        bindEmailSelect.innerHTML = '<option value="">请选择邮箱账号</option>';
+                        data.data.forEach(email => {
+                            const option = document.createElement('option');
+                            option.value = email.id;
+                            option.textContent = `${email.email} (${email.server})`;
+                            bindEmailSelect.appendChild(option);
+                        });
+                    }
                     
-                    data.data.forEach(email => {
-                        const option = document.createElement('option');
-                        option.value = email.id;
-                        option.textContent = `${email.email} (${email.server})`;
-                        select.appendChild(option);
-                    });
+                    // 更新编辑弹窗中的选择器
+                    const editEmailSelect = document.getElementById('editBoundEmailId');
+                    if (editEmailSelect) {
+                        editEmailSelect.innerHTML = '<option value="">请选择邮箱账号</option>';
+                        data.data.forEach(email => {
+                            const option = document.createElement('option');
+                            option.value = email.id;
+                            option.textContent = `${email.email} (${email.server})`;
+                            editEmailSelect.appendChild(option);
+                        });
+                    }
+                    
+                    if (callback) callback();
                 }
             })
             .catch(error => {
                 console.error('加载邮箱列表失败:', error);
+                if (callback) callback();
             });
     }
 
     // 显示编辑卡密弹窗
-    function showEditModal(cardId, cardKey, remarks, expiredAt, usageLimit) {
-        document.getElementById('editCardId').value = cardId;
-        document.getElementById('editCardKey').value = cardKey;
-        document.getElementById('editUsageLimit').value = usageLimit;
-        document.getElementById('editExpiredAt').value = expiredAt ? formatDateTimeForInput(expiredAt) : '';
-        document.getElementById('editRemarks').value = getCardRemarks(remarks) || '';
-        document.getElementById('editModal').classList.add('show');
+    function showEditModal(cardId) {
+        // 从当前加载的卡密列表中找到对应的卡密
+        const card = allCards.find(c => c.id === cardId);
+        if (!card) {
+            showToast('卡密信息未找到', 'error');
+            return;
+        }
+        
+        document.getElementById('editCardId').value = card.id;
+        document.getElementById('editCardKey').value = card.card_key;
+        document.getElementById('editUsageLimit').value = card.usage_limit || 1;
+        document.getElementById('editExpiredAt').value = card.expired_at ? formatDateTimeForInput(card.expired_at) : '';
+        document.getElementById('editRemarks').value = getCardRemarks(card.remarks) || '';
+        document.getElementById('editBoundEmailId').value = card.bound_email_id || '';
+        document.getElementById('editEmailDaysFilter').value = card.email_days_filter || 7;
+        document.getElementById('editSenderFilter').value = card.sender_filter || '';
+        
+        // 确保邮箱选择器已加载
+        loadEmailList(function() {
+            document.getElementById('editModal').classList.add('show');
+        });
     }
 
     // 保存编辑
@@ -1335,7 +1535,10 @@
             card_id: parseInt(formData.get('card_id')),
             usage_limit: parseInt(formData.get('usage_limit')),
             expired_at: formData.get('expired_at') || null,
-            remarks: formData.get('remarks') || ''
+            remarks: formData.get('remarks') || '',
+            bound_email_id: formData.get('bound_email_id') ? parseInt(formData.get('bound_email_id')) : null,
+            email_days_filter: parseInt(formData.get('email_days_filter')) || 7,
+            sender_filter: formData.get('sender_filter') || ''
         };
 
         fetch('/admin/api/cards', {
@@ -1348,16 +1551,16 @@
         .then(response => response.json())
         .then(data => {
             if (data.success) {
-                showAlert('success', data.message);
+                showToast(data.message, 'success');
                 closeModal('editModal');
                 refreshCardList();
             } else {
-                showAlert('error', data.message);
+                showToast(data.message, 'error');
             }
         })
         .catch(error => {
             console.error('编辑卡密失败:', error);
-            showAlert('error', '网络错误，请稍后重试');
+            showToast('网络错误，请稍后重试', 'error');
         });
     }
 
@@ -1390,7 +1593,7 @@
         };
 
         if (!data.email_id) {
-            showAlert('error', '请选择邮箱账号');
+            showToast('请选择邮箱账号', 'error');
             return;
         }
 
@@ -1404,48 +1607,23 @@
         .then(response => response.json())
         .then(data => {
             if (data.success) {
-                showAlert('success', data.message);
+                showToast(data.message, 'success');
                 closeModal('bindEmailModal');
                 refreshCardList();
             } else {
-                showAlert('error', data.message);
+                showToast(data.message, 'error');
             }
         })
         .catch(error => {
             console.error('绑定邮箱失败:', error);
-            showAlert('error', '网络错误，请稍后重试');
+            showToast('网络错误，请稍后重试', 'error');
         });
     }
 
     // API取件
     function apiPickup(cardKey) {
         // 这里可以实现API取件功能，比如调用邮件获取API
-        showAlert('info', `API取件功能开发中，卡密：${cardKey}`);
-    }
-
-    // 显示消息提示
-    function showAlert(type, message) {
-        // 移除现有的提示
-        const existingAlert = document.querySelector('.alert');
-        if (existingAlert) {
-            existingAlert.remove();
-        }
-
-        // 创建新提示
-        const alert = document.createElement('div');
-        alert.className = `alert alert-${type}`;
-        alert.textContent = message;
-
-        // 插入到内容区域顶部
-        const content = document.querySelector('.content');
-        content.insertBefore(alert, content.firstChild);
-
-        // 3秒后自动消失
-        setTimeout(() => {
-            if (alert.parentNode) {
-                alert.remove();
-            }
-        }, 3000);
+        showToast(`API取件功能开发中，卡密：${cardKey}`, 'info');
     }
 
     // 点击弹窗外部关闭弹窗
