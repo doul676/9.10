@@ -462,6 +462,25 @@
         display: block;
     }
     
+    .proxy-status {
+        background: #f8fafc;
+        border: 1px solid #e5e7eb;
+        font-size: 14px;
+        font-weight: 500;
+    }
+    
+    .proxy-status.enabled {
+        background: #dcfce7;
+        border-color: #bbf7d0;
+        color: #166534;
+    }
+    
+    .proxy-status.disabled {
+        background: #fee2e2;
+        border-color: #fecaca;
+        color: #991b1b;
+    }
+    
     .button-group {
         display: flex;
         gap: 10px;
@@ -700,9 +719,23 @@
                     <button class="btn btn-primary" onclick="showAddProxyModal('socks5')">
                         ➕ 添加SOCKS5代理
                     </button>
+                    <button class="btn btn-success" onclick="enableProxy()" id="enableProxyBtn">
+                        🔛 开启代理
+                    </button>
+                    <button class="btn btn-warning" onclick="disableProxy()" id="disableProxyBtn" style="display: none;">
+                        🔒 禁用代理
+                    </button>
                     <button class="btn btn-danger" onclick="batchDeleteProxies()" id="batchDeleteBtn" style="display: none;">
                         🗑️ 批量删除
                     </button>
+                </div>
+                
+                <!-- 代理状态显示 -->
+                <div id="proxyStatus" class="proxy-status" style="margin-top: 15px; padding: 10px; border-radius: 8px; display: none;">
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                        <span id="proxyStatusIcon">🔴</span>
+                        <span id="proxyStatusText">代理未启用</span>
+                    </div>
                 </div>
             </div>
         </div>
@@ -839,7 +872,147 @@
     // 页面加载时初始化
     document.addEventListener('DOMContentLoaded', function() {
         loadAllProxies();
+        loadProxyConfig();
     });
+    
+    // ========== 代理配置管理功能 ==========
+    
+    // 加载代理配置状态
+    async function loadProxyConfig() {
+        try {
+            const response = await fetch('/admin/api/proxy-config');
+            const data = await response.json();
+            
+            if (data.success) {
+                updateProxyStatus(data.config);
+            } else {
+                console.error('Failed to load proxy config:', data.message);
+            }
+        } catch (error) {
+            console.error('Error loading proxy config:', error);
+        }
+    }
+    
+    // 更新代理状态显示
+    function updateProxyStatus(config) {
+        const statusDiv = document.getElementById('proxyStatus');
+        const statusIcon = document.getElementById('proxyStatusIcon');
+        const statusText = document.getElementById('proxyStatusText');
+        const enableBtn = document.getElementById('enableProxyBtn');
+        const disableBtn = document.getElementById('disableProxyBtn');
+        
+        const isEnabled = config.proxy_enabled === '1';
+        const proxyType = config.active_proxy_type;
+        const proxyId = config.active_proxy_id;
+        
+        statusDiv.style.display = 'block';
+        
+        if (isEnabled && proxyType && proxyId !== '0') {
+            // 代理已启用
+            statusDiv.className = 'proxy-status enabled';
+            statusIcon.textContent = '🟢';
+            statusText.textContent = `代理已启用 - ${proxyType.toUpperCase()} 代理 (ID: ${proxyId})`;
+            enableBtn.style.display = 'none';
+            disableBtn.style.display = 'inline-block';
+        } else {
+            // 代理未启用
+            statusDiv.className = 'proxy-status disabled';
+            statusIcon.textContent = '🔴';
+            statusText.textContent = '代理未启用';
+            enableBtn.style.display = 'inline-block';
+            disableBtn.style.display = 'none';
+        }
+    }
+    
+    // 开启代理（自动选择第一个可用代理）
+    async function enableProxy() {
+        try {
+            showToast('正在自动选择可用代理...', 'info', 2000);
+            
+            const response = await fetch('/admin/api/proxy-config', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    action: 'auto_select_proxy'
+                })
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                showToast(data.message, 'success');
+                loadProxyConfig(); // 重新加载配置状态
+                loadAllProxies(); // 重新加载代理列表以更新状态
+            } else {
+                showToast(data.message || '开启代理失败', 'error');
+            }
+        } catch (error) {
+            console.error('Enable proxy failed:', error);
+            showToast('网络错误，请稍后重试', 'error');
+        }
+    }
+    
+    // 禁用代理
+    async function disableProxy() {
+        if (!confirm('确定要禁用代理吗？')) {
+            return;
+        }
+        
+        try {
+            const response = await fetch('/admin/api/proxy-config', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    action: 'disable_proxy'
+                })
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                showToast(data.message, 'success');
+                loadProxyConfig(); // 重新加载配置状态
+            } else {
+                showToast(data.message || '禁用代理失败', 'error');
+            }
+        } catch (error) {
+            console.error('Disable proxy failed:', error);
+            showToast('网络错误，请稍后重试', 'error');
+        }
+    }
+    
+    // 设置活跃代理
+    async function setActiveProxy(type, id) {
+        try {
+            const response = await fetch('/admin/api/proxy-config', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    action: 'set_active_proxy',
+                    proxy_type: type,
+                    proxy_id: id
+                })
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                showToast(data.message, 'success');
+                loadProxyConfig(); // 重新加载配置状态
+            } else {
+                showToast(data.message || '设置活跃代理失败', 'error');
+            }
+        } catch (error) {
+            console.error('Set active proxy failed:', error);
+            showToast('网络错误，请稍后重试', 'error');
+        }
+    }
     
     // ========== 统一代理管理功能 ==========
     
@@ -916,6 +1089,7 @@
                     <div class="actions" style="display: flex; gap: 5px; flex-wrap: wrap;">
                         <button class="btn btn-success btn-small" onclick="editProxy('${proxyType}', ${proxy.id})">编辑</button>
                         <button class="btn btn-warning btn-small" onclick="testSingleProxy('${proxyType}', ${proxy.id})">测试</button>
+                        <button class="btn btn-primary btn-small" onclick="setActiveProxy('${proxyType}', ${proxy.id})">设为活跃</button>
                         <button class="btn btn-danger btn-small" onclick="deleteProxy('${proxyType}', ${proxy.id})">删除</button>
                     </div>
                 </td>
