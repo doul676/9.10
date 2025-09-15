@@ -16,6 +16,7 @@ import imaplib
 import socks
 import http.client
 import time
+import re
 from datetime import datetime
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -949,12 +950,139 @@ class ProxyMailFetcher:
         if not main_content and images:
             content_type = 'image'
             
+        # Process and sanitize content for better display
+        processed_content = self._process_email_content(main_content, content_type, images)
+        
         return {
             'body_type': content_type,
             'body': main_content or '无法读取邮件内容',
+            'body_html': processed_content if content_type == 'html' else None,
+            'body_text': main_content if content_type == 'text' else None,
+            'body_processed': processed_content,
             'images': images,
             'attachments': attachments
         }
+        
+    def _process_email_content(self, content, content_type, images):
+        """Process and sanitize email content for better display"""
+        if not content:
+            return '无法读取邮件内容'
+            
+        if content_type == 'html':
+            return self._sanitize_html_content(content, images)
+        else:
+            # For plain text, convert line breaks to HTML breaks for better display
+            return self._format_plain_text(content)
+    
+    def _sanitize_html_content(self, html_content, images):
+        """Sanitize HTML content for safe display while preserving formatting"""
+        if not html_content:
+            return '无法读取HTML邮件内容'
+        
+        # Basic HTML sanitization - remove potentially dangerous elements
+        # Remove script tags and their content
+        html_content = re.sub(r'<script[^>]*>.*?</script>', '', html_content, flags=re.DOTALL | re.IGNORECASE)
+        
+        # Remove iframe, object, embed tags
+        html_content = re.sub(r'<(iframe|object|embed)[^>]*>.*?</\1>', '', html_content, flags=re.DOTALL | re.IGNORECASE)
+        
+        # Remove form elements for security
+        html_content = re.sub(r'<form[^>]*>.*?</form>', '', html_content, flags=re.DOTALL | re.IGNORECASE)
+        
+        # Remove potentially dangerous attributes
+        dangerous_attrs = ['onclick', 'onload', 'onerror', 'onmouseover', 'onmouseout', 'onfocus', 'onblur']
+        for attr in dangerous_attrs:
+            html_content = re.sub(rf'{attr}="[^"]*"', '', html_content, flags=re.IGNORECASE)
+            html_content = re.sub(rf"{attr}='[^']*'", '', html_content, flags=re.IGNORECASE)
+        
+        # Replace external image sources with embedded ones if available
+        if images:
+            for img in images:
+                filename = img.get('filename', '')
+                if filename:
+                    # Create data URI for embedded images
+                    mime_type = img.get('mime_type', 'image/jpeg')
+                    img_data = img.get('content', '')
+                    data_uri = f"data:{mime_type};base64,{img_data}"
+                    
+                    # Replace src references to this image
+                    patterns = [
+                        rf'src="[^"]*{re.escape(filename)}"',
+                        rf"src='[^']*{re.escape(filename)}'",
+                        rf'src="cid:{re.escape(filename)}"',
+                        rf"src='cid:{re.escape(filename)}'"
+                    ]
+                    
+                    for pattern in patterns:
+                        html_content = re.sub(pattern, f'src="{data_uri}"', html_content, flags=re.IGNORECASE)
+        
+        # Handle remaining external images by making them load properly
+        # Convert relative URLs to absolute where possible, or remove broken ones
+        html_content = re.sub(r'src="(?!data:)(?!http)([^"]+)"', 'src="#" alt="图片加载失败"', html_content)
+        
+        # Add some basic styling to improve email display
+        style_wrapper = '''
+        <div style="
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 100%;
+            overflow-wrap: break-word;
+            word-wrap: break-word;
+            background: #fff;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        ">
+            {}
+        </div>
+        '''
+        
+        return style_wrapper.format(html_content)
+    
+    def _format_plain_text(self, text_content):
+        """Format plain text content for HTML display"""
+        if not text_content:
+            return '无法读取纯文本邮件内容'
+        
+        # Escape HTML entities
+        text_content = (text_content
+                       .replace('&', '&amp;')
+                       .replace('<', '&lt;')
+                       .replace('>', '&gt;')
+                       .replace('"', '&quot;')
+                       .replace("'", '&#x27;'))
+        
+        # Convert line breaks to HTML breaks
+        text_content = text_content.replace('\n', '<br>')
+        
+        # Convert URLs to clickable links
+        url_pattern = r'(https?://[^\s<>"{}|\\^`\[\]]+)'
+        text_content = re.sub(url_pattern, r'<a href="\1" target="_blank" rel="noopener noreferrer">\1</a>', text_content)
+        
+        # Convert email addresses to clickable links
+        email_pattern = r'\b([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})\b'
+        text_content = re.sub(email_pattern, r'<a href="mailto:\1">\1</a>', text_content)
+        
+        # Add styling wrapper
+        style_wrapper = '''
+        <div style="
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 100%;
+            white-space: pre-wrap;
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 8px;
+            border-left: 4px solid #667eea;
+            margin: 10px 0;
+        ">
+            {}
+        </div>
+        '''
+        
+        return style_wrapper.format(text_content)
         
     def _process_part(self, part):
         """Process individual email part and return result"""
