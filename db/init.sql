@@ -172,6 +172,36 @@ INSERT OR IGNORE INTO proxy_config (config_key, config_value, description) VALUE
 ('active_proxy_id', '0', '当前激活的代理ID'),
 ('proxy_auto_select', '1', '是否自动选择序号ID为1的代理');
 
+-- 前端用户表
+CREATE TABLE IF NOT EXISTS frontend_users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    username TEXT NOT NULL UNIQUE,
+    password TEXT NOT NULL,
+    email TEXT DEFAULT '',
+    status INTEGER DEFAULT 1,  -- 1: 正常, 0: 禁用
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 卡密回收站表
+CREATE TABLE IF NOT EXISTS cards_recycle (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    original_card_id INTEGER NOT NULL,
+    card_key TEXT NOT NULL,
+    card_type TEXT NOT NULL DEFAULT 'general',
+    usage_limit INTEGER DEFAULT 1,
+    used_count INTEGER DEFAULT 0,
+    status INTEGER DEFAULT 2,  -- 2: 已用完, 3: 已过期, 4: 已删除
+    expired_at DATETIME DEFAULT NULL,
+    bound_email_id INTEGER DEFAULT NULL,
+    email_days_filter INTEGER DEFAULT 1,
+    sender_filter TEXT DEFAULT '',
+    remarks TEXT DEFAULT '',
+    deleted_reason TEXT DEFAULT '',  -- 删除/进入回收站的原因
+    original_created_at DATETIME DEFAULT NULL,  -- 原创建时间
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
 -- 创建索引（增强版）
 CREATE INDEX IF NOT EXISTS idx_mail_accounts_email ON mail_accounts(email);
 CREATE INDEX IF NOT EXISTS idx_mail_accounts_created_at ON mail_accounts(created_at);
@@ -193,3 +223,8 @@ CREATE INDEX IF NOT EXISTS idx_mail_logs_email ON mail_logs(email);
 CREATE INDEX IF NOT EXISTS idx_mail_logs_created_at ON mail_logs(created_at);
 CREATE INDEX IF NOT EXISTS idx_system_config_key ON system_config(config_key);
 CREATE INDEX IF NOT EXISTS idx_proxy_config_key ON proxy_config(config_key);
+CREATE INDEX IF NOT EXISTS idx_frontend_users_username ON frontend_users(username);
+CREATE INDEX IF NOT EXISTS idx_frontend_users_status ON frontend_users(status);
+CREATE INDEX IF NOT EXISTS idx_cards_recycle_card_key ON cards_recycle(card_key);
+CREATE INDEX IF NOT EXISTS idx_cards_recycle_status ON cards_recycle(status);
+CREATE INDEX IF NOT EXISTS idx_cards_recycle_original_card_id ON cards_recycle(original_card_id);

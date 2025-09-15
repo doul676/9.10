@@ -509,6 +509,17 @@
     <div class="header">
         <h1>📧 邮件查看系统</h1>
         <p>输入已添加的邮箱账号查看最新邮件</p>
+        {% if session.get('user_logged_in') %}
+        <div style="margin-top: 15px; color: rgba(255,255,255,0.9); font-size: 14px;">
+            欢迎回来，{{ session.get('username') }}！ 
+            <a href="{{ url_for('frontend_logout') }}" style="color: rgba(255,255,255,0.8); text-decoration: underline; margin-left: 10px;">退出登录</a>
+        </div>
+        {% else %}
+        <div style="margin-top: 15px;">
+            <a href="{{ url_for('frontend_login') }}" style="color: rgba(255,255,255,0.9); text-decoration: underline; margin-right: 15px;">登录</a>
+            <a href="{{ url_for('frontend_register') }}" style="color: rgba(255,255,255,0.9); text-decoration: underline;">注册</a>
+        </div>
+        {% endif %}
     </div>
     
     <div class="mail-input-card">
@@ -632,6 +643,13 @@
                     showMessage(noMailMessage, 'info');
                 }
             } else {
+                // 检查是否需要登录
+                if (data.need_login) {
+                    showToast('请先登录再查看邮件', 'info', 4000);
+                    // 不进行页面跳转，只显示Toast通知
+                    return;
+                }
+                
                 // 组合失败消息包含连接状态 - 避免重复添加连接指示符
                 let errorMessage = data.message || '获取邮件失败';
                 
