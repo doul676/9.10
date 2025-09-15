@@ -3953,12 +3953,24 @@ def api_admin_generate_card_api_page(card_key):
             padding: 20px;
             border-radius: 10px;
             border: 1px solid #e5e7eb;
-            max-height: 400px;
+            max-height: 600px;
             overflow-y: auto;
-            white-space: pre-wrap;
-            font-family: 'Courier New', monospace;
-            font-size: 14px;
             line-height: 1.6;
+            font-size: 14px;
+        }}
+        
+        .mail-body iframe {{
+            width: 100%;
+            min-height: 400px;
+            border: none;
+            border-radius: 8px;
+        }}
+        
+        .mail-body pre {{
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            font-family: inherit;
+            margin: 0;
         }}
         
         .api-info {{
@@ -4163,9 +4175,147 @@ def api_admin_generate_card_api_page(card_key):
             document.getElementById('mailTo').textContent = mail.to || '未知';
             document.getElementById('mailDate').textContent = mail.date || '未知';
             document.getElementById('mailSize').textContent = formatFileSize(mail.size || 0);
-            document.getElementById('mailBody').textContent = mail.body || '(邮件内容为空)';
+            
+            // Enhanced email content display
+            const mailBodyElement = document.getElementById('mailBody');
+            
+            // Use processed content if available, otherwise fall back to original content
+            if (mail.body_processed) {{
+                // Display processed HTML content (sanitized and styled)
+                mailBodyElement.innerHTML = mail.body_processed;
+                mailBodyElement.style.backgroundColor = 'transparent';
+                mailBodyElement.style.fontFamily = 'inherit';
+            }} else if (mail.body_type === 'html' && mail.body_html) {{
+                // Display HTML content in iframe for safety (fallback)
+                const iframe = document.createElement('iframe');
+                iframe.style.width = '100%';
+                iframe.style.minHeight = '300px';
+                iframe.style.border = 'none';
+                iframe.style.borderRadius = '8px';
+                iframe.srcdoc = mail.body_html;
+                
+                mailBodyElement.innerHTML = '';
+                mailBodyElement.appendChild(iframe);
+            }} else if (mail.body) {{
+                // Plain text display (with preserved formatting)
+                mailBodyElement.textContent = mail.body;
+                mailBodyElement.style.whiteSpace = 'pre-wrap';
+                mailBodyElement.style.backgroundColor = '#f8f9fa';
+                mailBodyElement.style.padding = '15px';
+                mailBodyElement.style.borderRadius = '8px';
+                mailBodyElement.style.borderLeft = '4px solid #667eea';
+            }} else {{
+                mailBodyElement.textContent = '(邮件内容为空)';
+                mailBodyElement.style.backgroundColor = '#f8f9fa';
+                mailBodyElement.style.padding = '15px';
+                mailBodyElement.style.borderRadius = '8px';
+                mailBodyElement.style.fontStyle = 'italic';
+            }}
+            
+            // Display attachments if any
+            if (mail.attachments && mail.attachments.length > 0) {{
+                displayAttachments(mail.attachments);
+            }}
+            
+            // Display inline images if any
+            if (mail.images && mail.images.length > 0) {{
+                displayImages(mail.images);
+            }}
             
             document.getElementById('mailDisplay').style.display = 'block';
+        }}
+        
+        function displayAttachments(attachments) {{
+            // Create attachments section if it doesn't exist
+            let attachmentsSection = document.getElementById('mailAttachments');
+            if (!attachmentsSection) {{
+                attachmentsSection = document.createElement('div');
+                attachmentsSection.id = 'mailAttachments';
+                attachmentsSection.style.marginTop = '20px';
+                attachmentsSection.style.padding = '15px';
+                attachmentsSection.style.backgroundColor = '#f1f5f9';
+                attachmentsSection.style.borderRadius = '8px';
+                document.getElementById('mailDisplay').appendChild(attachmentsSection);
+            }}
+            
+            let html = '<h4 style="margin: 0 0 10px 0; color: #334155;">📎 附件 (' + attachments.length + ')</h4>';
+            
+            attachments.forEach(function(attachment, index) {{
+                const size = formatFileSize(attachment.size || 0);
+                html += '<div style="margin: 8px 0; padding: 8px; background: white; border-radius: 6px; border: 1px solid #e2e8f0;">' +
+                        '<span style="font-weight: 500;">' + (attachment.filename || 'attachment') + '</span>' +
+                        '<span style="color: #64748b; margin-left: 10px;">' + size + '</span>' +
+                        '<span style="color: #64748b; margin-left: 10px;">' + (attachment.mime_type || 'unknown') + '</span>' +
+                        '</div>';
+            }});
+            
+            attachmentsSection.innerHTML = html;
+        }}
+        
+        function displayImages(images) {{
+            // Create images section if it doesn't exist  
+            let imagesSection = document.getElementById('mailImages');
+            if (!imagesSection) {{
+                imagesSection = document.createElement('div');
+                imagesSection.id = 'mailImages';
+                imagesSection.style.marginTop = '20px';
+                imagesSection.style.padding = '15px';
+                imagesSection.style.backgroundColor = '#f1f5f9';
+                imagesSection.style.borderRadius = '8px';
+                document.getElementById('mailDisplay').appendChild(imagesSection);
+            }}
+            
+            let html = '<h4 style="margin: 0 0 10px 0; color: #334155;">🖼️ 图片 (' + images.length + ')</h4>';
+            html += '<div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px;">';
+            
+            images.forEach(function(image, index) {{
+                const dataUri = 'data:' + image.mime_type + ';base64,' + image.content;
+                html += '<div style="text-align: center;">' +
+                        '<img src="' + dataUri + '" ' +
+                             'alt="' + (image.filename || 'image') + '"' +
+                             'style="max-width: 100%; max-height: 150px; border-radius: 6px; border: 1px solid #e2e8f0; cursor: pointer;"' +
+                             'onclick="openImageModal(\'' + dataUri + '\', \'' + (image.filename || 'image') + '\')">' +
+                        '<div style="margin-top: 5px; font-size: 12px; color: #64748b;">' + (image.filename || 'image') + '</div>' +
+                        '</div>';
+            }});
+            
+            html += '</div>';
+            imagesSection.innerHTML = html;
+        }}
+        
+        function openImageModal(imageSrc, filename) {{
+            // Create modal to view image in full size
+            const modal = document.createElement('div');
+            modal.style.cssText = `
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                background: rgba(0,0,0,0.8);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                z-index: 3000;
+                cursor: pointer;
+            `;
+            
+            const img = document.createElement('img');
+            img.src = imageSrc;
+            img.alt = filename;
+            img.style.cssText = `
+                max-width: 90%;
+                max-height: 90%;
+                border-radius: 8px;
+                box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+            `;
+            
+            modal.appendChild(img);
+            document.body.appendChild(modal);
+            
+            modal.addEventListener('click', function() {{
+                document.body.removeChild(modal);
+            }});
         }}
         
         function displayMailWithCardInfo(data) {{

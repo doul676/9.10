@@ -950,6 +950,22 @@
                         <div>加载中...</div>
                     </div>
                     
+                    <!-- 批量操作栏 -->
+                    <div id="batchActionsBar" style="display: none; margin-bottom: 15px; padding: 10px; background: #f8fafc; border-radius: 8px; border: 1px solid #e2e8f0;">
+                        <div style="display: flex; align-items: center; gap: 10px;">
+                            <span id="selectedCountText" style="color: #475569; font-weight: 500;">已选择 0 项</span>
+                            <button class="btn btn-sm btn-success" onclick="batchRestoreCards()" id="batchRestoreBtn" disabled>
+                                <i>↩️</i> 批量恢复
+                            </button>
+                            <button class="btn btn-sm btn-danger" onclick="batchPermanentDeleteCards()" id="batchDeleteBtn" disabled>
+                                <i>🗑️</i> 批量永久删除
+                            </button>
+                            <button class="btn btn-sm btn-secondary" onclick="clearSelection()">
+                                <i>❌</i> 取消选择
+                            </button>
+                        </div>
+                    </div>
+                    
                     <!-- 已删除的卡密 -->
                     <div id="deletedCardsContent" style="display: none;">
                         <h4 style="color: #ef4444; margin-bottom: 15px;">已删除的卡密</h4>
@@ -957,6 +973,10 @@
                             <table class="table">
                                 <thead>
                                     <tr>
+                                        <th style="width: 50px;">
+                                            <input type="checkbox" id="selectAllDeleted" onchange="toggleSelectAll('deleted')" 
+                                                   style="transform: scale(1.2);">
+                                        </th>
                                         <th>序号</th>
                                         <th>卡密</th>
                                         <th>使用次数</th>
@@ -979,6 +999,10 @@
                             <table class="table">
                                 <thead>
                                     <tr>
+                                        <th style="width: 50px;">
+                                            <input type="checkbox" id="selectAllExpired" onchange="toggleSelectAll('expired')" 
+                                                   style="transform: scale(1.2);">
+                                        </th>
                                         <th>序号</th>
                                         <th>卡密</th>
                                         <th>使用次数</th>
@@ -1013,6 +1037,8 @@
     let selectedCards = new Set();
     let allCards = [];
     let filteredCards = [];
+    let currentRecycleBinTab = 'deleted';
+    let selectedRecycleBinCards = new Set(); // 回收站选中的卡密
 
     // ========== 工具函数 ==========
     
@@ -1756,8 +1782,6 @@
 
     // ========== 回收站功能 ==========
     
-    let currentRecycleBinTab = 'deleted';
-    
     // 显示回收站弹窗
     function showRecycleBinModal() {
         currentRecycleBinTab = 'deleted';
@@ -1765,20 +1789,6 @@
         loadRecycleBinData();
     }
     
-    // 切换回收站标签
-    function switchRecycleBinTab(tab) {
-        currentRecycleBinTab = tab;
-        
-        // 更新按钮状态
-        document.getElementById('deletedTabBtn').style.opacity = tab === 'deleted' ? '1' : '0.6';
-        document.getElementById('expiredTabBtn').style.opacity = tab === 'expired' ? '1' : '0.6';
-        
-        // 显示对应内容
-        document.getElementById('deletedCardsContent').style.display = tab === 'deleted' ? 'block' : 'none';
-        document.getElementById('expiredCardsContent').style.display = tab === 'expired' ? 'block' : 'none';
-        
-        loadRecycleBinData();
-    }
     
     // 加载回收站数据
     function loadRecycleBinData() {
@@ -1812,16 +1822,22 @@
         if (cards.length === 0) {
             tbody.innerHTML = `
                 <tr>
-                    <td colspan="6" style="text-align: center; padding: 40px; color: #6b7280;">
+                    <td colspan="7" style="text-align: center; padding: 40px; color: #6b7280;">
                         暂无${type === 'deleted' ? '已删除' : '已过期'}的卡密
                     </td>
                 </tr>
             `;
+            updateBatchActionsBar();
             return;
         }
         
         tbody.innerHTML = cards.map((card, index) => `
             <tr>
+                <td>
+                    <input type="checkbox" class="card-checkbox" value="${card.id}" 
+                           onchange="toggleCardSelection(${card.id})" 
+                           style="transform: scale(1.2);">
+                </td>
                 <td>${index + 1}</td>
                 <td>
                     <code style="background: #f3f4f6; padding: 2px 6px; border-radius: 4px; font-family: monospace;">
@@ -1841,6 +1857,8 @@
                 </td>
             </tr>
         `).join('');
+        
+        updateBatchActionsBar();
     }
     
     // 更新回收站计数
@@ -1937,6 +1955,284 @@
             console.error('清空回收站失败:', error);
             showToast('网络错误，请稍后重试', 'error');
         });
+    }
+    
+    // ========== 回收站多选功能 ==========
+    
+    // 切换单个卡密选择状态
+    function toggleCardSelection(cardId) {
+        if (selectedRecycleBinCards.has(cardId)) {
+            selectedRecycleBinCards.delete(cardId);
+        } else {
+            selectedRecycleBinCards.add(cardId);
+        }
+        updateBatchActionsBar();
+        updateSelectAllCheckbox();
+    }
+    
+    // 切换全选状态
+    function toggleSelectAll(type) {
+        const selectAllCheckbox = document.getElementById(`selectAll${type.charAt(0).toUpperCase() + type.slice(1)}`);
+        const checkboxes = document.querySelectorAll(`.card-checkbox`);
+        
+        if (selectAllCheckbox.checked) {
+            // 全选当前显示的卡密
+            checkboxes.forEach(checkbox => {
+                const cardId = parseInt(checkbox.value);
+                selectedRecycleBinCards.add(cardId);
+                checkbox.checked = true;
+            });
+        } else {
+            // 取消全选当前显示的卡密
+            checkboxes.forEach(checkbox => {
+                const cardId = parseInt(checkbox.value);
+                selectedRecycleBinCards.delete(cardId);
+                checkbox.checked = false;
+            });
+        }
+        
+        updateBatchActionsBar();
+    }
+    
+    // 更新全选复选框状态
+    function updateSelectAllCheckbox() {
+        const currentTabCheckboxes = document.querySelectorAll(`.card-checkbox`);
+        const currentTabCheckboxArray = Array.from(currentTabCheckboxes);
+        
+        if (currentTabCheckboxArray.length === 0) return;
+        
+        const checkedCount = currentTabCheckboxArray.filter(cb => cb.checked).length;
+        const selectAllCheckbox = document.getElementById(`selectAll${currentRecycleBinTab.charAt(0).toUpperCase() + currentRecycleBinTab.slice(1)}`);
+        
+        if (checkedCount === 0) {
+            selectAllCheckbox.checked = false;
+            selectAllCheckbox.indeterminate = false;
+        } else if (checkedCount === currentTabCheckboxArray.length) {
+            selectAllCheckbox.checked = true;
+            selectAllCheckbox.indeterminate = false;
+        } else {
+            selectAllCheckbox.checked = false;
+            selectAllCheckbox.indeterminate = true;
+        }
+    }
+    
+    // 更新批量操作栏
+    function updateBatchActionsBar() {
+        const selectedCount = selectedRecycleBinCards.size;
+        const batchActionsBar = document.getElementById('batchActionsBar');
+        const selectedCountText = document.getElementById('selectedCountText');
+        const batchRestoreBtn = document.getElementById('batchRestoreBtn');
+        const batchDeleteBtn = document.getElementById('batchDeleteBtn');
+        
+        selectedCountText.textContent = `已选择 ${selectedCount} 项`;
+        
+        if (selectedCount > 0) {
+            batchActionsBar.style.display = 'block';
+            batchRestoreBtn.disabled = false;
+            batchDeleteBtn.disabled = false;
+        } else {
+            batchActionsBar.style.display = 'none';
+            batchRestoreBtn.disabled = true;
+            batchDeleteBtn.disabled = true;
+        }
+    }
+    
+    // 清除选择
+    function clearSelection() {
+        selectedRecycleBinCards.clear();
+        document.querySelectorAll('.card-checkbox').forEach(checkbox => {
+            checkbox.checked = false;
+        });
+        document.querySelectorAll('[id^="selectAll"]').forEach(checkbox => {
+            checkbox.checked = false;
+            checkbox.indeterminate = false;
+        });
+        updateBatchActionsBar();
+    }
+    
+    // 批量恢复卡密
+    function batchRestoreCards() {
+        const selectedCount = selectedRecycleBinCards.size;
+        if (selectedCount === 0) {
+            showToast('请先选择要恢复的卡密', 'warning');
+            return;
+        }
+        
+        if (!confirm(`确定要恢复选中的 ${selectedCount} 个卡密吗？恢复后将重新出现在卡密列表中。`)) {
+            return;
+        }
+        
+        const selectedArray = Array.from(selectedRecycleBinCards);
+        let completedCount = 0;
+        let successCount = 0;
+        
+        // 显示批量操作进度
+        const progressToast = showProgressToast(`正在批量恢复卡密... (0/${selectedCount})`);
+        
+        // 批量处理选中的卡密
+        Promise.all(selectedArray.map(cardId => {
+            return fetch('/admin/api/recycle-bin/restore', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ 
+                    card_id: cardId,
+                    type: currentRecycleBinTab
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                completedCount++;
+                if (data.success) {
+                    successCount++;
+                }
+                
+                // 更新进度
+                updateProgressToast(progressToast, `正在批量恢复卡密... (${completedCount}/${selectedCount})`);
+                
+                return { success: data.success, cardId: cardId };
+            })
+            .catch(error => {
+                completedCount++;
+                updateProgressToast(progressToast, `正在批量恢复卡密... (${completedCount}/${selectedCount})`);
+                return { success: false, cardId: cardId };
+            });
+        }))
+        .then(results => {
+            hideProgressToast(progressToast);
+            
+            if (successCount === selectedCount) {
+                showToast(`成功恢复 ${successCount} 个卡密`, 'success');
+            } else if (successCount > 0) {
+                showToast(`成功恢复 ${successCount} 个卡密，${selectedCount - successCount} 个失败`, 'warning');
+            } else {
+                showToast('批量恢复失败', 'error');
+            }
+            
+            // 清除选择并刷新数据
+            clearSelection();
+            loadRecycleBinData();
+            refreshCardList();
+        });
+    }
+    
+    // 批量永久删除卡密
+    function batchPermanentDeleteCards() {
+        const selectedCount = selectedRecycleBinCards.size;
+        if (selectedCount === 0) {
+            showToast('请先选择要删除的卡密', 'warning');
+            return;
+        }
+        
+        if (!confirm(`确定要永久删除选中的 ${selectedCount} 个卡密吗？此操作不可恢复！`)) {
+            return;
+        }
+        
+        const selectedArray = Array.from(selectedRecycleBinCards);
+        let completedCount = 0;
+        let successCount = 0;
+        
+        // 显示批量操作进度
+        const progressToast = showProgressToast(`正在批量删除卡密... (0/${selectedCount})`);
+        
+        // 批量处理选中的卡密
+        Promise.all(selectedArray.map(cardId => {
+            return fetch('/admin/api/recycle-bin/permanent-delete', {
+                method: 'DELETE',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ 
+                    card_id: cardId
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                completedCount++;
+                if (data.success) {
+                    successCount++;
+                }
+                
+                // 更新进度
+                updateProgressToast(progressToast, `正在批量删除卡密... (${completedCount}/${selectedCount})`);
+                
+                return { success: data.success, cardId: cardId };
+            })
+            .catch(error => {
+                completedCount++;
+                updateProgressToast(progressToast, `正在批量删除卡密... (${completedCount}/${selectedCount})`);
+                return { success: false, cardId: cardId };
+            });
+        }))
+        .then(results => {
+            hideProgressToast(progressToast);
+            
+            if (successCount === selectedCount) {
+                showToast(`成功删除 ${successCount} 个卡密`, 'success');
+            } else if (successCount > 0) {
+                showToast(`成功删除 ${successCount} 个卡密，${selectedCount - successCount} 个失败`, 'warning');
+            } else {
+                showToast('批量删除失败', 'error');
+            }
+            
+            // 清除选择并刷新数据
+            clearSelection();
+            loadRecycleBinData();
+        });
+    }
+    
+    // 显示进度Toast
+    function showProgressToast(message) {
+        const toast = document.createElement('div');
+        toast.className = 'toast info show';
+        toast.innerHTML = `
+            <div style="display: flex; align-items: center; gap: 10px;">
+                <div class="spinner" style="width: 16px; height: 16px; border-width: 2px;"></div>
+                <span id="progress-text">${message}</span>
+            </div>
+        `;
+        
+        const container = document.getElementById('toast-container');
+        container.appendChild(toast);
+        
+        return toast;
+    }
+    
+    // 更新进度Toast
+    function updateProgressToast(toast, message) {
+        const progressText = toast.querySelector('#progress-text');
+        if (progressText) {
+            progressText.textContent = message;
+        }
+    }
+    
+    // 隐藏进度Toast
+    function hideProgressToast(toast) {
+        if (toast && toast.parentNode) {
+            toast.classList.remove('show');
+            setTimeout(() => {
+                if (toast.parentNode) {
+                    toast.parentNode.removeChild(toast);
+                }
+            }, 300);
+        }
+    }
+    
+    // Modified switchRecycleBinTab function to include clearSelection
+    function switchRecycleBinTab(tab) {
+        clearSelection(); // 切换标签时清除选择
+        currentRecycleBinTab = tab;
+        
+        // 更新按钮状态
+        document.getElementById('deletedTabBtn').style.opacity = tab === 'deleted' ? '1' : '0.6';
+        document.getElementById('expiredTabBtn').style.opacity = tab === 'expired' ? '1' : '0.6';
+        
+        // 显示对应内容
+        document.getElementById('deletedCardsContent').style.display = tab === 'deleted' ? 'block' : 'none';
+        document.getElementById('expiredCardsContent').style.display = tab === 'expired' ? 'block' : 'none';
+        
+        loadRecycleBinData();
     }
 </script>
 {% endblock %}
