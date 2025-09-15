@@ -355,15 +355,19 @@ def create_default_admin(db, db_type):
         if db_type == 'sqlite':
             admin = db.execute('SELECT * FROM admin_users WHERE username = ?', ('admin',)).fetchone()
             if not admin:
+                # 使用安全的密码哈希
+                hashed_password = generate_password_hash('admin')
                 db.execute('INSERT INTO admin_users (username, password) VALUES (?, ?)', 
-                          ('admin', 'admin'))  # 简单密码，生产环境应使用hash
+                          ('admin', hashed_password))
         else:
             cursor = db.cursor()
             cursor.execute('SELECT * FROM admin_users WHERE username = %s', ('admin',))
             admin = cursor.fetchone()
             if not admin:
+                # 使用安全的密码哈希
+                hashed_password = generate_password_hash('admin')
                 cursor.execute('INSERT INTO admin_users (username, password) VALUES (%s, %s)', 
-                              ('admin', 'admin'))
+                              ('admin', hashed_password))
             cursor.close()
     except Exception as e:
         logger.error(f"Failed to create default admin: {e}")
@@ -942,8 +946,8 @@ def admin_login():
                 db = get_db()
                 admin = db.execute('SELECT * FROM admin_users WHERE username = ?', (username,)).fetchone()
                 
-                # 简单密码验证（兼容原有PHP版本）
-                if admin and admin['password'] == password:
+                # 使用安全的密码哈希验证
+                if admin and check_password_hash(admin['password'], password):
                     session['admin_logged_in'] = True
                     session['admin_id'] = admin['id']
                     session['admin_username'] = admin['username']
