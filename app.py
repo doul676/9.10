@@ -4633,21 +4633,273 @@ def api_admin_mail_logs():
 @app.route('/admin/api/system-config', methods=['GET', 'POST'])
 @admin_required
 def api_admin_system_config():
-    """系统设置 API（Stub实现）"""
+    """系统设置 API（完整实现）"""
+    db = get_db()
+    db_type = app.config['DATABASE_TYPE']
+    
     if request.method == 'GET':
+        try:
+            # 获取系统配置
+            config = {}
+            
+            if db_type == 'sqlite':
+                cursor = db.execute('SELECT config_key, config_value FROM system_config')
+                for row in cursor.fetchall():
+                    config[row[0]] = row[1]
+            else:
+                cursor = db.cursor()
+                cursor.execute('SELECT config_key, config_value FROM system_config')
+                for row in cursor.fetchall():
+                    config[row[0]] = row[1]
+                cursor.close()
+            
+            return jsonify({
+                'success': True,
+                'message': '系统配置获取成功',
+                'config': config
+            })
+            
+        except Exception as e:
+            logger.error(f"Failed to get system config: {e}")
+            return jsonify({
+                'success': False,
+                'message': f'获取系统配置失败: {str(e)}'
+            })
+    
+    else:  # POST - 保存配置
+        try:
+            data = request.get_json()
+            if not data:
+                return jsonify({
+                    'success': False,
+                    'message': '请求数据无效'
+                })
+            
+            # 更新系统配置
+            config_updates = [
+                ('system_name', data.get('system_name', '')),
+                ('site_url', data.get('site_url', '')),
+                ('max_mail_accounts', data.get('max_mail_accounts', '100')),
+                ('log_retention_days', data.get('log_retention_days', '30')),
+                ('enable_card_system', data.get('enable_card_system', '1')),
+                ('enable_proxy', data.get('enable_proxy', '0'))
+            ]
+            
+            if db_type == 'sqlite':
+                for key, value in config_updates:
+                    if value:  # 只更新非空值
+                        db.execute('''
+                            INSERT OR REPLACE INTO system_config (config_key, config_value, updated_at)
+                            VALUES (?, ?, CURRENT_TIMESTAMP)
+                        ''', (key, str(value)))
+                db.commit()
+            else:
+                cursor = db.cursor()
+                for key, value in config_updates:
+                    if value:  # 只更新非空值
+                        cursor.execute('''
+                            INSERT INTO system_config (config_key, config_value, updated_at)
+                            VALUES (%s, %s, CURRENT_TIMESTAMP)
+                            ON DUPLICATE KEY UPDATE 
+                            config_value = VALUES(config_value),
+                            updated_at = CURRENT_TIMESTAMP
+                        ''', (key, str(value)))
+                db.commit()
+                cursor.close()
+            
+            return jsonify({
+                'success': True,
+                'message': '系统配置保存成功'
+            })
+            
+        except Exception as e:
+            logger.error(f"Failed to save system config: {e}")
+            return jsonify({
+                'success': False,
+                'message': f'保存系统配置失败: {str(e)}'
+            })
+
+@app.route('/admin/api/update-admin-account', methods=['POST'])
+@admin_required
+def api_update_admin_account():
+    """更新管理员账号信息 API"""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({
+                'success': False,
+                'message': '请求数据无效'
+            })
+        
+        current_password = data.get('current_password', '').strip()
+        new_username = data.get('new_username', '').strip()
+        new_password = data.get('new_password', '').strip()
+        
+        if not current_password:
+            return jsonify({
+                'success': False,
+                'message': '请输入当前密码进行验证'
+            })
+        
+        if not new_username and not new_password:
+            return jsonify({
+                'success': False,
+                'message': '请至少修改用户名或密码中的一项'
+            })
+        
+        # 获取当前管理员信息
+        current_admin_username = session.get('admin_username')
+        if not current_admin_username:
+            return jsonify({
+                'success': False,
+                'message': '管理员会话无效，请重新登录'
+            })
+        
+        db = get_db()
+        db_type = app.config['DATABASE_TYPE']
+        
+        # 验证当前密码
+        if db_type == 'sqlite':
+            admin_result = db.execute(
+                'SELECT * FROM admin_users WHERE username = ?',
+                (current_admin_username,)
+            ).fetchone()
+        else:
+            cursor = db.cursor()
+            cursor.execute(
+                'SELECT * FROM admin_users WHERE username = %s',
+                (current_admin_username,)
+            )
+            admin_result = cursor.fetchone()
+            cursor.close()
+        
+        if not admin_result:
+            return jsonify({
+                'success': False,
+                'message': '管理员账号不存在'
+            })
+        
+        # 转换为字典
+        if db_type == 'sqlite':
+            admin_info = dict(admin_result)
+        else:
+            cursor = db.cursor()
+            cursor.execute('SELECT * FROM admin_users WHERE username = %s', (current_admin_username,))
+            admin_result = cursor.fetchone()
+            columns = [desc[0] for desc in cursor.description]
+            admin_info = dict(zip(columns, admin_result))
+            cursor.close()
+        
+        # 验证当前密码
+        if not check_password_hash(admin_info['password'], current_password):
+            return jsonify({
+                'success': False,
+                'message': '当前密码验证失败'
+            })
+        
+        # 如果要修改用户名，检查是否已存在
+        if new_username and new_username != current_admin_username:
+            if db_type == 'sqlite':
+                existing_user = db.execute(
+                    'SELECT username FROM admin_users WHERE username = ? AND id != ?',
+                    (new_username, admin_info['id'])
+                ).fetchone()
+            else:
+                cursor = db.cursor()
+                cursor.execute(
+                    'SELECT username FROM admin_users WHERE username = %s AND id != %s',
+                    (new_username, admin_info['id'])
+                )
+                existing_user = cursor.fetchone()
+                cursor.close()
+            
+            if existing_user:
+                return jsonify({
+                    'success': False,
+                    'message': '新用户名已存在，请选择其他用户名'
+                })
+        
+        # 执行更新
+        updates = []
+        params = []
+        
+        if new_username:
+            updates.append('username = ?')
+            params.append(new_username)
+        
+        if new_password:
+            # 密码强度验证
+            if len(new_password) < 6:
+                return jsonify({
+                    'success': False,
+                    'message': '新密码长度至少为6位'
+                })
+            
+            updates.append('password = ?')
+            params.append(generate_password_hash(new_password))
+        
+        updates.append('updated_at = CURRENT_TIMESTAMP')
+        params.append(admin_info['id'])
+        
+        update_sql = f"UPDATE admin_users SET {', '.join(updates)} WHERE id = ?"
+        
+        if db_type == 'sqlite':
+            db.execute(update_sql, params)
+            db.commit()
+        else:
+            # 转换占位符为适合MySQL/PostgreSQL的格式
+            update_sql = update_sql.replace('?', '%s')
+            cursor = db.cursor()
+            cursor.execute(update_sql, params)
+            db.commit()
+            cursor.close()
+        
+        # 如果修改了用户名，更新session
+        if new_username:
+            session['admin_username'] = new_username
+        
+        # 记录操作日志
+        changes = []
+        if new_username:
+            changes.append(f'用户名: {current_admin_username} -> {new_username}')
+        if new_password:
+            changes.append('密码已更新')
+        
+        log_message = f"管理员账号更新: {'; '.join(changes)}"
+        
+        if db_type == 'sqlite':
+            db.execute('''
+                INSERT INTO admin_mail_logs (admin_username, email, user_ip, action, result, created_at)
+                VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            ''', (new_username or current_admin_username, '', 
+                  request.environ.get('REMOTE_ADDR', 'unknown'), 
+                  'update_admin_account', log_message))
+            db.commit()
+        else:
+            cursor = db.cursor()
+            cursor.execute('''
+                INSERT INTO admin_mail_logs (admin_username, email, user_ip, action, result, created_at)
+                VALUES (%s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
+            ''', (new_username or current_admin_username, '', 
+                  request.environ.get('REMOTE_ADDR', 'unknown'), 
+                  'update_admin_account', log_message))
+            db.commit()
+            cursor.close()
+        
         return jsonify({
             'success': True,
-            'message': '系统设置功能正在开发中',
+            'message': '管理员账号更新成功',
             'data': {
-                'system_name': '邮件查看系统',
-                'version': '2.0.0',
-                'database_type': app.config['DATABASE_TYPE']
+                'username_changed': bool(new_username),
+                'password_changed': bool(new_password)
             }
         })
-    else:
+        
+    except Exception as e:
+        logger.error(f"Failed to update admin account: {e}")
         return jsonify({
-            'success': True,
-            'message': '设置保存成功（开发中）'
+            'success': False,
+            'message': f'更新管理员账号失败: {str(e)}'
         })
 
 if __name__ == '__main__':
