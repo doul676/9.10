@@ -583,12 +583,12 @@
         const email = emailInput.value.trim();
         
         if (!email) {
-            showMessage('请输入邮箱地址', 'error');
+            showToast('请输入邮箱地址', 'error');
             return;
         }
         
         if (!isValidEmail(email)) {
-            showMessage('请输入有效的邮箱地址', 'error');
+            showToast('请输入有效的邮箱地址', 'error');
             return;
         }
         
@@ -600,12 +600,32 @@
         mailDisplay.style.display = 'none';
         
         try {
+            // 首先检查登录状态
+            const loginResponse = await fetch('/api/check_login', {
+                method: 'GET',
+                credentials: 'same-origin'
+            });
+            
+            const loginData = await loginResponse.json();
+            let requestData = { email: email };
+            
+            // 如果未登录，显示Toast提示
+            if (!loginData.logged_in) {
+                showToast('您尚未登录管理员账户，请使用卡密方式访问邮件', 'warning', 5000);
+                // 未登录时仍然允许继续，但不传递登录状态
+            } else {
+                // 已登录，标记为管理员访问
+                requestData.admin_access = true;
+                showToast('已检测到管理员登录状态，免卡密访问', 'info', 3000);
+            }
+            
             const response = await fetch('/api/get_mail', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                 },
-                body: JSON.stringify({ email: email })
+                credentials: 'same-origin',
+                body: JSON.stringify(requestData)
             });
             
             const data = await response.json();

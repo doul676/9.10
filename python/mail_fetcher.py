@@ -1180,6 +1180,7 @@ def main():
     parser.add_argument('--days-filter', type=int, default=None, help='Filter emails within X days')
     parser.add_argument('--sender-filter', type=str, default='', help='Filter by sender email addresses (comma separated)')
     parser.add_argument('--card-key', type=str, default='', help='Card key for usage tracking')
+    parser.add_argument('--admin-access', action='store_true', help='Admin access mode (bypass card validation)')
     
     try:
         args = parser.parse_args()
